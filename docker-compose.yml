@@ -1,0 +1,46 @@
+version: '3.13'  # Usamos una versión más actual y estable
+services:
+  web:
+    image: automercasur
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: django_app
+    restart: always
+    env_file: .env  
+    depends_on:
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app 
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  redis:
+    image: redis:latest
+    container_name: redis_cache
+    restart: always
+    ports:
+      - "6379:6379"
+
+  celery_worker:
+    build: .
+    container_name: celery_worker
+    restart: always
+    depends_on:
+      - redis
+      - web
+    env_file: .env
+    command: celery -A appMercaSur worker --loglevel=info
+
+  celery_beat:
+    build: .
+    container_name: celery_beat
+    restart: always
+    depends_on:
+      - redis
+      - web
+    env_file: .env
+    command: celery -A appMercaSur beat --loglevel=info
