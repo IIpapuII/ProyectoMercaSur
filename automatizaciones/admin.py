@@ -15,7 +15,7 @@ class SQLQueryAdmin(admin.ModelAdmin):
 
 @admin.register(Articulos)
 class ArticulosAdmin(admin.ModelAdmin):
-    values = ['id_articulo','store_id','name','trademark','price','stock','sale_type','is_available','code']
+    values = ['id_articulo','store_id','ean','name','trademark','price','stock','sale_type','is_available','code']
     fields = ['id_articulo','store_id','name','trademark','description','price','discount_price','stock','sale_type','is_available','departamento','secciones','familia','subfamilia','code','image']
     list_display = values
     search_fields = values
