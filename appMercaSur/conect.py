@@ -2,6 +2,7 @@ import pyodbc
 import warnings
 from django.conf import settings
 # Configuración de conexión - MODIFICAR ESTOS VALORES
+import pandas as pd
 
 def conectar_sql_server():
     try:
