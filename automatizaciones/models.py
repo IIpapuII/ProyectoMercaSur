@@ -38,6 +38,9 @@ class Articulos(models.Model):
     class Meta:
         verbose_name_plural = "Artículos"
 
+from django.db import models
+from datetime import date
+
 class DescuentoDiario(models.Model):
     DIAS_SEMANA = [
         (0, "Lunes"),
@@ -49,21 +52,38 @@ class DescuentoDiario(models.Model):
         (6, "Domingo"),
     ]
 
-    dia = models.IntegerField(choices=DIAS_SEMANA)
-    departamento = models.CharField(max_length=200, blank=True, null=True)  
-    secciones = models.CharField(max_length=200, blank=True, null=True)  
+    dia = models.IntegerField(choices=DIAS_SEMANA, blank=True, null=True)  # Permitir NULL para descuentos siempre activos
+    departamento = models.CharField(max_length=200, blank=True, null=True)
+    secciones = models.CharField(max_length=200, blank=True, null=True)
     familia = models.CharField(max_length=200, blank=True, null=True)
+    ean = models.CharField(max_length=50, blank=True, null=True, unique=True)  # Para descuentos por producto específico
     porcentaje_descuento = models.FloatField(help_text="Ejemplo: 10 para 10% de descuento")
+    fecha_inicio = models.DateField(blank=True, null=True, help_text="Fecha desde la cual se aplica el descuento")
+    fecha_fin = models.DateField(blank=True, null=True, help_text="Fecha hasta la cual es válido el descuento")
+
+    def esta_vigente(self):
+        """Devuelve True si el descuento está dentro del rango de fechas."""
+        hoy = date.today()
+        if self.fecha_inicio and hoy < self.fecha_inicio:
+            return False
+        if self.fecha_fin and hoy > self.fecha_fin:
+            return False
+        return True
 
     def __str__(self):
-        filtro = []
+        filtros = []
+        if self.ean:
+            filtros.append(f"EAN: {self.ean}")
         if self.departamento:
-            filtro.append(f"Depto: {self.departamento}")
+            filtros.append(f"Depto: {self.departamento}")
         if self.secciones:
-            filtro.append(f"Sección: {self.secciones}")
+            filtros.append(f"Sección: {self.secciones}")
         if self.familia:
-            filtro.append(f"Familia: {self.familia}")
-        return f"{self.get_dia_display()} - {' / '.join(filtro)} ({self.porcentaje_descuento}%)"
+            filtros.append(f"Familia: {self.familia}")
+
+        fecha_info = f"({self.fecha_inicio} - {self.fecha_fin})" if self.fecha_inicio or self.fecha_fin else "(Siempre activo)"
+        return f"{self.get_dia_display() if self.dia is not None else 'Todos los días'} - {' / '.join(filtros)} {fecha_info} ({self.porcentaje_descuento}%)"
+
 
 
 class APILogRappi(models.Model):
@@ -75,3 +95,38 @@ class APILogRappi(models.Model):
 
     def __str__(self):
         return f"{self.fecha} - Store {self.store_id} - Status {self.status_code}"
+
+
+class Presentation(models.Model):
+    product = models.OneToOneField("Product", on_delete=models.CASCADE, related_name="presentation_info")
+    quantity = models.PositiveIntegerField()
+    unit_type = models.CharField(max_length=10)
+
+class SellType(models.Model):
+    product = models.OneToOneField("Product", on_delete=models.CASCADE, related_name="sell_type_info")
+    type = models.CharField(max_length=5)
+    min_quantity = models.PositiveIntegerField()
+    max_quantity = models.PositiveIntegerField()
+    step_quantity = models.PositiveIntegerField()
+
+class Product(models.Model):
+    category_id = models.IntegerField()
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+    has_variation = models.BooleanField(default=False)
+    presentation = models.OneToOneField(Presentation, on_delete=models.CASCADE, related_name="product_presentation")
+    sell_type = models.OneToOneField(SellType, on_delete=models.CASCADE, related_name="product_sell_type")
+
+class ProductSKU(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="skus")
+    sku = models.CharField(max_length=50, unique=True)
+    ean = models.BigIntegerField(unique=True)
+
+class ProductImage(models.Model):
+    product_sku = models.ForeignKey(ProductSKU, on_delete=models.CASCADE, related_name="images")
+    path = models.URLField()
+    position = models.PositiveIntegerField()
+
+class ProductAttribute(models.Model):
+    product_sku = models.OneToOneField(ProductSKU, on_delete=models.CASCADE, related_name="attributes")
+    color_alt = models.CharField(max_length=50, blank=True, null=True)

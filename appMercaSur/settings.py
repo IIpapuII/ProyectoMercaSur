@@ -53,7 +53,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'whitenoise.runserver_nostatic',
     'django_celery_beat',
-    'automatizaciones'
+    'automatizaciones',
+    'import_export',
 ]
 
 MIDDLEWARE = [
