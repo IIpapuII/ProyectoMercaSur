@@ -3,9 +3,11 @@ import pandas as pd
 from ..models import Articulos, DescuentoDiario, APILogRappi
 import http.client
 import json
-from datetime import datetime
+from datetime import datetime, date
 from django.conf import settings
 from collections import defaultdict
+from django.db.models import Q
+
 
 @transaction.atomic
 def update_or_create_articles(df):
@@ -15,11 +17,12 @@ def update_or_create_articles(df):
     
     # Obtener el día actual (0 = Lunes, 6 = Domingo)
     hoy = datetime.today().weekday()
-    descuentos = DescuentoDiario.objects.filter(dia=hoy)
+    descuentos_dia = DescuentoDiario.objects.filter(dia=hoy)
 
     for _, row in df.iterrows():
         # Asegurar que los valores sean cadenas antes de aplicar strip()
         code = str(row["Code"]).strip() if not pd.isna(row["Code"]) else ""
+        ean = str(row.get("ean", "")).strip() if not pd.isna(row.get("ean")) else ""
 
         departamento = str(row.get("Departamento", "")).strip() if not pd.isna(row.get("Departamento")) else ""
         secciones = str(row.get("Secciones", "")).strip() if not pd.isna(row.get("Secciones")) else ""
@@ -42,29 +45,41 @@ def update_or_create_articles(df):
 
             # Comparar valores
             if existing_stock != stock or existing_price != price or existing_discount_price != discount_price:
-                modificado = True  # 🔥 Marcarlo como modificado si cambió stock, precio o precio con descuento
+                modificado = True  
         else:
-            modificado = True  # 🔥 Si es nuevo, marcar como modificado
+            modificado = True 
 
-        # Aplicar lógica de descuentos
-        descuento_aplicado = None
-        for descuento in descuentos:
-            aplica_por_departamento = descuento.departamento and descuento.departamento == departamento
-            aplica_por_secciones = descuento.secciones and descuento.secciones == secciones
-            aplica_por_familia = descuento.familia and descuento.familia == familia
+        # 🔹 Buscar descuento por EAN primero
+        descuento_aplicado = DescuentoDiario.objects.filter(
+                ean=ean
+                ).filter(
+                    # Filtra solo descuentos vigentes
+                    (Q(fecha_inicio__isnull=True) | Q(fecha_inicio__lte=date.today())) &  
+                    (Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=date.today()))
+                ).first()
 
-            if (descuento.departamento and not descuento.secciones and not descuento.familia and aplica_por_departamento) or \
-               (descuento.departamento and descuento.secciones and not descuento.familia and aplica_por_departamento and aplica_por_secciones) or \
-               (descuento.departamento and descuento.secciones and descuento.familia and aplica_por_departamento and aplica_por_secciones and aplica_por_familia) or \
-               (not descuento.departamento and descuento.secciones and not descuento.familia and aplica_por_secciones) or \
-               (not descuento.departamento and not descuento.secciones and descuento.familia and aplica_por_familia):
-                descuento_aplicado = descuento
-                break  # Solo se aplica un descuento
+        # 🔹 Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
+        if not descuento_aplicado:
+            for descuento in descuentos_dia:
+                aplica_por_departamento = descuento.departamento and descuento.departamento == departamento
+                aplica_por_secciones = descuento.secciones and descuento.secciones == secciones
+                aplica_por_familia = descuento.familia and descuento.familia == familia
 
-        # Calcular el precio con descuento si aplica
+                if (descuento.departamento and not descuento.secciones and not descuento.familia and aplica_por_departamento) or \
+                   (descuento.departamento and descuento.secciones and not descuento.familia and aplica_por_departamento and aplica_por_secciones) or \
+                   (descuento.departamento and descuento.secciones and descuento.familia and aplica_por_departamento and aplica_por_secciones and aplica_por_familia) or \
+                   (not descuento.departamento and descuento.secciones and not descuento.familia and aplica_por_secciones) or \
+                   (not descuento.departamento and not descuento.secciones and descuento.familia and aplica_por_familia):
+                    descuento_aplicado = descuento
+                    break  
+        
+        
         if descuento_aplicado:
-            discount_price = price * (1 - (descuento_aplicado.porcentaje_descuento / 100))
-            modificado = True  # 🔥 Marcar como modificado porque cambió el descuento
+            if descuento_aplicado.porcentaje_descuento == 0:
+                discount_price = 0
+            else:
+                discount_price = price * (1 - (descuento_aplicado.porcentaje_descuento / 100))
+            modificado = True  #Marcar como modificado porque cambió el descuento
 
         # Actualizar o crear el artículo con el estado de modificación y descuento aplicado
         article, created = Articulos.objects.update_or_create(
@@ -72,7 +87,7 @@ def update_or_create_articles(df):
             defaults={
                 "id_articulo": row["id"],
                 "store_id": row["store_id"],
-                "ean": row["ean"],
+                "ean": ean,
                 "name": row["name"],
                 "trademark": row["trademark"],
                 "description": row["description"],
@@ -94,6 +109,7 @@ def update_or_create_articles(df):
             print(f"✅ Artículo creado: {article.name} (Marcado como modificado)")
         elif modificado:
             print(f"🔄 Artículo modificado: {article.name} (Stock, precio o descuento cambiado)")
+
 
 
 def articulosMoficados():
