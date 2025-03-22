@@ -37,7 +37,7 @@ def update_or_create_articles(df):
 
         # Buscar si el artículo ya existe
         tarifa = row["tarifa"]
-        existing_article = Articulos.objects.filter(code=code, tarifa=tarifa).first()
+        existing_article = Articulos.objects.filter(code=code).first()
         modificado = False
 
         if existing_article:
@@ -88,7 +88,6 @@ def update_or_create_articles(df):
         # Actualizar o crear el artículo con el estado de modificación y descuento aplicado
         article, created = Articulos.objects.update_or_create(
             code=code,
-            tarifa= tarifa,
             defaults={
                 "id_articulo": row["id"],
                 "store_id": row["store_id"],
@@ -107,6 +106,7 @@ def update_or_create_articles(df):
                 "subfamilia": row["SubFamilia"],
                 "code": code,
                 "modificado": modificado,
+                "tarifa": tarifa
             }
         )
 
