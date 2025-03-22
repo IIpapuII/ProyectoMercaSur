@@ -1,13 +1,15 @@
 from django.db import transaction
 import pandas as pd
-from ..models import Articulos, DescuentoDiario, APILogRappi
+from ..models import Articulos, DescuentoDiario, APILogRappi, EnvioLog
 import http.client
 import json
 from datetime import datetime, date
 from django.conf import settings
 from collections import defaultdict
 from django.db.models import Q
-
+import csv
+import os
+import requests
 
 @transaction.atomic
 def update_or_create_articles(df):
@@ -34,7 +36,8 @@ def update_or_create_articles(df):
         discount_price = float(row["discount_price"]) if not pd.isna(row["discount_price"]) else price
 
         # Buscar si el artículo ya existe
-        existing_article = Articulos.objects.filter(code=code).first()
+        tarifa = row["tarifa"]
+        existing_article = Articulos.objects.filter(code=code, tarifa=tarifa).first()
         modificado = False
 
         if existing_article:
@@ -73,17 +76,19 @@ def update_or_create_articles(df):
                     descuento_aplicado = descuento
                     break  
         
-        
+
         if descuento_aplicado:
             if descuento_aplicado.porcentaje_descuento == 0:
                 discount_price = 0
             else:
                 discount_price = price * (1 - (descuento_aplicado.porcentaje_descuento / 100))
             modificado = True  #Marcar como modificado porque cambió el descuento
+            print(ean)
 
         # Actualizar o crear el artículo con el estado de modificación y descuento aplicado
         article, created = Articulos.objects.update_or_create(
             code=code,
+            tarifa= tarifa,
             defaults={
                 "id_articulo": row["id"],
                 "store_id": row["store_id"],
@@ -101,7 +106,7 @@ def update_or_create_articles(df):
                 "familia": familia,
                 "subfamilia": row["SubFamilia"],
                 "code": code,
-                "modificado": modificado,  # 🔥 Marcar si hubo cambios o es nuevo
+                "modificado": modificado,
             }
         )
 
@@ -113,7 +118,10 @@ def update_or_create_articles(df):
 
 
 def articulosMoficados():
-    return Articulos.objects.filter(modificado=True, price__gt=0)
+    return Articulos.objects.filter(
+        Q(store_id="900175315", tarifa=1, modificado=True, price__gt=0) |  # ✅ store_id específico con tarifa = 1
+        Q(~Q(store_id="900175315"), modificado=True, price__gt=0)  # ✅ Todos los demás con el mismo filtro excepto tarifa
+    )
 
 def marcarArticulosComoNoModificados():
     Articulos.objects.update(modificado=False)
@@ -185,3 +193,116 @@ def send_modified_articles():
         except Exception as e:
             print(f"🚨 Error al enviar datos a Rappi para store_id {store_id}: {e}")
             APILogRappi.objects.create(store_id=store_id, status_code=500, response_text=str(e))
+
+def generar_csv_articulos_modificados():
+    """
+    Genera un archivo CSV con los artículos modificados y lo guarda en el proyecto.
+    """
+
+    directorio = os.path.join(settings.MEDIA_ROOT, "exports")
+    os.makedirs(directorio, exist_ok=True)  # Crear directorio si no existe
+    ruta_csv = os.path.join(directorio, "articulos_modificados.csv")
+
+    articulos = Articulos.objects.filter(modificado=True,store_id =900175315, tarifa=4, price__gt=0)
+    
+    with open(ruta_csv, mode="w", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        
+        # Escribir encabezados
+        writer.writerow(["SKU", "CANTIDAD", "PRECIO_VENTA", "DESCUENTO_POR_PORCENTAJE", "MAX_SALE", "FEATURED"])
+        
+        # Escribir datos de los artículos
+        
+        for articulo in articulos:
+            featured = articulo.discount_price < articulo.price and articulo.discount_price > 0
+            if articulo.discount_price > 0:
+                descuento_porcentaje = round(100 * (1 - (articulo.discount_price / articulo.price)), 2) if featured else 0
+                
+            else:
+                descuento_porcentaje = 0
+            
+            if featured == True :
+                featured = 'TRUE'
+            else:
+                featured = 'FALSE'
+            
+            extra = DescuentoDiario.objects.filter(ean=articulo.ean).first()
+            max_sale = ''
+            if extra:
+                if extra.maximo_venta > 0:
+                    max_sale = extra.maximo_venta
+                else:
+                    max_sale = ''
+                featured = 'TRUE'
+
+            writer.writerow([
+                articulo.ean,        # SKU
+                articulo.stock,       # CANTIDAD
+                articulo.price,       # PRECIO_VENTA
+                descuento_porcentaje, # DESCUENTO_POR_PORCENTAJE
+                max_sale,                    # MAX_SALE (ajustar si es necesario)
+                featured              # FEATURED (True si tiene descuento)
+            ])
+
+    return ruta_csv 
+
+
+def enviar_csv_a_api():
+    """
+    Envía el archivo CSV generado a la API externa y guarda un log en la base de datos.
+    """
+    url = settings.URL_PARZE
+    api_key = settings.API_KEY_PARZE
+
+    # Ruta del archivo CSV generado
+    ruta_csv = os.path.join(settings.MEDIA_ROOT, "exports", "articulos_modificados.csv")
+
+    # Verificar si el archivo existe
+    if not os.path.exists(ruta_csv):
+        error_msg = "El archivo CSV no existe. Genera el CSV primero."
+        print({"error": error_msg})
+
+        # Guardar en el log
+        EnvioLog.objects.create(
+            archivo=ruta_csv,
+            status="error",
+            response_text=error_msg,
+            status_code=400  # Código de error indicando que falta el archivo
+        )
+        return {"error": error_msg}
+
+    # Configurar headers y datos para la petición
+    headers = {"Key": api_key}
+
+    try:
+        with open(ruta_csv, "rb") as file:
+            files = {"file_inventory": file}
+            response = requests.post(url, headers=headers, files=files)
+            response.raise_for_status()  # Lanza error si el status code no es 2xx
+            
+            result = response.json()
+            print({"success": "Archivo enviado correctamente.", "status_code": response.status_code, "response": result})
+
+            # Guardar en la base de datos el intento exitoso
+            EnvioLog.objects.create(
+                archivo=ruta_csv,
+                status="success",
+                status_code=response.status_code,
+                response_text=str(result)
+            )
+
+            return {"success": "Archivo enviado correctamente.", "status_code": response.status_code, "response": result}
+
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Error al enviar el archivo: {str(e)}"
+        print({"error": error_msg})
+
+        # Guardar en el log el intento fallido
+        EnvioLog.objects.create(
+            archivo=ruta_csv,
+            status="error",
+            status_code=getattr(e.response, "status_code", 500),  # Tomar el código si existe, si no, 500
+            response_text=str(e)
+        )
+
+        return {"error": error_msg}

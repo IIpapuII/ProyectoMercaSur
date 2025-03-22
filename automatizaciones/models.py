@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.timezone import now
 
 # Create your models here.
 class SQLQuery(models.Model):
@@ -28,9 +29,10 @@ class Articulos(models.Model):
     secciones = models.CharField(max_length=255, null=True, blank=True)
     familia = models.CharField(max_length=255, null=True, blank=True)
     subfamilia = models.CharField(max_length=255, null=True, blank=True)
-    code = models.CharField(max_length=100, unique=True, null=True)  # Código único
+    code = models.CharField(max_length=100, null=True)  # Código único
     image = models.ImageField(upload_to='product_images/', null=True, blank=True)
     modificado = models.BooleanField(default=False)
+    tarifa = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     
     def __str__(self):
         return f"{self.name} ({self.code})"
@@ -60,6 +62,8 @@ class DescuentoDiario(models.Model):
     porcentaje_descuento = models.FloatField(help_text="Ejemplo: 10 para 10% de descuento")
     fecha_inicio = models.DateField(blank=True, null=True, help_text="Fecha desde la cual se aplica el descuento")
     fecha_fin = models.DateField(blank=True, null=True, help_text="Fecha hasta la cual es válido el descuento")
+    destacado = models.BooleanField(default=False)
+    maximo_venta = models.PositiveIntegerField(default=0, help_text="Cantidad máxima de unidades con venta por cliente")
 
     def esta_vigente(self):
         """Devuelve True si el descuento está dentro del rango de fechas."""
@@ -130,3 +134,19 @@ class ProductImage(models.Model):
 class ProductAttribute(models.Model):
     product_sku = models.OneToOneField(ProductSKU, on_delete=models.CASCADE, related_name="attributes")
     color_alt = models.CharField(max_length=50, blank=True, null=True)
+
+
+class EnvioLog(models.Model):
+    STATUS_CHOICES = [
+        ("success", "Éxito"),
+        ("error", "Error"),
+    ]
+
+    timestamp = models.DateTimeField(default=now)  # Fecha y hora del intento
+    archivo = models.CharField(max_length=255)  # Nombre o ruta del archivo enviado
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)  # Estado del envío
+    status_code = models.IntegerField(null=True, blank=True)  # Código de estado HTTP
+    response_text = models.TextField(blank=True)  # Respuesta de la API o mensaje de error
+
+    def __str__(self):
+        return f"{self.timestamp} - {self.archivo} - {self.status} ({self.status_code})"

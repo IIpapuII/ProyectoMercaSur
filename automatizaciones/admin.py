@@ -47,15 +47,15 @@ class DescuentoDiarioResource(resources.ModelResource):
         model = DescuentoDiario
         formats = [XLS, XLSX]
         import_id_fields = ['ean']  
-        fields = ['ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin']
-        export_order = ['ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin']
+        fields = ['ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin', 'destacado','maximo_venta']
+        export_order = ['ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin', 'destacado','maximo_venta']
         skip_unchanged = True  
         report_skipped = True  
 
 @admin.register(DescuentoDiario)
 class DescuentoDiarioAdmin(ImportExportModelAdmin):
     resource_class = DescuentoDiarioResource
-    values = ['dia', 'departamento', 'secciones', 'familia', 'ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin']
+    values = ['dia', 'departamento', 'secciones', 'familia', 'ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin', 'destacado','maximo_venta']
     fields = values  
     list_display = values  
     search_fields = ['departamento', 'secciones', 'familia', 'ean']  
@@ -105,6 +105,10 @@ class ProductSKUAdmin(admin.ModelAdmin):
     inlines = [ProductImageInline, ProductAttributeInline]
     list_display = ("sku", "ean", "product")
     search_fields = ("sku", "ean")
+
+@admin.register(EnvioLog)
+class EnvioLogAdmin(admin.ModelAdmin):
+    pass
 
 admin.site.site_header = "MercaSur"
 admin.site.site_title = "MercaSur"

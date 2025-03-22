@@ -41,6 +41,8 @@ PORTICG = os.getenv("PORTICG")
 API_KEYRAPPI = os.getenv('API_KEY_RAPPI')
 API_URLRAPPI = os.getenv('API_URL_RAPPI')
 API_ENDPOINTRAPPI = os.getenv('API_ENDPOINT_RAPPI')
+API_KEY_PARZE = os.getenv('API_KEYPARZE')
+URL_PARZE = os.getenv('URl_PARZE')
 
 # Application definition
 
