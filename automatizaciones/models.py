@@ -29,7 +29,7 @@ class Articulos(models.Model):
     secciones = models.CharField(max_length=255, null=True, blank=True)
     familia = models.CharField(max_length=255, null=True, blank=True)
     subfamilia = models.CharField(max_length=255, null=True, blank=True)
-    code = models.CharField(max_length=100, null=True)  # Código único
+    code = models.CharField(max_length=100, null=True, unique=True)  # Código único
     image = models.ImageField(upload_to='product_images/', null=True, blank=True)
     modificado = models.BooleanField(default=False)
     tarifa = models.DecimalField(max_digits=10, decimal_places=2, default=0)
