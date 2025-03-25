@@ -205,7 +205,7 @@ def generar_csv_articulos_modificados():
 
     articulos = Articulos.objects.filter(modificado=True,store_id =900175315, tarifa=4, price__gt=0)
     
-    with open(ruta_csv, mode="w", encoding="utf-8") as file:
+    with open(ruta_csv, mode="w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)
         
         # Escribir encabezados
