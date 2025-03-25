@@ -16,7 +16,7 @@ def update_or_create_articles(df):
     """Actualiza o crea artículos en la base de datos, marca los modificados y aplica descuentos."""
 
     print(df)
-    
+
     # Obtener el día actual (0 = Lunes, 6 = Domingo)
     hoy = datetime.today().weekday()
     descuentos_dia = DescuentoDiario.objects.filter(dia=hoy)
@@ -46,14 +46,19 @@ def update_or_create_articles(df):
             existing_stock = int(existing_article.stock) if existing_article.stock is not None else 0
             existing_price = float(existing_article.price) if existing_article.price is not None else 0.0
             existing_discount_price = float(existing_article.discount_price) if existing_article.discount_price is not None else existing_price
-            existing_featured = existing_article.is_featured if existing_article.is_featured is not None else False
+            existing_featured = existing_article.is_featured
 
-            # Comparar valores para marcar como modificado
-            if (existing_stock != stock or existing_price != price or 
-                existing_discount_price != discount_price or existing_featured != is_featured):
-                modificado = True  
+            # 🔹 Comparar valores antes de marcar como modificado
+            cambios_detectados = (
+                existing_stock != stock or
+                existing_price != price or
+                existing_discount_price != discount_price or
+                existing_featured != is_featured
+            )
+
+            modificado = cambios_detectados  
         else:
-            modificado = True 
+            modificado = True  
 
         # 🔹 Buscar descuento vigente por EAN
         descuento_aplicado = DescuentoDiario.objects.filter(
@@ -78,26 +83,29 @@ def update_or_create_articles(df):
                     descuento_aplicado = descuento
                     break  
         
-        # 🔹 Manejo del descuento y producto destacado
+        # 🔹 Aplicar descuento solo si hay cambios
+        nuevo_discount_price = discount_price  # Mantener el precio original
+
         if descuento_aplicado:
             if descuento_aplicado.porcentaje_descuento == 0:
-                # 🔹 Si el descuento es 0%, mantener el precio y marcar como destacado
-                discount_price = price
-                is_featured = True
+                is_featured = True  # Si el descuento es 0%, marcar como destacado
             else:
-                # Aplicar descuento
-                discount_price = price * (1 - (descuento_aplicado.porcentaje_descuento / 100))
-            modificado = True  # Marcar como modificado porque cambió el descuento
+                nuevo_discount_price = price * (1 - (descuento_aplicado.porcentaje_descuento / 100))
+            
+            if nuevo_discount_price != discount_price or is_featured != existing_featured:
+                modificado = True  # Solo marcar como modificado si realmente hay un cambio
+            
             print(f"🔻 Descuento aplicado a {ean}")
 
-        # 🔹 Si el artículo tenía descuento y ya no aplica, restablecer precio y desmarcar como destacado
+        # 🔹 Si el artículo tenía descuento pero ya no aplica, restablecer precio
         elif existing_article and existing_article.discount_price < existing_article.price:
-            discount_price = price  # Se elimina el descuento
+            nuevo_discount_price = price  # Restablecer precio original
             is_featured = False
-            modificado = True
+            if existing_article.discount_price != nuevo_discount_price or existing_article.is_featured != is_featured:
+                modificado = True  
             print(f"🔺 Descuento eliminado para {ean}")
 
-        # Actualizar o crear el artículo con el estado de modificación y descuento aplicado
+        # 🔹 Crear o actualizar el artículo solo si hay cambios
         article, created = Articulos.objects.update_or_create(
             code=code,
             defaults={
@@ -108,7 +116,7 @@ def update_or_create_articles(df):
                 "trademark": row["trademark"],
                 "description": row["description"],
                 "price": price,
-                "discount_price": discount_price,
+                "discount_price": nuevo_discount_price,
                 "stock": stock,
                 "sale_type": row["sale_type"],
                 "is_available": row["is_available"],
@@ -127,6 +135,8 @@ def update_or_create_articles(df):
             print(f"✅ Artículo creado: {article.name} (Marcado como modificado)")
         elif modificado:
             print(f"🔄 Artículo modificado: {article.name} (Stock, precio o descuento cambiado)")
+        else:
+            print(f"🔹 Artículo sin cambios: {article.name}")
 
 
 def articulosMoficados():
