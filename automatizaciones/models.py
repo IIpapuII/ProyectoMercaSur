@@ -33,6 +33,7 @@ class Articulos(models.Model):
     image = models.ImageField(upload_to='product_images/', null=True, blank=True)
     modificado = models.BooleanField(default=False)
     tarifa = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    is_featured = models.BooleanField(default=False)
     
     def __str__(self):
         return f"{self.name} ({self.code})"

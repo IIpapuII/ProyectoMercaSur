@@ -34,6 +34,7 @@ def update_or_create_articles(df):
         stock = int(row["stock"]) if not pd.isna(row["stock"]) else 0
         price = float(row["price"]) if not pd.isna(row["price"]) else 0.0
         discount_price = float(row["discount_price"]) if not pd.isna(row["discount_price"]) else price
+        is_featured = False  # Nuevo campo para marcar productos destacados
 
         # Buscar si el artículo ya existe
         tarifa = row["tarifa"]
@@ -45,21 +46,22 @@ def update_or_create_articles(df):
             existing_stock = int(existing_article.stock) if existing_article.stock is not None else 0
             existing_price = float(existing_article.price) if existing_article.price is not None else 0.0
             existing_discount_price = float(existing_article.discount_price) if existing_article.discount_price is not None else existing_price
+            existing_featured = existing_article.is_featured if existing_article.is_featured is not None else False
 
-            # Comparar valores
-            if existing_stock != stock or existing_price != price or existing_discount_price != discount_price:
+            # Comparar valores para marcar como modificado
+            if (existing_stock != stock or existing_price != price or 
+                existing_discount_price != discount_price or existing_featured != is_featured):
                 modificado = True  
         else:
             modificado = True 
 
-        # 🔹 Buscar descuento por EAN primero
+        # 🔹 Buscar descuento vigente por EAN
         descuento_aplicado = DescuentoDiario.objects.filter(
-                ean=ean
-                ).filter(
-                    # Filtra solo descuentos vigentes
-                    (Q(fecha_inicio__isnull=True) | Q(fecha_inicio__lte=date.today())) &  
-                    (Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=date.today()))
-                ).first()
+            ean=ean
+        ).filter(
+            (Q(fecha_inicio__isnull=True) | Q(fecha_inicio__lte=date.today())) &  
+            (Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=date.today()))
+        ).first()
 
         # 🔹 Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
         if not descuento_aplicado:
@@ -76,14 +78,24 @@ def update_or_create_articles(df):
                     descuento_aplicado = descuento
                     break  
         
-
+        # 🔹 Manejo del descuento y producto destacado
         if descuento_aplicado:
             if descuento_aplicado.porcentaje_descuento == 0:
-                discount_price = 0
+                # 🔹 Si el descuento es 0%, mantener el precio y marcar como destacado
+                discount_price = price
+                is_featured = True
             else:
+                # Aplicar descuento
                 discount_price = price * (1 - (descuento_aplicado.porcentaje_descuento / 100))
-            modificado = True  #Marcar como modificado porque cambió el descuento
-            print(ean)
+            modificado = True  # Marcar como modificado porque cambió el descuento
+            print(f"🔻 Descuento aplicado a {ean}")
+
+        # 🔹 Si el artículo tenía descuento y ya no aplica, restablecer precio y desmarcar como destacado
+        elif existing_article and existing_article.discount_price < existing_article.price:
+            discount_price = price  # Se elimina el descuento
+            is_featured = False
+            modificado = True
+            print(f"🔺 Descuento eliminado para {ean}")
 
         # Actualizar o crear el artículo con el estado de modificación y descuento aplicado
         article, created = Articulos.objects.update_or_create(
@@ -106,7 +118,8 @@ def update_or_create_articles(df):
                 "subfamilia": row["SubFamilia"],
                 "code": code,
                 "modificado": modificado,
-                "tarifa": tarifa
+                "tarifa": tarifa,
+                "is_featured": is_featured,  # Guardar el estado de destacado
             }
         )
 
@@ -114,7 +127,6 @@ def update_or_create_articles(df):
             print(f"✅ Artículo creado: {article.name} (Marcado como modificado)")
         elif modificado:
             print(f"🔄 Artículo modificado: {article.name} (Stock, precio o descuento cambiado)")
-
 
 
 def articulosMoficados():
@@ -194,6 +206,7 @@ def send_modified_articles():
             print(f"🚨 Error al enviar datos a Rappi para store_id {store_id}: {e}")
             APILogRappi.objects.create(store_id=store_id, status_code=500, response_text=str(e))
 
+
 def generar_csv_articulos_modificados():
     """
     Genera un archivo CSV con los artículos modificados y lo guarda en el proyecto.
@@ -203,49 +216,76 @@ def generar_csv_articulos_modificados():
     os.makedirs(directorio, exist_ok=True)  # Crear directorio si no existe
     ruta_csv = os.path.join(directorio, "articulos_modificados.csv")
 
-    articulos = Articulos.objects.filter(modificado=True,store_id =900175315, tarifa=4, price__gt=0)
-    
+    # Filtrar solo artículos modificados con ciertas condiciones
+    articulos = Articulos.objects.filter(modificado=True, store_id=900175315, tarifa=4, price__gt=0)
+
+    # Obtener el día actual (0 = Lunes, 6 = Domingo)
+    hoy = datetime.today().weekday()
+
     with open(ruta_csv, mode="w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)
         
         # Escribir encabezados
         writer.writerow(["SKU", "CANTIDAD", "PRECIO_VENTA", "DESCUENTO_POR_PORCENTAJE", "MAX_SALE", "FEATURED"])
         
-        # Escribir datos de los artículos
-        
+        # Procesar cada artículo
         for articulo in articulos:
-            featured = articulo.discount_price < articulo.price and articulo.discount_price > 0
-            if articulo.discount_price > 0:
-                descuento_porcentaje = round(100 * (1 - (articulo.discount_price / articulo.price)), 2) if featured else 0
-                
-            else:
-                descuento_porcentaje = 0
-            
-            if featured == True :
-                featured = 'TRUE'
-            else:
-                featured = 'FALSE'
-            
-            extra = DescuentoDiario.objects.filter(ean=articulo.ean).first()
-            max_sale = ''
-            if extra:
-                if extra.maximo_venta > 0:
-                    max_sale = extra.maximo_venta
-                else:
-                    max_sale = ''
-                featured = 'TRUE'
+            descuento = None  # Inicializar variable de descuento como None
 
+            # 🔹 Buscar descuento por EAN, pero solo si está vigente
+            descuento = DescuentoDiario.objects.filter(
+                ean=articulo.ean
+            ).filter(
+                Q(dia=hoy) |  # Aplica si es el día de la semana correcto
+                Q(fecha_inicio__isnull=True, fecha_fin__isnull=True) |  # Descuentos sin fecha (siempre activos)
+                (Q(fecha_inicio__lte=date.today()) & Q(fecha_fin__gte=date.today()))  # Rango de fechas válido
+            ).first()
+
+            # 🔹 Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
+            if not descuento:
+                descuentos_dia = DescuentoDiario.objects.filter(
+                    Q(dia=hoy) |  # Aplica si es el día correcto
+                    Q(fecha_inicio__isnull=True, fecha_fin__isnull=True) |  # Siempre activos
+                    (Q(fecha_inicio__lte=date.today()) & Q(fecha_fin__gte=date.today()))  # Fechas dentro del rango
+                )
+
+                for d in descuentos_dia:
+                    if (d.departamento and d.departamento == articulo.departamento) or \
+                       (d.secciones and d.secciones == articulo.secciones) or \
+                       (d.familia and d.familia == articulo.familia):
+                        descuento = d
+                        break  
+
+            # 🔹 Determinar si el producto debe ser "FEATURED"
+            if descuento:
+                if descuento.porcentaje_descuento == 0:
+                    featured = "TRUE"  # Se mantiene como destacado si el descuento es 0%
+                else:
+                    featured = "TRUE"
+                    articulo.discount_price = articulo.price * (1 - (descuento.porcentaje_descuento / 100))
+            else:
+                featured = "FALSE"  # Si no hay descuento vigente, quitar el destacado
+
+            # 🔹 Calcular porcentaje de descuento
+            if articulo.discount_price > 0 and articulo.discount_price < articulo.price:
+                descuento_porcentaje = round(100 * (1 - (articulo.discount_price / articulo.price)), 2)
+            else:
+                descuento_porcentaje = 0  # No hay descuento
+
+            # 🔹 Definir `max_sale`
+            max_sale = descuento.maximo_venta if descuento and descuento.maximo_venta > 0 else ""
+
+            # 🔹 Escribir datos en el CSV
             writer.writerow([
                 articulo.ean,        # SKU
-                articulo.stock,       # CANTIDAD
-                articulo.price,       # PRECIO_VENTA
+                articulo.stock,      # CANTIDAD
+                articulo.price,      # PRECIO_VENTA
                 descuento_porcentaje, # DESCUENTO_POR_PORCENTAJE
-                max_sale,                    # MAX_SALE (ajustar si es necesario)
-                featured              # FEATURED (True si tiene descuento)
+                max_sale,            # MAX_SALE (si aplica)
+                featured             # FEATURED (TRUE si sigue con descuento, FALSE si venció)
             ])
 
-    return ruta_csv 
-
+    return ruta_csv
 
 def enviar_csv_a_api():
     """
