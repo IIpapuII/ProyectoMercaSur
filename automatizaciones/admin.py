@@ -110,6 +110,6 @@ class ProductSKUAdmin(admin.ModelAdmin):
 class EnvioLogAdmin(admin.ModelAdmin):
     pass
 
-admin.site.site_header = "MercaSur"
-admin.site.site_title = "MercaSur"
-admin.site.index_title = "Bienvenido a MercaSur"
+admin.site.site_header = "mercasur"
+admin.site.site_title = "mercasur"
+admin.site.index_title = "Bienvenido a mercasur"

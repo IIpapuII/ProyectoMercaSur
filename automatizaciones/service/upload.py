@@ -67,8 +67,9 @@ def update_or_create_articles(df):
         descuento_aplicado = DescuentoDiario.objects.filter(
             ean=ean
         ).filter(
-            (Q(fecha_inicio__isnull=True) | Q(fecha_inicio__lte=date.today())) &  
-            (Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=date.today()))
+            Q(dia=hoy) | 
+            (Q(fecha_inicio__lte=date.today())) &  
+            (Q(fecha_fin__gte=date.today()))
         ).first()
         # 🔹 Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
         if not descuento_aplicado:
@@ -264,7 +265,6 @@ def generar_csv_articulos_modificados():
                 ean=articulo.ean
             ).filter(
                 Q(dia=hoy) |  
-                Q(fecha_inicio__isnull=True, fecha_fin__isnull=True) |  
                 (Q(fecha_inicio__lte=fecha_hoy) & Q(fecha_fin__gte=fecha_hoy))  
             ).first()
 

@@ -47,6 +47,7 @@ URL_PARZE = os.getenv('URl_PARZE')
 # Application definition
 
 INSTALLED_APPS = [
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -138,7 +139,7 @@ USE_TZ = True  # Habilitar soporte para zonas horarias
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
@@ -151,3 +152,47 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_BACKEND = f"redis://127.0.0.1:{os.getenv('PORTREDIS')}/0"
 
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
+
+JAZZMIN_SETTINGS = {
+    "site_title": "Panel de Administración",
+    "site_header": "mercasur",
+    "site_logo": "images/logo.png",  # Ruta dentro de STATIC
+    "login_logo": "images/logo.png",
+    "site_icon": "images/favicon.ico",  # Favicon
+    "welcome_sign": "Bienvenido al Panel de Administración",
+    "user_avatar": None,
+    "show_ui_builder": True,  
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": True,
+    "brand_small_text": False,
+    "brand_colour": "navbar-white",
+    "accent": "accent-success",
+    "navbar": "navbar-success navbar-dark",
+    "no_navbar_border": False,
+    "navbar_fixed": True,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": False,
+    "sidebar": "sidebar-light-danger",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": False,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "default",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-outline-primary",
+        "secondary": "btn-outline-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success"
+    },
+    "actions_sticky_top": False
+}

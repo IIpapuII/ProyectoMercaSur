@@ -25,8 +25,8 @@ def import_from_csv(request):
 
 def index(request):
     #enviar_csv_a_api()
-    procesar_articulos_parze_task()
-    #generar_csv_articulos_modificados()
+    #procesar_articulos_parze_task()
+    generar_csv_articulos_modificados()
     #procesar_articulos_task()
     #send_modified_articles()
     context = {
