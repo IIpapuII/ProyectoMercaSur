@@ -1,10 +1,12 @@
 from celery import shared_task
-from .service.upload import update_or_create_articles, send_modified_articles, generar_csv_articulos_modificados, enviar_csv_a_api, marcarArticulosComoNoModificados
+from .service.upload import *
 from appMercaSur.conect import conectar_sql_server, ejecutar_consulta
 from .models import SQLQuery
 import pandas as pd
 import pyodbc
 from django.conf import settings
+
+
 
 @shared_task
 def procesar_articulos_task():
@@ -69,3 +71,16 @@ def procesar_articulos_parze_task():
 
     except Exception as e:
         print(f"🚨 Error en procesar_articulos_task: {e}")
+
+@shared_task
+def actualizar_descuentos_task():
+    """Tarea programada para actualizar los descuentos diarios."""
+    try:
+        print("🔄 Iniciando tarea de actualización de descuentos...")
+        
+        actualizar_descuentos()
+
+        print("✅ Proceso de actualización de descuentos completado.")
+
+    except Exception as e:
+        print(f"🚨 Error en actualizar_descuentos_task: {e}")

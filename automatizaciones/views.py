@@ -3,7 +3,7 @@ from django.http import HttpResponseRedirect
 from django.contrib import messages
 from .form import CSVUploadForm
 import pandas as pd
-from .service.upload import update_or_create_articles, marcarArticulosComoNoModificados, articulosMoficados, send_modified_articles, generar_csv_articulos_modificados, enviar_csv_a_api
+from .service.upload import * 
 # Create your views here.
 from .tasks import procesar_articulos_task, procesar_articulos_parze_task
 def import_from_csv(request):
@@ -24,6 +24,7 @@ def import_from_csv(request):
         return render(request, "admin/import_csv.html", {"form": form})
 
 def index(request):
+    actualizar_descuentos()
     #enviar_csv_a_api()
     #procesar_articulos_parze_task()
     generar_csv_articulos_modificados()

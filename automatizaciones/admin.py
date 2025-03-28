@@ -55,7 +55,7 @@ class DescuentoDiarioResource(resources.ModelResource):
 @admin.register(DescuentoDiario)
 class DescuentoDiarioAdmin(ImportExportModelAdmin):
     resource_class = DescuentoDiarioResource
-    values = ['dia', 'departamento', 'secciones', 'familia', 'ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin', 'destacado','maximo_venta']
+    values = ['dia', 'departamento', 'secciones', 'familia', 'ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin', 'destacado','maximo_venta', 'activo']
     fields = values  
     list_display = values  
     search_fields = ['departamento', 'secciones', 'familia', 'ean']  

@@ -65,6 +65,7 @@ class DescuentoDiario(models.Model):
     fecha_fin = models.DateField(blank=True, null=True, help_text="Fecha hasta la cual es válido el descuento")
     destacado = models.BooleanField(default=False)
     maximo_venta = models.PositiveIntegerField(default=0, help_text="Cantidad máxima de unidades con venta por cliente")
+    activo = models.BooleanField(default=True, help_text="Indica si el descuento está activo o no")
 
     def esta_vigente(self):
         """Devuelve True si el descuento está dentro del rango de fechas."""
