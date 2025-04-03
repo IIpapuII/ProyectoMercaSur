@@ -59,6 +59,7 @@ class DescuentoDiario(models.Model):
     departamento = models.CharField(max_length=200, blank=True, null=True)
     secciones = models.CharField(max_length=200, blank=True, null=True)
     familia = models.CharField(max_length=200, blank=True, null=True)
+    Trademark = models.CharField(max_length=200, blank=True, null=True, verbose_name="Marca")
     ean = models.CharField(max_length=50, blank=True, null=True, unique=True)  # Para descuentos por producto específico
     porcentaje_descuento = models.FloatField(help_text="Ejemplo: 10 para 10% de descuento")
     fecha_inicio = models.DateField(blank=True, null=True, help_text="Fecha desde la cual se aplica el descuento")

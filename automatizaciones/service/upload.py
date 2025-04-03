@@ -32,6 +32,7 @@ def update_or_create_articles(df):
         departamento = str(row.get("Departamento", "")).strip() if not pd.isna(row.get("Departamento")) else ""
         secciones = str(row.get("Secciones", "")).strip() if not pd.isna(row.get("Secciones")) else ""
         familia = str(row.get("Familia", "")).strip() if not pd.isna(row.get("Familia")) else ""
+        trademark = str(row.get("trademark", "")).strip() if not pd.isna(row.get("trademark")) else ""
 
         # Normalizar valores numéricos
         stock = int(row["stock"]) if not pd.isna(row["stock"]) else 0
@@ -75,15 +76,22 @@ def update_or_create_articles(df):
                 aplica_por_departamento = descuento.departamento and descuento.departamento == departamento
                 aplica_por_secciones = descuento.secciones and descuento.secciones == secciones
                 aplica_por_familia = descuento.familia and descuento.familia == familia
+                aplica_por_marca = descuento.Trademark and descuento.Trademark ==  trademark# ✅ Verifica la marca
 
-                if (descuento.departamento and not descuento.secciones and not descuento.familia and aplica_por_departamento) or \
-                   (descuento.departamento and descuento.secciones and not descuento.familia and aplica_por_departamento and aplica_por_secciones) or \
-                   (descuento.departamento and descuento.secciones and descuento.familia and aplica_por_departamento and aplica_por_secciones and aplica_por_familia) or \
-                   (not descuento.departamento and descuento.secciones and not descuento.familia and aplica_por_secciones) or \
-                   (not descuento.departamento and not descuento.secciones and descuento.familia and aplica_por_familia):
+                if (descuento.departamento and not descuento.secciones and not descuento.familia and not descuento.Trademark and aplica_por_departamento) or \
+                    (descuento.departamento and descuento.secciones and not descuento.familia and not descuento.Trademark and aplica_por_departamento and aplica_por_secciones) or \
+                    (descuento.departamento and descuento.secciones and descuento.familia and not descuento.Trademark and aplica_por_departamento and aplica_por_secciones and aplica_por_familia) or \
+                    (not descuento.departamento and descuento.secciones and not descuento.familia and not descuento.Trademark and aplica_por_secciones) or \
+                    (not descuento.departamento and not descuento.secciones and descuento.familia and not descuento.Trademark and aplica_por_familia) or \
+                    (not descuento.departamento and not descuento.secciones and not descuento.familia and descuento.Trademark and aplica_por_marca) or \
+                    (descuento.departamento and descuento.Trademark and not descuento.secciones and not descuento.familia and aplica_por_departamento and aplica_por_marca) or \
+                    (descuento.secciones and descuento.Trademark and not descuento.departamento and not descuento.familia and aplica_por_secciones and aplica_por_marca) or \
+                    (descuento.familia and descuento.Trademark and not descuento.departamento and not descuento.secciones and aplica_por_familia and aplica_por_marca) or \
+                    (descuento.departamento and descuento.secciones and descuento.Trademark and not descuento.familia and aplica_por_departamento and aplica_por_secciones and aplica_por_marca) or \
+                    (descuento.departamento and descuento.secciones and descuento.familia and descuento.Trademark and aplica_por_departamento and aplica_por_secciones and aplica_por_familia and aplica_por_marca): 
+
                     descuento_aplicado = descuento
-                    break  
-        
+                    break 
         # 🔹 Aplicar descuento solo si hay cambios
         nuevo_discount_price = discount_price  # Mantener el precio original
 
