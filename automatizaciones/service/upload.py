@@ -285,7 +285,8 @@ def generar_csv_articulos_modificados():
                 for d in descuentos_dia:
                     if (d.departamento and d.departamento == articulo.departamento) or \
                        (d.secciones and d.secciones == articulo.secciones) or \
-                       (d.familia and d.familia == articulo.familia):
+                       (d.familia and d.familia == articulo.familia)or \
+                        (d.Trademark and d.Trademark == articulo.trademark):
                         descuento = d
                         break  
 
