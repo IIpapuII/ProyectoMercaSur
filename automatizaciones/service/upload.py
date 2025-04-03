@@ -22,7 +22,7 @@ def update_or_create_articles(df):
 
     # Obtener el día actual (0 = Lunes, 6 = Domingo)
     hoy = datetime.today().weekday()
-    descuentos_dia = DescuentoDiario.objects.filter( activo=True)
+    descuentos_dia = DescuentoDiario.objects.filter(activo=True)
 
     for _, row in df.iterrows():
         # Asegurar que los valores sean cadenas antes de aplicar strip()
@@ -260,7 +260,8 @@ def generar_csv_articulos_modificados():
 
             # 🔹 Buscar descuento por EAN, pero solo si está vigente
             descuento = DescuentoDiario.objects.filter(
-                ean=articulo.ean
+                ean=articulo.ean,
+                activo=True,
             ).filter(
                 Q(dia=hoy) |  
                 (Q(fecha_inicio__lte=fecha_hoy) & Q(fecha_fin__gte=fecha_hoy))  
@@ -269,7 +270,8 @@ def generar_csv_articulos_modificados():
             # 🔹 Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
             if not descuento:
                 descuentos_dia = DescuentoDiario.objects.filter(
-                    dia=hoy
+                    dia=hoy,
+                    activo=True,
                 )
 
                 for d in descuentos_dia:
@@ -379,18 +381,34 @@ def actualizar_descuentos():
     hora_actual = ahora.time()
 
     # Solo ejecutamos la lógica si la hora es 5:30 PM o después
-    if hora_actual < time(17, 30):
+    if hora_actual > time(17, 30):
         return  
+
+    # 🚫 2. Desactivar descuentos incorrectamente activos (no corresponden al día actual)
+    dia_hoy = fecha_hoy.weekday()  # 0 = Lunes, 6 = Domingo
+    descuentos_mal_activados = DescuentoDiario.objects.filter(
+        activo=True
+    ).exclude(dia=dia_hoy)  # Excluimos los que sí son del día correcto
+    count_mal_activados = descuentos_mal_activados.update(activo=False)
+    print(f"Desactivados {count_mal_activados} descuentos que estaban activos en días incorrectos.")
 
     # 🚫 1. Desactivar descuentos vencidos (los que ya pasaron su fecha_fin)
     descuentos_vencidos = DescuentoDiario.objects.filter(
         activo=True,
-        fecha_fin__lt=fecha_hoy  # Descuentos que terminaron antes de hoy
+        fecha_fin__lte=fecha_hoy  # Desactiva los descuentos que terminan hoy o antes
     )
-    count_vencidos = descuentos_vencidos.update(activo=False)
-    print(f"Desactivados {count_vencidos} descuentos vencidos antes del {fecha_hoy}.")
+    descuentos_terminan_hoy = DescuentoDiario.objects.filter(
+        activo=True,
+        fecha_fin=fecha_hoy
+    )
+    if hora_actual >= time(17, 30):  # Solo desactivar si ya son las 5:30 PM
+        count_terminan_hoy = descuentos_terminan_hoy.update(activo=False)
+        print(f"Desactivados {count_terminan_hoy} descuentos que terminaban hoy {fecha_hoy} a las 5:30 PM.")
 
-    # 🚫 2. Desactivar descuentos del día actual (día de la semana)
+    count_vencidos = descuentos_vencidos.update(activo=False)
+    print(f"Desactivados {count_vencidos} descuentos vencidos hasta {fecha_hoy}.")
+
+
     dia_hoy = fecha_hoy.weekday()  # 0 = Lunes, 6 = Domingo
     descuentos_dia_hoy = DescuentoDiario.objects.filter(
         dia=dia_hoy,
@@ -399,13 +417,29 @@ def actualizar_descuentos():
     count_dia_hoy = descuentos_dia_hoy.update(activo=True)
     print(f"Desactivados {count_dia_hoy} descuentos del día {dia_hoy}.")
 
-    # ✅ 3. Solo activar descuentos si ya terminó el día actual
-    dia_siguiente = (dia_hoy + 1) % 7  # Si hoy es domingo (6), el siguiente es lunes (0)
+    # ✅ 3. Activar descuentos con fecha de inicio mañana
+    fecha_manana = fecha_hoy + timedelta(days=1)
+    descuentos_fecha_manana = DescuentoDiario.objects.filter(
+        activo=False,
+        fecha_inicio=fecha_manana
+    )
+    count_fecha_manana = descuentos_fecha_manana.update(activo=True)
+    print(f"Activados {count_fecha_manana} descuentos con fecha de inicio {fecha_manana}.")
 
-    if hora_actual >= time(17, 40):  # Asegurar que solo se active después de las 5:30 PM
+    # ✅ 5. Buscar el próximo día con descuentos y activarlo solo cuando corresponda
+    dia_siguiente = (dia_hoy + 1) % 7  # Día inmediato siguiente
+
+    # Buscar el próximo día con descuentos
+    while not DescuentoDiario.objects.filter(dia=dia_siguiente).exists():
+        dia_siguiente = (dia_siguiente + 1) % 7  # Buscar el próximo día con descuentos
+    
+    # 🚨 Solo activar si estamos en el día anterior al próximo día con descuentos
+    if dia_siguiente == (dia_hoy - 1) % 7:
         descuentos_dia_siguiente = DescuentoDiario.objects.filter(
-            dia=dia_siguiente,
-            activo=False  # Solo activar los que están inactivos
+            activo=False,
+            dia=dia_siguiente
         )
         count_dia_siguiente = descuentos_dia_siguiente.update(activo=True)
         print(f"Activados {count_dia_siguiente} descuentos del día {dia_siguiente}.")
+    else:
+        print(f"No se activan descuentos. Esperando hasta el día anterior al día {dia_siguiente}.")
