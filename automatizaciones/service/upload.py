@@ -168,6 +168,12 @@ def articulosMoficados():
         Q(~Q(store_id="900175315"), modificado=True, price__gt=0)  # ✅ Todos los demás con el mismo filtro excepto tarifa
     )
 
+def articulosModificadosTotal():
+        return Articulos.objects.filter(
+        Q(store_id="900175315", tarifa=1, price__gt=0) |  # ✅ store_id específico con tarifa = 1
+        Q(~Q(store_id="900175315"), price__gt=0)  # ✅ Todos los demás con el mismo filtro excepto tarifa
+    )
+
 def marcarArticulosComoNoModificados():
     Articulos.objects.update(modificado=False)
 
@@ -239,6 +245,71 @@ def send_modified_articles():
             print(f"🚨 Error al enviar datos a Rappi para store_id {store_id}: {e}")
             APILogRappi.objects.create(store_id=store_id, status_code=500, response_text=str(e))
 
+def send_modified_articles_total():
+    """Envía los artículos modificados a la API de Rappi por cada store_id."""
+    API_URL = settings.API_URLRAPPI
+    API_ENDPOINT = settings.API_ENDPOINTRAPPI
+    API_KEY = settings.API_KEYRAPPI
+
+    print(API_URL)
+    # Obtener artículos con cambios
+    modified_articles = articulosModificadosTotal()
+
+    if not modified_articles.exists():
+        print("✅ No hay artículos modificados para enviar.")
+        APILogRappi.objects.create(store_id="all", status_code=200, response_text="No hay artículos modificados para enviar.")
+        return
+
+    # Agrupar artículos por store_id
+    articles_by_store = defaultdict(list)
+    for article in modified_articles:
+        articles_by_store[article.store_id].append({
+            "id": str(article.id_articulo),
+            "store_id": str(article.store_id),
+            "ean": str(article.ean),
+            "name": article.name,
+            "description": article.description,
+            "trademark": article.trademark,
+            "price": float(article.price),
+            "discount_price": float(article.discount_price) if article.discount_price else 0.0,
+            "stock": int(article.stock),
+            "sale_type": article.sale_type,
+            "is_available": bool(article.is_available)
+        })
+
+    for store_id, records in articles_by_store.items():
+        print(f"📤 Enviando {len(records)} artículos para store_id: {store_id}")
+
+        payload = json.dumps({
+            "type": "full",
+            "records": records
+        })
+
+        headers = {
+            "Content-Type": "application/json",
+            "api_key": API_KEY
+        }
+
+        try:
+            conn = http.client.HTTPSConnection(API_URL)
+            conn.request("POST", API_ENDPOINT, payload, headers)
+            response = conn.getresponse()
+            result = response.read().decode("utf-8")
+
+            print(f"📤 Respuesta API para store_id {store_id}: {result}")
+
+            if response.status in [200, 201]:
+                # Si la respuesta es correcta, marcar los artículos de esta tienda como no modificados
+                Articulos.objects.filter(store_id=store_id, modificado=True).update(modificado=False)
+                print(f"✅ Artículos de store_id {store_id} actualizados y marcados como no modificados.")
+                APILogRappi.objects.create(store_id=store_id, status_code=response.status, response_text=result)
+            else:
+                print(f"⚠️ Error en la API para store_id {store_id} (status {response.status}): {result}")
+                APILogRappi.objects.create(store_id=store_id, status_code=response.status, response_text=result)
+
+        except Exception as e:
+            print(f"🚨 Error al enviar datos a Rappi para store_id {store_id}: {e}")
+            APILogRappi.objects.create(store_id=store_id, status_code=500, response_text=str(e))
 
 def generar_csv_articulos_modificados():
     """
@@ -251,10 +322,15 @@ def generar_csv_articulos_modificados():
 
     # Filtrar solo artículos modificados con ciertas condiciones
     articulos = Articulos.objects.filter(modificado=True, store_id=900175315, tarifa=4, price__gt=0)
-
+    ahora = datetime.now()
+    hora_actual = ahora.time()
     # Obtener el día actual (0 = Lunes, 6 = Domingo)
-    hoy = datetime.today().weekday()
-    fecha_hoy = date.today()
+    if hora_actual > time(17,30):
+        hoy = (datetime.today().weekday() + 1) % 7
+        fecha_hoy = date.today() + timedelta(days=1)
+    else:
+        hoy = datetime.today().weekday()
+        fecha_hoy = date.today()
 
     with open(ruta_csv, mode="w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)
@@ -385,48 +461,36 @@ def enviar_csv_a_api():
 
 def actualizar_descuentos():
     """Desactiva descuentos vencidos y activa los del día siguiente en el momento correcto."""
-    ahora = now()
+    ahora = datetime.now()
     fecha_hoy = ahora.date()
     hora_actual = ahora.time()
 
     # Solo ejecutamos la lógica si la hora es 5:30 PM o después
-    if hora_actual > time(17, 30):
-        return  
+    if hora_actual < time(17, 30):
+        print("No ingreso al proceso")
+        return
 
-    # 🚫 2. Desactivar descuentos incorrectamente activos (no corresponden al día actual)
-    dia_hoy = fecha_hoy.weekday()  # 0 = Lunes, 6 = Domingo
-    descuentos_mal_activados = DescuentoDiario.objects.filter(
-        activo=True
-    ).exclude(dia=dia_hoy)  # Excluimos los que sí son del día correcto
-    count_mal_activados = descuentos_mal_activados.update(activo=False)
-    print(f"Desactivados {count_mal_activados} descuentos que estaban activos en días incorrectos.")
-
-    # 🚫 1. Desactivar descuentos vencidos (los que ya pasaron su fecha_fin)
+    # 1. Desactivar descuentos vencidos (los que ya pasaron su fecha_fin)
     descuentos_vencidos = DescuentoDiario.objects.filter(
         activo=True,
-        fecha_fin__lte=fecha_hoy  # Desactiva los descuentos que terminan hoy o antes
+        fecha_fin__lt=fecha_hoy  # Desactiva los descuentos que terminaron antes de hoy
     )
-    descuentos_terminan_hoy = DescuentoDiario.objects.filter(
-        activo=True,
-        fecha_fin=fecha_hoy
-    )
-    if hora_actual >= time(17, 30):  # Solo desactivar si ya son las 5:30 PM
-        count_terminan_hoy = descuentos_terminan_hoy.update(activo=False)
-        print(f"Desactivados {count_terminan_hoy} descuentos que terminaban hoy {fecha_hoy} a las 5:30 PM.")
-
     count_vencidos = descuentos_vencidos.update(activo=False)
     print(f"Desactivados {count_vencidos} descuentos vencidos hasta {fecha_hoy}.")
 
-
+    # 2. Desactivar descuentos incorrectamente activos (no corresponden al día actual)
     dia_hoy = fecha_hoy.weekday()  # 0 = Lunes, 6 = Domingo
-    descuentos_dia_hoy = DescuentoDiario.objects.filter(
-        dia=dia_hoy,
+    descuentos_mal_activados = DescuentoDiario.objects.filter(
         activo=True,
+        dia__lt=dia_hoy  # Excluimos los que sí son del día correcto
+    ).exclude(
+        fecha_inicio__lte=fecha_hoy,
+        fecha_fin__gte=fecha_hoy
     )
-    count_dia_hoy = descuentos_dia_hoy.update(activo=True)
-    print(f"Desactivados {count_dia_hoy} descuentos del día {dia_hoy}.")
+    count_mal_activados = descuentos_mal_activados.update(activo=False)
+    print(f"Desactivados {count_mal_activados} descuentos que estaban activos en días incorrectos.")
 
-    # ✅ 3. Activar descuentos con fecha de inicio mañana
+    # 3. Activar descuentos con fecha de inicio mañana
     fecha_manana = fecha_hoy + timedelta(days=1)
     descuentos_fecha_manana = DescuentoDiario.objects.filter(
         activo=False,
@@ -435,15 +499,15 @@ def actualizar_descuentos():
     count_fecha_manana = descuentos_fecha_manana.update(activo=True)
     print(f"Activados {count_fecha_manana} descuentos con fecha de inicio {fecha_manana}.")
 
-    # ✅ 5. Buscar el próximo día con descuentos y activarlo solo cuando corresponda
+    # 4. Activar descuentos del próximo día con descuentos
     dia_siguiente = (dia_hoy + 1) % 7  # Día inmediato siguiente
 
     # Buscar el próximo día con descuentos
     while not DescuentoDiario.objects.filter(dia=dia_siguiente).exists():
         dia_siguiente = (dia_siguiente + 1) % 7  # Buscar el próximo día con descuentos
-    
-    # 🚨 Solo activar si estamos en el día anterior al próximo día con descuentos
-    if dia_siguiente == (dia_hoy - 1) % 7:
+
+    # Solo activar si estamos en el día anterior al próximo día con descuentos
+    if dia_siguiente == (dia_hoy + 1) % 7:
         descuentos_dia_siguiente = DescuentoDiario.objects.filter(
             activo=False,
             dia=dia_siguiente
@@ -452,3 +516,20 @@ def actualizar_descuentos():
         print(f"Activados {count_dia_siguiente} descuentos del día {dia_siguiente}.")
     else:
         print(f"No se activan descuentos. Esperando hasta el día anterior al día {dia_siguiente}.")
+
+    # 5. Mantener activos los descuentos que aún están dentro de su rango de fechas
+    descuentos_activos_validos = DescuentoDiario.objects.filter(
+        activo=True,
+        fecha_inicio__lte=fecha_hoy,
+        fecha_fin__gte=fecha_hoy
+    )
+    count_activos_validos = descuentos_activos_validos.count()
+    print(f"{count_activos_validos} descuentos permanecen activos porque están dentro de su rango de fechas.")
+
+    if hora_actual > time(17, 30):
+        descuentos_activos_validos = DescuentoDiario.objects.filter(
+           activo=True,
+           fecha_fin = fecha_hoy 
+        )
+        count_activos_validos = descuentos_activos_validos.update(activo=False)
+        print("Se desactivan Descuentos")
