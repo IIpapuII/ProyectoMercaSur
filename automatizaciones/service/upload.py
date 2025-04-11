@@ -531,5 +531,10 @@ def actualizar_descuentos():
            activo=True,
            fecha_fin = fecha_hoy 
         )
+        descuentos_hoy_validos = DescuentoDiario.objects.filter(
+            activo=True,
+            dia=dia_hoy
+        )
+        count_hoy_validos = descuentos_hoy_validos.update(activo=False)
         count_activos_validos = descuentos_activos_validos.update(activo=False)
         print("Se desactivan Descuentos")
