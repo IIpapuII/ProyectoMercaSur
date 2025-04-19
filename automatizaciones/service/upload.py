@@ -202,13 +202,14 @@ def send_modified_articles():
             "store_id": str(article.store_id),
             "ean": str(article.ean),
             "name": article.name,
-            "description": article.description,
             "trademark": article.trademark,
+            "description": article.description,
             "price": float(article.price),
             "discount_price": float(article.discount_price) if article.discount_price else 0.0,
             "stock": int(article.stock),
             "sale_type": article.sale_type,
-            "is_available": bool(article.is_available)
+            "is_available": bool(article.is_available),
+            "image_url":""
         })
 
     for store_id, records in articles_by_store.items():
@@ -217,8 +218,11 @@ def send_modified_articles():
         payload = json.dumps({
             "type": "delta",
             "records": records
-        })
-
+        }, indent=4, ensure_ascii=False)
+        file = os.path.join(settings.MEDIA_ROOT, "exports")
+        filename = os.path.join(file, f"payload_{store_id}.json" )
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(payload)
         headers = {
             "Content-Type": "application/json",
             "api_key": API_KEY
@@ -268,13 +272,14 @@ def send_modified_articles_total():
             "store_id": str(article.store_id),
             "ean": str(article.ean),
             "name": article.name,
-            "description": article.description,
             "trademark": article.trademark,
+            "description": article.description,
             "price": float(article.price),
             "discount_price": float(article.discount_price) if article.discount_price else 0.0,
             "stock": int(article.stock),
             "sale_type": article.sale_type,
-            "is_available": bool(article.is_available)
+            "is_available": bool(article.is_available),
+            "image_url":""
         })
 
     for store_id, records in articles_by_store.items():
@@ -283,8 +288,11 @@ def send_modified_articles_total():
         payload = json.dumps({
             "type": "full",
             "records": records
-        })
-
+        },indent=4, ensure_ascii=False)
+        file = os.path.join(settings.MEDIA_ROOT, "exports")
+        filename = os.path.join(file, f"payload_{store_id}.json" )
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(payload)
         headers = {
             "Content-Type": "application/json",
             "api_key": API_KEY
