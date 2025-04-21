@@ -8,7 +8,7 @@ class RegistroCliente(models.Model):
     numero_documento = models.CharField(max_length=50)
     fecha_nacimiento = models.DateField()
     correo = models.EmailField()
-    telefono = models.CharField(max_length=20, blank=True)
+    telefono = models.CharField(max_length=20, blank=True, null=True)
     celular = models.CharField(max_length=20)
     tipo_via = models.CharField(max_length=50)
     direccion = models.CharField(max_length=255)
@@ -18,7 +18,8 @@ class RegistroCliente(models.Model):
     mascota = models.CharField(max_length=50, choices=[
         ('perro', 'Perro'),
         ('gato', 'Gato'),
-        ('otro', 'Otro')
+        ('otro', 'Otro'),
+        ('ninguna', 'Ninguna')
     ])
     otra_mascota = models.CharField(max_length=100, blank=True)
 
@@ -32,12 +33,16 @@ class RegistroCliente(models.Model):
     acepto_politica = models.BooleanField(default=False)
 
     ip_usuario = models.GenericIPAddressField(null=True, blank=True)
-    logitud = models.FloatField(null=True, blank=True)
+    longitud = models.FloatField(null=True, blank=True)
     latitud = models.FloatField(null=True, blank=True)
     firma_base64 = models.TextField(blank=True)  # Aquí se guarda la imagen como base64
 
     fecha_registro = models.DateTimeField(auto_now_add=True)
     fidelizacion = models.BooleanField(default=False)
+    tipocliente = models.CharField(max_length=50, null=True, blank=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True)
+    Actualizado = models.BooleanField(default=False)
+    creadoICG = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.primer_nombre} {self.primer_apellido}"

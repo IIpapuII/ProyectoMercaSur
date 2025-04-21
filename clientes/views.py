@@ -38,6 +38,7 @@ class RegistroFormularioAPIView(APIView):
         try:
             cliente = self.get_object()
             serializer = RegistroClienteSerializer(cliente, data=request.data, partial=True)
+            print(f"Datos recibidos para actualizar: {request.data}")
             if serializer.is_valid():
                 serializer.save()
                 return Response({'mensaje': 'Cliente actualizado correctamente'}, status=status.HTTP_200_OK)
