@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'clientes',
     'rest_framework',
     'corsheaders',
+    'django_extensions',
 ]
 
 CORS_ALLOWED_ORIGINS = [
