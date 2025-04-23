@@ -1,9 +1,10 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .api.serializers import RegistroClienteSerializer
+from .api.serializers import RegistroClienteSerializer, ZonaPermitidaSerializer
 from django.shortcuts import get_object_or_404
-from .models import RegistroCliente
+from .models import RegistroCliente , ZonaPermitida
+from rest_framework import generics, permissions
 
 class RegistroFormularioAPIView(APIView):
     def post(self, request):
@@ -60,3 +61,13 @@ class RegistroFormularioAPIView(APIView):
             }, status=status.HTTP_200_OK)
         else:
             return Response({'existe': False}, status=status.HTTP_200_OK)
+
+
+class ZonaPermitidaListView(generics.ListAPIView):
+    """
+    Vista de API para listar todas las Zonas Permitidas *activas*.
+    """
+    serializer_class = ZonaPermitidaSerializer
+    permission_classes = [permissions.AllowAny] 
+    def get_queryset(self):
+        return ZonaPermitida.objects.filter(activa=True)

@@ -52,3 +52,51 @@ class RegistroCliente(models.Model):
         db_table = 'RegistroCliente'
         unique_together = ('numero_documento',)
         ordering = ['-fecha_registro']
+
+class ZonaPermitida(models.Model):
+    """
+    Representa una zona geográfica permitida definida por un punto central
+    (latitud/longitud) y un radio máximo.
+    """
+    nombre = models.CharField(
+        max_length=100,
+        verbose_name="Nombre Descriptivo",
+        help_text="Un nombre para identificar fácilmente la zona (ej: 'Oficina Principal', 'Almacén Norte')"
+    )
+    latitude = models.FloatField(
+        verbose_name="Latitud",
+        help_text="Coordenada de latitud del centro de la zona (grados decimales)."
+    )
+    longitude = models.FloatField(
+        verbose_name="Longitud",
+        help_text="Coordenada de longitud del centro de la zona (grados decimales)."
+    )
+    max_distance = models.PositiveIntegerField(
+        verbose_name="Distancia Máxima (Metros)",
+        help_text="Radio máximo permitido en metros desde el punto central."
+    )
+    activa = models.BooleanField(
+        default=True,
+        verbose_name="Zona Activa",
+        help_text="Desmarca para desactivar esta zona sin borrarla."
+    )
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Zona Permitida"
+        verbose_name_plural = "Zonas Permitidas"
+        ordering = ['nombre'] 
+
+    def __str__(self):
+        return f"{self.nombre} ({self.latitude}, {self.longitude}) - {self.max_distance}m"
+
+class barrio(models.Model):
+    """
+    Representa un barrio o localidad en una ciudad.
+    """
+    nombre = models.CharField(max_length=100, unique=True)
+    ciudad = models.CharField(max_length=100)
+
+    def __str__(self):
+        return f"{self.nombre}, {self.ciudad}"

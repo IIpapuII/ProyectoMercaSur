@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import RegistroCliente
+from .models import RegistroCliente, ZonaPermitida
 # Register your models here.
 
 @admin.register(RegistroCliente)
@@ -18,4 +18,16 @@ class RegistroClienteAdmin(admin.ModelAdmin):
     list_filter = ('mascota', 'preferencias_email', 'preferencias_whatsapp', 'preferencias_sms')
     ordering = ('-fecha_registro',)
     date_hierarchy = 'fecha_registro'
+    list_per_page = 20
+
+@admin.register(ZonaPermitida)
+class ZonaPermitidaAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'latitude',
+        'longitude',
+        'max_distance',
+    )
+    search_fields = ('latitude', 'longitude')
+    ordering = ('id',)
     list_per_page = 20
