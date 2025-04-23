@@ -65,7 +65,8 @@ INSTALLED_APPS = [
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173", 
-    "http://127.0.0.1:5173" # Puerto por defecto de Vite en Vue 3
+    "http://127.0.0.1:5173",
+    "https://fronted-mercasur.vercel.app"# Puerto por defecto de Vite en Vue 3
 ]
 
 MIDDLEWARE = [

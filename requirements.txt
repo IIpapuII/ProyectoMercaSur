@@ -13,9 +13,11 @@ defusedxml==0.7.1
 diff-match-patch==20241021
 Django==4.2.20
 django-celery-beat==2.7.0
+django-cors-headers==4.7.0
 django-import-export==4.3.7
 django-jazzmin==3.0.1
 django-timezone-field==7.1
+djangorestframework==3.16.0
 et_xmlfile==2.0.0
 gunicorn==23.0.0
 idna==3.10
