@@ -70,7 +70,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://fronted-mercasur.vercel.app",
     "http://181.204.212.122:9180",
     "http://notificaciones.mercasur.com.co",
-    "https://notificaciones.mercasur.com.co",
+    "https://notificaciones.mercasur.com.co:9180",
 ]
 
 MIDDLEWARE = [
