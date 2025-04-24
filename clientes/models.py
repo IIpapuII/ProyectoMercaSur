@@ -96,7 +96,7 @@ class barrio(models.Model):
     Representa un barrio o localidad en una ciudad.
     """
     nombre = models.CharField(max_length=100, unique=True)
-    ciudad = models.CharField(max_length=100)
+    ciudad = models.CharField(max_length=100, null=True, blank=True)
 
     def __str__(self):
         return f"{self.nombre}, {self.ciudad}"

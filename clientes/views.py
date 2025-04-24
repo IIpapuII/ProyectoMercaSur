@@ -1,9 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .api.serializers import RegistroClienteSerializer, ZonaPermitidaSerializer
+from .api.serializers import RegistroClienteSerializer, ZonaPermitidaSerializer, barrioSerializer
 from django.shortcuts import get_object_or_404
-from .models import RegistroCliente , ZonaPermitida
+from .models import RegistroCliente , ZonaPermitida, barrio
 from rest_framework import generics, permissions
 
 class RegistroFormularioAPIView(APIView):
@@ -71,3 +71,9 @@ class ZonaPermitidaListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny] 
     def get_queryset(self):
         return ZonaPermitida.objects.filter(activa=True)
+
+class barrioListView(generics.ListAPIView):
+    serializer_class = barrioSerializer
+    permission_classes = [permissions.AllowAny]
+    def get_queryset(self):
+        return barrio.objects.all()
