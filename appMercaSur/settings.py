@@ -58,6 +58,16 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'automatizaciones',
     'import_export',
+    'clientes',
+    'rest_framework',
+    'corsheaders',
+    'django_extensions',
+]
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173", 
+    "http://127.0.0.1:5173",
+    "https://fronted-mercasur.vercel.app"# Puerto por defecto de Vite en Vue 3
 ]
 
 MIDDLEWARE = [
@@ -69,6 +79,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
 ]
 
 ROOT_URLCONF = 'appMercaSur.urls'
