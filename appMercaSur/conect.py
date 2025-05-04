@@ -39,3 +39,15 @@ def ejecutar_consulta(conexion, consulta):
     except pyodbc.Error as e:
         print(f"⚠️ Error en consulta: {str(e)}")
         return None
+
+def ejecutar_consulta_data(conexion, consulta):
+    """Ejecuta la consulta en SQL Server y retorna los resultados en un DataFrame."""
+    try:
+        cursor = conexion.cursor()
+        cursor.execute(consulta)
+        datos = cursor.fetchall() 
+        return datos
+
+    except pyodbc.Error as e:
+        print(f"⚠️ Error en consulta: {str(e)}")
+        return None

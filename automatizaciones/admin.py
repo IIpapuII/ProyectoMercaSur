@@ -72,6 +72,9 @@ class DescuentoDiarioResource(resources.ModelResource):
         skip_unchanged = True  
         report_skipped = True  
 
+    def before_save_instance(self, instance, row, **kwargs):  # CORREGIDO
+        instance.activo = True
+
 @admin.register(DescuentoDiario)
 class DescuentoDiarioAdmin(ImportExportModelAdmin):
     resource_class = DescuentoDiarioResource
