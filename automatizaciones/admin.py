@@ -17,8 +17,28 @@ class SQLQueryAdmin(admin.ModelAdmin):
     list_display = values
     search_fields = values
 
+class ArticulosResource(resources.ModelResource):
+    ean = fields.Field(column_name='ean', attribute='ean')
+    name = fields.Field(column_name='name', attribute='name')
+    trademark = fields.Field(column_name='trademark', attribute='trademark')
+    price = fields.Field(column_name='price', attribute='price')
+    stock = fields.Field(column_name='stock', attribute='stock')
+    sale_type = fields.Field(column_name='sale_type', attribute='sale_type')
+    discount_price = fields.Field(column_name='discount_price', attribute='discount_price')
+    is_available = fields.Field(column_name='is_available', attribute='is_available')
+
+    class Meta:
+        model = Articulos
+        formats = [XLS, XLSX]
+        import_id_fields = ['ean']  
+        fields = ['store_id','ean', 'name', 'trademark', 'price', 'stock', 'sale_type', 'discount_price', 'is_available','tarifa','departamento','secciones','familia','subfamilia','code']
+        export_order = ['store_id','ean', 'name', 'trademark', 'price', 'stock', 'sale_type', 'discount_price', 'is_available','tarifa','departamento','secciones','familia','subfamilia','code']
+        skip_unchanged = True  
+        report_skipped = True
+
 @admin.register(Articulos)
-class ArticulosAdmin(admin.ModelAdmin):
+class ArticulosAdmin(ImportExportModelAdmin):
+    resource_class = ArticulosResource
     values = ['id_articulo','store_id','ean','name','trademark','price','stock','sale_type','discount_price','is_available','code']
     fields = ['id_articulo','store_id','name','trademark','description','price','discount_price','stock','sale_type','is_available','departamento','secciones','familia','subfamilia','code','image']
     list_display = values
@@ -51,6 +71,9 @@ class DescuentoDiarioResource(resources.ModelResource):
         export_order = ['ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin', 'destacado','maximo_venta']
         skip_unchanged = True  
         report_skipped = True  
+
+    def before_save_instance(self, instance, row, **kwargs):  # CORREGIDO
+        instance.activo = True
 
 @admin.register(DescuentoDiario)
 class DescuentoDiarioAdmin(ImportExportModelAdmin):

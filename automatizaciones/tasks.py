@@ -39,7 +39,7 @@ def procesar_articulos_task():
     except Exception as e:
         print(f"🚨 Error en procesar_articulos_task: {e}")
 
-@shared_task
+@shared_task()
 def procesar_articulos_task_total():
     """Tarea programada para actualizar y enviar artículos modificados."""
     try:
@@ -110,7 +110,29 @@ def actualizar_descuentos_task():
         print("🔄 Iniciando tarea de actualización de descuentos...")
         
         actualizar_descuentos()
+        print("🔄 Iniciando tarea de procesamiento de artículos...")
+        
+        conexion = conectar_sql_server()
 
+        # 2️⃣ Obtener la consulta desde el modelo SQLQuery
+        consulta = SQLQuery.objects.filter(pk=2).first()
+        if not consulta:
+            print("⚠️ No hay consultas activas.")
+            return
+
+        # 3️⃣ Ejecutar la consulta
+        df = ejecutar_consulta(conexion, consulta.consulta)
+        if df is None:
+            print("⚠️ No se pudo ejecutar la consulta.")
+            return
+
+        # 5️⃣ Actualizar o crear artículos
+        update_or_create_articles(df)
+        generar_csv_articulos_modificados()
+        enviar_csv_a_api()
+        print("Enviado")
+        send_modified_articles()
+        marcarArticulosComoNoModificados()
         print("✅ Proceso de actualización de descuentos completado.")
 
     except Exception as e:
