@@ -184,7 +184,7 @@ def actualizar_estado_envio(envio_id, nuevo_estado, error_msg=None, task_id=None
          # Podrías querer reintentar la tarea aquí si es un error de bloqueo temporal
 
 # Nombre de la tarea
-TASK_NAME = 'automatizaciones.tasks.procesar_y_enviar_correo_task' # AJUSTA 'tu_app'
+TASK_NAME = 'automatizaciones.tasks.procesar_y_enviar_correo_task' 
 
 # --- Tarea Principal (Modificada) ---
 @shared_task(bind=True, name=TASK_NAME, max_retries=2, default_retry_delay=180)
@@ -217,8 +217,7 @@ def procesar_y_enviar_correo_task(self, envio_id):
                 conexion_db = conectar_sql_server() # Llama a tu función para conectar
 
                 # --- Obtener el SQL de tu modelo ---
-                # Asume que tu modelo SQLQuery tiene un campo 'query_sql'
-                consulta_sql_string = envio.consulta.query_sql # ¡¡¡ AJUSTA ESTO !!!
+                consulta_sql_string = envio.consulta.consulta 
                 if not consulta_sql_string:
                     raise ValueError(f"La consulta SQL en SQLQuery ID {envio.consulta.pk} está vacía.")
 
@@ -249,7 +248,6 @@ def procesar_y_enviar_correo_task(self, envio_id):
         # --- 2. Enviar Correo usando tu función ---
         # (Renderizado y envío ahora dentro de enviar_correo_renderizado)
         print(f"Tarea {task_id}: Llamando a enviar_correo_renderizado para envío {envio_id}")
-        actualizar_estado_envio(envio_id, 'ENVIANDO') # Marcar justo antes
 
         try:
             envio_exitoso = enviar_correo_renderizado(
@@ -262,7 +260,6 @@ def procesar_y_enviar_correo_task(self, envio_id):
             if envio_exitoso:
                 print(f"Tarea {task_id}: Correo {envio_id} marcado como enviado por la función helper.")
                 final_state = 'ACTIVO' if envio.activo else 'INACTIVO'
-                actualizar_estado_envio(envio_id, final_state, fecha_envio=timezone.now())
                 return f"Enviado: {envio_id}"
             else:
                  # Si la función devuelve False pero no lanza excepción (ej. no destinatarios)
@@ -271,7 +268,6 @@ def procesar_y_enviar_correo_task(self, envio_id):
         except (TemplateSyntaxError, ValueError) as e_render:
              # Error específico de plantilla capturado desde la función helper
              print(f"Error Tarea {task_id}: Error de plantilla detectado para envío {envio_id}. Error: {e_render}")
-             actualizar_estado_envio(envio_id, 'ERROR_TEMPLATE', error_msg=e_render)
              raise Ignore() # No reintentar
         except Exception as e_envio:
              # Captura errores de envío (SMTP, etc.) o el Exception del helper
@@ -289,15 +285,13 @@ def procesar_y_enviar_correo_task(self, envio_id):
         try:
             print(f"Tarea {task_id}: Reintento {self.request.retries + 1}/{self.max_retries} para envío {envio_id}")
             original_state = 'ACTIVO' if envio and envio.activo else 'INACTIVO'
-            actualizar_estado_envio(envio_id, original_state, error_msg=e_general)
+
             raise self.retry(exc=e_general)
         except self.MaxRetriesExceededError:
             print(f"Tarea {task_id}: Máximos reintentos alcanzados para envío {envio_id}. Marcando como ERROR_ENVIO.")
-            actualizar_estado_envio(envio_id, 'ERROR_ENVIO', error_msg=e_general)
             return f"Error final envío: {envio_id}"
         except Exception as e_retry:
              print(f"Tarea {task_id}: Error inesperado durante reintento para {envio_id}. Error: {e_retry}")
-             actualizar_estado_envio(envio_id, 'ERROR_ENVIO', error_msg=e_retry)
              return f"Error en reintento: {envio_id}"
     finally:
         # Asegurarse de cerrar la conexión si sigue abierta por alguna razón

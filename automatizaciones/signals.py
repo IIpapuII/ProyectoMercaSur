@@ -15,7 +15,7 @@ from .models import CorreoEnviado
 # --- ¡¡IMPORTANTE!! Define el nombre completo de tu tarea de procesamiento ---
 # Debe coincidir exactamente con el nombre registrado por Celery (usualmente 'nombre_app.tasks.nombre_funcion')
 # Reemplaza 'tu_app' con el nombre real de tu aplicación Django.
-TASK_NAME_PROCESAR_ENVIO = 'tu_app.tasks.procesar_y_enviar_correo_task'
+TASK_NAME_PROCESAR_ENVIO = 'automatizaciones.tasks.procesar_y_enviar_correo_task'
 
 @receiver(post_save, sender=CorreoEnviado)
 def crear_o_actualizar_tarea_periodica_signal(sender, instance, created, **kwargs):
