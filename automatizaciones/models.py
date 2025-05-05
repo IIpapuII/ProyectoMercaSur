@@ -183,7 +183,7 @@ class CorreoEnviado(models.Model):
     consulta = models.ForeignKey(SQLQuery, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Consulta SQL Origen")
     asunto = models.CharField(max_length=255, verbose_name="Asunto")
     destinatarios = models.TextField(help_text="Correos separados por coma (,).", verbose_name="Destinatarios")
-    cuerpo_html = models.TextField(help_text="Correos separados por coma (,).", verbose_name="Destinatarios")
+    cuerpo_html = models.TextField(help_text="Se debe hacer uso de django template para pasar la información", verbose_name="Cuerpo html")
     crontab = models.ForeignKey(
         CrontabSchedule, on_delete=models.PROTECT, null=True, blank=True,
         verbose_name="Horario Crontab",
