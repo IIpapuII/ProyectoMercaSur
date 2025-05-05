@@ -1,26 +1,31 @@
 from django.db import models
 
 class RegistroCliente(models.Model):
+    codcliente = models.IntegerField(blank=True, null=True)
     primer_apellido = models.CharField(max_length=100)
-    segundo_apellido = models.CharField(max_length=100, blank=True)
+    segundo_apellido = models.CharField(max_length=100, blank=True, null=True)
     primer_nombre = models.CharField(max_length=100)
-    segundo_nombre = models.CharField(max_length=100, blank=True)
+    segundo_nombre = models.CharField(max_length=100, blank=True, null=True)
     numero_documento = models.CharField(max_length=50)
     fecha_nacimiento = models.DateField()
-    correo = models.EmailField()
+    correo = models.EmailField(blank=True, null=True)
     telefono = models.CharField(max_length=20, blank=True, null=True)
-    celular = models.CharField(max_length=20)
-    tipo_via = models.CharField(max_length=50)
-    direccion = models.CharField(max_length=255)
-    barrio = models.CharField(max_length=100)
-    ciudad = models.CharField(max_length=100)
-
+    celular = models.CharField(max_length=20,blank=True, null=True)
+    tipo_via = models.CharField(max_length=50,blank=True, null=True)
+    direccion = models.CharField(max_length=255,blank=True, null=True)
+    barrio = models.CharField(max_length=100,blank=True, null=True)
+    ciudad = models.CharField(max_length=100,blank=True, null=True)
+    genero = models.CharField(max_length=50, choices=[
+        ('MUJER', 'Mujer'),
+        ('HOMBRE', 'Hombre'),
+        ('NO APLICA', 'No Aplica')
+    ], blank=True, null=True)
     mascota = models.CharField(max_length=50, choices=[
-        ('perro', 'Perro'),
-        ('gato', 'Gato'),
-        ('otro', 'Otro'),
-        ('ninguna', 'Ninguna')
-    ])
+        ('PERRO', 'Perro'),
+        ('GATO', 'Gato'),
+        ('OTROS', 'Otro'),
+        ('NO APLICA', 'Ninguna')
+    ], blank=True)
     otra_mascota = models.CharField(max_length=100, blank=True)
 
     preferencias_email = models.BooleanField(default=False)
@@ -50,7 +55,7 @@ class RegistroCliente(models.Model):
         verbose_name = "Registro de cliente"
         verbose_name_plural = "Registros de Clientes"
         db_table = 'RegistroCliente'
-        unique_together = ('numero_documento',)
+        unique_together = ('numero_documento','codcliente')
         ordering = ['-fecha_registro']
 
 class ZonaPermitida(models.Model):
