@@ -1,6 +1,9 @@
 from django.db import models
+from django.forms import ValidationError
 from django.utils.timezone import now
-
+from django_celery_beat.models import CrontabSchedule, IntervalSchedule, PeriodicTask
+import json
+from django.utils import timezone
 # Create your models here.
 class SQLQuery(models.Model):
     nombre = models.CharField(max_length=255, unique=True)
@@ -145,11 +148,98 @@ class EnvioLog(models.Model):
         ("error", "Error"),
     ]
 
-    timestamp = models.DateTimeField(default=now)  # Fecha y hora del intento
-    archivo = models.CharField(max_length=255)  # Nombre o ruta del archivo enviado
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES)  # Estado del envío
-    status_code = models.IntegerField(null=True, blank=True)  # Código de estado HTTP
-    response_text = models.TextField(blank=True)  # Respuesta de la API o mensaje de error
+    timestamp = models.DateTimeField(default=now)  
+    archivo = models.CharField(max_length=255)  
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    status_code = models.IntegerField(null=True, blank=True) 
+    response_text = models.TextField(blank=True)  
 
     def __str__(self):
         return f"{self.timestamp} - {self.archivo} - {self.status} ({self.status_code})"
+
+
+    
+class CorreoEnviado(models.Model):
+    ESTADO_CHOICES = [
+    ('PLANTILLA', 'Plantilla'), # Estado inicial para una configuración recurrente
+    ('ACTIVO', 'Activo'), # La tarea periódica está habilitada
+    ('INACTIVO', 'Inactivo'), # La tarea periódica está deshabilitada
+    ('ERROR_CONFIG', 'Error Configuración'), # Problema al crear/actualizar tarea Beat
+    # Estados de ejecución (opcional si quieres rastrear cada ejecución individual)
+    # ('PROCESANDO', 'Procesando Últ. Ejecución'),
+    # ('ENVIADO_ULT', 'Últ. Ejecución Enviada'),
+    # ('ERROR_ULT', 'Error Últ. Ejecución'),
+    ]
+    nombre_tarea = models.CharField(
+        max_length=200, unique=True,
+        verbose_name="Nombre Único Tarea Programada",
+        help_text="Nombre descriptivo y único para identificar esta programación en Celery Beat.",
+        null=True
+    )
+    activo = models.BooleanField(
+        default=False, verbose_name="Habilitado",
+        help_text="Marcar para activar la programación de este envío."
+    )
+    consulta = models.ForeignKey(SQLQuery, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Consulta SQL Origen")
+    asunto = models.CharField(max_length=255, verbose_name="Asunto")
+    destinatarios = models.TextField(help_text="Correos separados por coma (,).", verbose_name="Destinatarios")
+    cuerpo_html = models.TextField(help_text="Correos separados por coma (,).", verbose_name="Destinatarios")
+    crontab = models.ForeignKey(
+        CrontabSchedule, on_delete=models.PROTECT, null=True, blank=True,
+        verbose_name="Horario Crontab",
+        help_text="Programación tipo CRON (ej. cada hora, diario a las 8am). Dejar en blanco si usa Intervalo."
+    )
+    intervalo = models.ForeignKey(
+        IntervalSchedule, on_delete=models.PROTECT, null=True, blank=True,
+        verbose_name="Horario por Intervalo",
+        help_text="Programación por intervalo (ej. cada 30 minutos). Dejar en blanco si usa Crontab."
+    )
+
+    # Estado y Metadatos
+    estado = models.CharField(
+        max_length=20, choices=ESTADO_CHOICES, default='PLANTILLA',
+        verbose_name="Estado Configuración"
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name="Fecha Creación", null=True)
+    fecha_modificacion = models.DateTimeField(auto_now=True, verbose_name="Última Modificación")
+    # Podrías añadir campos para rastrear la última ejecución si es necesario
+    # ultima_ejecucion_ok = models.DateTimeField(null=True, blank=True, editable=False)
+    # ultimo_error = models.TextField(null=True, blank=True, editable=False)
+
+    # Referencia a la tarea periódica creada (opcional pero útil)
+    periodic_task = models.OneToOneField(
+        PeriodicTask, on_delete=models.SET_NULL, null=True, blank=True,
+        editable=False, related_name='envio_programado_config'
+    )
+
+    class Meta:
+        verbose_name = 'Configuración Envío Programado'
+        verbose_name_plural = 'Configuraciones Envíos Programados'
+        ordering = ['nombre_tarea']
+
+    def lista_destinatarios(self):
+        if not self.destinatarios: return []
+        return [email.strip() for email in self.destinatarios.split(",") if email.strip() and '@' in email.strip()]
+
+    def __str__(self):
+        schedule_info = ""
+        if self.crontab:
+            schedule_info = f"Cron: {self.crontab}"
+        elif self.intervalo:
+            schedule_info = f"Intervalo: {self.intervalo}"
+        status = "Activo" if self.activo else "Inactivo"
+        return f"[{status}] {self.nombre_tarea} ({schedule_info})"
+
+    def clean(self):
+        """ Validaciones del modelo. """
+        super().clean()
+        # Asegurar que solo se seleccione un tipo de horario
+        if self.crontab and self.intervalo:
+            raise ValidationError("Seleccione solo un tipo de horario (Crontab o Intervalo), no ambos.")
+        # Asegurar que se seleccione al menos uno si está activo
+        if self.activo and not (self.crontab or self.intervalo):
+            raise ValidationError("Un envío activo debe tener un horario Crontab o de Intervalo seleccionado.")
+        # Validar nombre único (aunque ya lo hace unique=True, es buena práctica)
+        if CorreoEnviado.objects.filter(nombre_tarea=self.nombre_tarea).exclude(pk=self.pk).exists():
+             raise ValidationError({'nombre_tarea': 'Ya existe una tarea programada con este nombre.'})
+         

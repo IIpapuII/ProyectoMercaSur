@@ -1,12 +1,16 @@
-from celery import shared_task
+from celery import shared_task, states
+from celery.exceptions import Ignore
+from django.db import transaction
+from django.template import TemplateSyntaxError
+from django.utils import timezone
 from .service.upload import *
-from appMercaSur.conect import conectar_sql_server, ejecutar_consulta
+from appMercaSur.conect import conectar_sql_server, ejecutar_consulta, ejecutar_consulta_data_auto
 from .models import SQLQuery
 import pandas as pd
 import pyodbc
 from django.conf import settings
-
-
+from .models import CorreoEnviado
+from .utils import enviar_correo_renderizado
 
 @shared_task
 def procesar_articulos_task():
@@ -39,7 +43,7 @@ def procesar_articulos_task():
     except Exception as e:
         print(f"🚨 Error en procesar_articulos_task: {e}")
 
-@shared_task()
+@shared_task(bind=True, max_retries=1, default_retry_delay=60)
 def procesar_articulos_task_total():
     """Tarea programada para actualizar y enviar artículos modificados."""
     try:
@@ -137,3 +141,169 @@ def actualizar_descuentos_task():
 
     except Exception as e:
         print(f"🚨 Error en actualizar_descuentos_task: {e}")
+
+
+# --- Helper para actualizar estado ---
+# (Sin cambios respecto al anterior)
+def actualizar_estado_envio(envio_id, nuevo_estado, error_msg=None, task_id=None, fecha_procesamiento=None, fecha_envio=None):
+    try:
+        # Usar transaction.atomic para asegurar la atomicidad de la lectura y escritura
+        with transaction.atomic():
+            # Obtener con select_for_update para bloquear la fila durante la actualización
+            envio = CorreoEnviado.objects.select_for_update().get(pk=envio_id)
+            update_fields = ['estado']
+            envio.estado = nuevo_estado
+
+            if error_msg is not None:
+                envio.error_detalle = str(error_msg)[:2000]
+                update_fields.append('error_detalle')
+            elif nuevo_estado not in ['ERROR_QUERY', 'ERROR_TEMPLATE', 'ERROR_ENVIO', 'ERROR_CONFIG']:
+                 if envio.error_detalle:
+                     envio.error_detalle = None
+                     update_fields.append('error_detalle')
+
+            if task_id is not None and envio.task_id != task_id:
+                 envio.task_id = task_id
+                 update_fields.append('task_id')
+            if fecha_procesamiento and envio.fecha_procesamiento != fecha_procesamiento:
+                 envio.fecha_procesamiento = fecha_procesamiento
+                 update_fields.append('fecha_procesamiento')
+            if fecha_envio and envio.fecha_envio != fecha_envio:
+                 envio.fecha_envio = fecha_envio
+                 update_fields.append('fecha_envio')
+
+            if update_fields:
+                envio.save(update_fields=update_fields)
+                print(f"Estado de Envio ID {envio_id} actualizado a {nuevo_estado}.")
+
+    except CorreoEnviado.DoesNotExist:
+         print(f"Error al actualizar estado: Envio ID {envio_id} no encontrado.")
+    except Exception as e:
+         # Captura errores de bloqueo de base de datos u otros problemas
+         print(f"Error inesperado al actualizar estado para Envio ID {envio_id}: {e}")
+         # Podrías querer reintentar la tarea aquí si es un error de bloqueo temporal
+
+# Nombre de la tarea
+TASK_NAME = 'automatizaciones.tasks.procesar_y_enviar_correo_task' # AJUSTA 'tu_app'
+
+# --- Tarea Principal (Modificada) ---
+@shared_task(bind=True, name=TASK_NAME, max_retries=2, default_retry_delay=180)
+def procesar_y_enviar_correo_task(self, envio_id):
+    task_id = self.request.id
+    print(f"Iniciando tarea {task_id} para EnvioProgramado ID: {envio_id}")
+    envio = None
+    conexion_db = None # Variable para la conexión
+
+    try:
+        envio = CorreoEnviado.objects.select_related('consulta').get(pk=envio_id)
+
+        allowed_initial_states = ['ACTIVO', 'INACTIVO', 'PENDIENTE', 'PROGRAMADO']
+        if envio.estado not in allowed_initial_states:
+             print(f"Tarea {task_id}: Envío {envio_id} estado inválido ({envio.estado}). Omitiendo.")
+             raise Ignore()
+
+        actualizar_estado_envio(envio_id, 'PROCESANDO', task_id=task_id, fecha_procesamiento=timezone.now())
+
+        datos_consulta = {}
+        contexto_final = {'fecha_actual': timezone.now()} # Contexto base
+
+        # --- 1. Ejecutar Consulta (si aplica) ---
+        if envio.consulta:
+            print(f"Tarea {task_id}: Preparando para ejecutar consulta ID: {envio.consulta.pk}")
+            if not SQLQuery: raise ImportError("Modelo SQLQuery no disponible.")
+
+            try:
+                # --- Obtener conexión ---
+                conexion_db = conectar_sql_server() # Llama a tu función para conectar
+
+                # --- Obtener el SQL de tu modelo ---
+                # Asume que tu modelo SQLQuery tiene un campo 'query_sql'
+                consulta_sql_string = envio.consulta.query_sql # ¡¡¡ AJUSTA ESTO !!!
+                if not consulta_sql_string:
+                    raise ValueError(f"La consulta SQL en SQLQuery ID {envio.consulta.pk} está vacía.")
+
+                # --- Ejecutar usando tu función ---
+                datos_crudos = ejecutar_consulta_data_auto(conexion_db, consulta_sql_string)
+
+                # Prepara el contexto para la plantilla
+                contexto_final['resultados'] = datos_crudos # Añade los resultados al contexto
+                print(f"Tarea {task_id}: Consulta ejecutada.")
+
+            except (ImportError, AttributeError, ValueError, ConnectionError, pyodbc.Error) as e_query:
+                 print(f"Error Tarea {task_id}: Fallo relacionado a consulta para envío {envio_id}. Error: {e_query}")
+                 actualizar_estado_envio(envio_id, 'ERROR_QUERY', error_msg=e_query)
+                 raise Ignore() # No reintentar
+            except Exception as e_inesperado_query:
+                 print(f"Error Tarea {task_id}: Error inesperado durante consulta {envio_id}. Error: {e_inesperado_query}")
+                 actualizar_estado_envio(envio_id, 'ERROR_QUERY', error_msg=e_inesperado_query)
+                 raise Ignore() # No reintentar
+            finally:
+                 # --- Cerrar conexión ---
+                 if conexion_db:
+                     conexion_db.close()
+                     print(f"Tarea {task_id}: Conexión a BD cerrada.")
+        else:
+             print(f"Tarea {task_id}: No hay consulta SQL asociada. Correo informativo.")
+             # contexto_final ya tiene 'fecha_actual'
+
+        # --- 2. Enviar Correo usando tu función ---
+        # (Renderizado y envío ahora dentro de enviar_correo_renderizado)
+        print(f"Tarea {task_id}: Llamando a enviar_correo_renderizado para envío {envio_id}")
+        actualizar_estado_envio(envio_id, 'ENVIANDO') # Marcar justo antes
+
+        try:
+            envio_exitoso = enviar_correo_renderizado(
+                asunto=envio.asunto,
+                destinatarios=envio.destinatarios, # La función interna normaliza
+                template_html_string=envio.cuerpo_html,
+                contexto=contexto_final
+            )
+
+            if envio_exitoso:
+                print(f"Tarea {task_id}: Correo {envio_id} marcado como enviado por la función helper.")
+                final_state = 'ACTIVO' if envio.activo else 'INACTIVO'
+                actualizar_estado_envio(envio_id, final_state, fecha_envio=timezone.now())
+                return f"Enviado: {envio_id}"
+            else:
+                 # Si la función devuelve False pero no lanza excepción (ej. no destinatarios)
+                 raise Exception("La función enviar_correo_renderizado devolvió False.")
+
+        except (TemplateSyntaxError, ValueError) as e_render:
+             # Error específico de plantilla capturado desde la función helper
+             print(f"Error Tarea {task_id}: Error de plantilla detectado para envío {envio_id}. Error: {e_render}")
+             actualizar_estado_envio(envio_id, 'ERROR_TEMPLATE', error_msg=e_render)
+             raise Ignore() # No reintentar
+        except Exception as e_envio:
+             # Captura errores de envío (SMTP, etc.) o el Exception del helper
+             print(f"Error Tarea {task_id}: Fallo el envío para {envio_id} (posiblemente desde helper). Error: {e_envio}")
+             # Proceder a lógica de reintento...
+             raise # Re-lanza la excepción para que el bloque except general la maneje
+
+    except Ignore:
+         print(f"Tarea {task_id}: Ignorada para envío {envio_id}.")
+         return f"Ignorado: {envio_id}"
+
+    except Exception as e_general:
+        # Captura errores generales o los re-lanzados por el envío
+        print(f"Error Tarea {task_id}: Fallo general procesando {envio_id}. Error: {e_general}")
+        try:
+            print(f"Tarea {task_id}: Reintento {self.request.retries + 1}/{self.max_retries} para envío {envio_id}")
+            original_state = 'ACTIVO' if envio and envio.activo else 'INACTIVO'
+            actualizar_estado_envio(envio_id, original_state, error_msg=e_general)
+            raise self.retry(exc=e_general)
+        except self.MaxRetriesExceededError:
+            print(f"Tarea {task_id}: Máximos reintentos alcanzados para envío {envio_id}. Marcando como ERROR_ENVIO.")
+            actualizar_estado_envio(envio_id, 'ERROR_ENVIO', error_msg=e_general)
+            return f"Error final envío: {envio_id}"
+        except Exception as e_retry:
+             print(f"Tarea {task_id}: Error inesperado durante reintento para {envio_id}. Error: {e_retry}")
+             actualizar_estado_envio(envio_id, 'ERROR_ENVIO', error_msg=e_retry)
+             return f"Error en reintento: {envio_id}"
+    finally:
+        # Asegurarse de cerrar la conexión si sigue abierta por alguna razón
+        if conexion_db:
+            try:
+                conexion_db.close()
+                print(f"Tarea {task_id}: Conexión a BD cerrada en finally.")
+            except Exception as e_close:
+                print(f"Tarea {task_id}: Error al cerrar conexión en finally: {e_close}")

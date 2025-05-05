@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('KEYDJANGO')
+CODIGO_SECRETO_VALIDO = os.getenv('CODIGO_ACCESO_EMPRESA')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -43,6 +44,14 @@ API_URLRAPPI = os.getenv('API_URL_RAPPI')
 API_ENDPOINTRAPPI = os.getenv('API_ENDPOINT_RAPPI')
 API_KEY_PARZE = os.getenv('API_KEYPARZE')
 URL_PARZE = os.getenv('URl_PARZE')
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com' # Servidor SMTP de tu proveedor
+EMAIL_PORT = 587             # Puerto SMTP (587 para TLS, 465 para SSL)
+EMAIL_USE_TLS = True         # Usar TLS (True para puerto 587)
+
+
+EMAIL_HOST_USER = os.getenv('DJANGO_EMAIL_USER')
+EMAIL_HOST_PASSWORD = os.getenv('DJANGO_EMAIL_PASSWORD')
 
 # Application definition
 
@@ -71,6 +80,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://181.204.212.122:9180",
     "http://notificaciones.mercasur.com.co",
     "https://notificaciones.mercasur.com.co:9180",
+    "http://127.0.0.1:9000"
 ]
 
 MIDDLEWARE = [

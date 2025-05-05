@@ -9,6 +9,10 @@ from import_export.admin import ExportMixin, ImportExportModelAdmin
 from import_export.widgets import DateWidget
 from import_export import resources, fields
 from import_export.formats.base_formats import XLS, XLSX
+
+@admin.register(CorreoEnviado)
+class CorreoEnviadoAdmin(admin.ModelAdmin):
+    pass
 # Register your models here.
 @admin.register(SQLQuery)
 class SQLQueryAdmin(admin.ModelAdmin):
