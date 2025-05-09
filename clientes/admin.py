@@ -1,11 +1,15 @@
 from django.contrib import admin
-from .models import RegistroCliente, ZonaPermitida, barrio
+from .models import RegistroCliente, ZonaPermitida, barrio, CodigoTemporal
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 from import_export.fields import Field
 from import_export.widgets import DateWidget
 from import_export.formats.base_formats import XLS, XLSX
 # Register your models here.
+
+@admin.register(CodigoTemporal)
+class CodigoTemporalAdmin(admin.ModelAdmin):
+    pass
 
 @admin.register(RegistroCliente)
 class RegistroClienteAdmin(admin.ModelAdmin):

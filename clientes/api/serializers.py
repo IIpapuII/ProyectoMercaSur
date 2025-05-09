@@ -6,6 +6,17 @@ class RegistroClienteSerializer(serializers.ModelSerializer):
         model = RegistroCliente
         fields = '__all__'
 
+class ClienteGetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RegistroCliente
+        fields = ['primer_apellido',
+                  'segundo_apellido',
+                  'primer_nombre',
+                  'segundo_nombre',
+                  'numero_documento',
+                  'fecha_nacimiento',
+                ]
+
 class ZonaPermitidaSerializer(serializers.ModelSerializer):
     """
     Serializador para el modelo ZonaPermitida.
@@ -31,3 +42,12 @@ class barrioSerializer(serializers.ModelSerializer):
             'id',
             'nombre',
         ]
+
+class ClienteICGSerializer(serializers.Serializer):
+    codcliente = serializers.IntegerField()
+    NumeroDocumento = serializers.CharField(source='NumeroDocumento')
+    PrimerNombre = serializers.CharField()
+    SegundoNombre = serializers.CharField()
+    PrimerApellido = serializers.CharField()
+    SegundoApellido = serializers.CharField()
+    FechaNacimiento = serializers.DateField(source='FECHANACIMIENTO')

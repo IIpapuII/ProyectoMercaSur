@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>¡Bienvenido a mercasur!</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 20px; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); }
+        .header { background-color: #f8f9fa; color: #333; padding: 20px; text-align: center; } /* Fondo más claro para el logo */
+        .logo { max-width: 400px; height: auto; }
+        .content { padding: 20px; color: #333; line-height: 1.6; }
+        .cta-button { display: inline-block; background-color: #28a745; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 20px; }
+        .social-links { text-align: center; margin-top: 20px; }
+        .social-links a { display: inline-block; margin: 0 10px; text-decoration: none; color: #555; font-size: 1.5em; }
+        .social-links a:hover { color: #dc3545; }
+        .footer { text-align: center; color: #777; font-size: 0.9em; margin-top: 30px; }
+        .highlight { color: #28a745; font-weight: bold; } /* Cambiando el color del highlight a verde */
+        .wave { position: relative; margin-top: 20px; overflow: hidden; height: 30px; }
+        .wave::before { content: ''; display: block; position: absolute; border-radius: 100%; width: 150%; height: 100%; background-color: #f4f4f4; left: -20%; animation: wave 1.8s infinite linear; }
+        @keyframes wave {
+            0% { transform: translate3d(-50%, 0, 0) scale(1); }
+            50% { transform: translate3d(0%, 0, 0) scale(1.1); }
+            100% { transform: translate3d(50%, 0, 0) scale(1); }
+        }
+        .center { text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://notificaciones.mercasur.com.co:9180/assets/logo.png" alt="Logo de Mercasur" class="logo">
+            <h2>¡Bienvenido a  mercasur!</h2>
+        </div>
+        <div class="content">
+            <p>Nos complace informarte que tu registro se ha realizado con satisfactoriamente y ahora formas parte de nuestra base de datos.</p>
+            <p>A partir de ahora podrás disfrutar de todos nuestros servicios, recibir información actualizada y acceder a beneficios exclusivos.</p>
+            <div class="social-links">
+                <a href="https://mercasur.com.co/es" target="_blank" class="cta-button" style="color: #fff; text-decoration: none;">¡Explora mercasur Ahora!</a>
+            </div>
+            <div class="social-links">
+                <a href="https://www.facebook.com/mercasur.cadadiamejor/" target="_blank" title="Facebook">
+                    <img src="https://notificaciones.mercasur.com.co:9180/assets/facebook.png" alt="Facebook" style="width: 24px; height: 24px; vertical-align: middle; margin-left: 10px;">
+                </a>
+                <a href="https://www.instagram.com/mercasurcadadiamejor/" target="_blank" title="Instagram">
+                    <img src="https://notificaciones.mercasur.com.co:9180/assets/instagram.png" alt="Instagram" style="width: 24px; height: 24px; vertical-align: middle; margin-left: 10px;">
+                </a>
+            </div>
+        </div>
+        <div class="container center">
+            <p>¿Quieres dejar de recibir información promocional de mercasur?</p>
+            <a href=""><span class="highlight">Cancela tu supcripción</span></a>
+        </div>
+        <div class="footer">
+            <p>¡Nos vemos en mercasur!</p>
+            <p>© Mercasur</p>
+        </div>
+    </div>
+</body>
+</html>

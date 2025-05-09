@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>¡Tu Información en mercasur se Actualizó!</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 20px; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); }
+        .header { background-color: #f8f9fa; color: #333; padding: 20px; text-align: center; }
+        .logo { max-width: 400px; height: auto; opacity: 0.8; }
+        .content { padding: 20px; color: #333; line-height: 1.6; }
+        .alert { background-color: #ffeeba; color: #85640a; border: 1px solid #ffeb3b; padding: 15px; border-radius: 5px; margin-top: 20px; }
+        .social-links { text-align: center; margin-top: 20px; }
+        .social-links a { display: inline-block; margin: 0 10px; text-decoration: none; color: #555; font-size: 1.5em; }
+        .social-links a:hover { color: #28a745; }
+        .footer { text-align: center; color: #777; font-size: 0.9em; margin-top: 30px; }
+        .highlight { color: #28a745; font-weight: bold; }
+        .wave-bottom { position: relative; margin-top: 20px; overflow: hidden; height: 30px; }
+        .wave-bottom::before { content: ''; display: block; position: absolute; border-radius: 100%; width: 150%; height: 100%; background-color: #f4f4f4; left: 20%; animation: wave-down 1.8s infinite linear; }
+        @keyframes wave-down {
+            0% { transform: translate3d(50%, 0, 0) scale(1); }
+            50% { transform: translate3d(0%, 0, 0) scale(1.1); }
+            100% { transform: translate3d(-50%, 0, 0) scale(1); }
+        }
+        .center { text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://notificaciones.mercasur.com.co:9180/assets/logo.png" alt="Logo de Mercasur" class="logo">
+            <h2>¡Tu información en mercasur ha sido actualizada!</h2>
+        </div>
+        <div class="content">
+            <p>Te informamos que los datos asociados a tu registro en <strong>mercasur</strong> han sido actualizados correctamente. Todo está en orden para que continúes disfrutando de nuestros servicios sin inconvenientes.</p>
+            <p>Si no reconoces esta actualización, te invitamos a contactarnos a la brevedad posible. Nuestro equipo está disponible para asistirte y garantizar la seguridad de tu cuenta.</p>
+            <div class="social-links">
+                <a href="https://www.facebook.com/mercasur.cadadiamejor/" target="_blank" title="Facebook">
+                    <img src="https://notificaciones.mercasur.com.co:9180/assets/facebook.png" alt="Facebook" style="width: 24px; height: 24px; vertical-align: middle; margin-left: 10px;">
+                </a>
+                <a href="https://www.instagram.com/mercasurcadadiamejor/" target="_blank" title="Instagram">
+                    <img src="https://notificaciones.mercasur.com.co:9180/assets/instagram.png" alt="Instagram" style="width: 24px; height: 24px; vertical-align: middle; margin-left: 10px;">
+                </a>
+            </div>
+        </div>
+        <div class="container center">
+            <p>¿Quieres dejar de recibir información promocional de mercasur?</p>
+            <a href=""><span class="highlight">Cancela tu supcripción</span></a>
+        </div>
+        <div class="footer">
+            <p>¡Que tengas un excelente día!</p>
+            <p>© mercasur</p>
+        </div>
+    </div>
+</body>
+</html>
