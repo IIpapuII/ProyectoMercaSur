@@ -30,7 +30,7 @@ class RegistroCliente(models.Model):
         ('PERRO', 'Perro'),
         ('GATO', 'Gato'),
         ('OTROS', 'Otro'),
-        ('NO APLICA', 'Ninguna')
+        ('NO TIENE', 'Ninguna')
     ], blank=True)
     otra_mascota = models.CharField(max_length=100, blank=True,null=True)
 
