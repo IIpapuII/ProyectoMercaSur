@@ -254,7 +254,7 @@ def crearClienteICG(intanse_cliente):
             intanse_cliente.numero_documento,     # NIF20 (Usamos el mismo que CIF)
             'F',                                            # DESCATALOGADO (Valor predeterminado del SQL)
             'L',                                            # LOCAL_REMOTA (Valor predeterminado del SQL)
-            None,                                           # CODVISIBLE (NULL en tu SQL)
+            2,                                           # CODVISIBLE (NULL en tu SQL)
             'CO',                                           # CODPAIS (Valor predeterminado del SQL) - No está en tu modelo Django
             None,                                           # CARGOSFIJOSA (NULL en tu SQL)
             intanse_cliente.celular or '',        # MOBIL
