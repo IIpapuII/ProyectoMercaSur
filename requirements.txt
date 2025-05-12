@@ -14,11 +14,16 @@ diff-match-patch==20241021
 Django==4.2.20
 django-celery-beat==2.7.0
 django-cors-headers==4.7.0
+django-extensions==4.1
+django-filter==25.1
 django-import-export==4.3.7
 django-jazzmin==3.0.1
 django-timezone-field==7.1
 djangorestframework==3.16.0
+djangorestframework_simplejwt==5.5.0
 et_xmlfile==2.0.0
+geographiclib==2.0
+geopy==2.4.1
 gunicorn==23.0.0
 idna==3.10
 kombu==5.4.2
@@ -29,6 +34,8 @@ packaging==24.2
 pandas==2.2.3
 pillow==11.1.0
 prompt_toolkit==3.0.50
+psycopg2-binary==2.9.10
+PyJWT==2.9.0
 pyodbc==5.2.0
 python-crontab==3.2.0
 python-dateutil==2.9.0.post0
