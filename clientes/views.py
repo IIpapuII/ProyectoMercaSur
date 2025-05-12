@@ -18,6 +18,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 
 class RegistroFormularioAPIView(APIView):
+    permission_classes = [permissions.AllowAny] 
     def post(self, request):
         documento = request.data.get('numero_documento')
         if not documento:

@@ -14,6 +14,8 @@ from pathlib import Path
 import os
 from celery import Celery
 from dotenv import load_dotenv
+
+load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -30,7 +32,6 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
-load_dotenv()
 
 SERVERICG = os.getenv("SERVERICG")
 DBICG = os.getenv("DATABASEICG")
