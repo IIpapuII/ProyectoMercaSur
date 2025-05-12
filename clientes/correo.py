@@ -18,12 +18,12 @@ def enviar_correo(cliente):
     remitente = settings.EMAIL_HOST_USER
     
     if cliente.Actualizado == False:
-        print("Enviado correo")
+        print("Enviado correo Registro")
         asunto = "Bienvenido a mercasur (Registro Exitoso)"
         html_content = render_to_string('clientenuevo.html')
         destinatarios = [cliente.correo]
     else:
-        print("Enviado correo")
+        print("Enviado correo Actualización")
         asunto = "Confirmación de Actualización de Información en mercasur"
         html_content = render_to_string('clienteactualizado.html')
         destinatarios = [cliente.correo]
@@ -40,8 +40,9 @@ def enviar_correo(cliente):
     correo.content_subtype = "html"
 
     # Envía el correo
+    print("Correo Se Envio")
     correo.send()
-    print("CorreoEnviado")
+    print("Correo Se Envio")
 
 def enviar_correo_html(asunto="", destinatarios=None, cuerpo_html="", contexto=None):
     """
