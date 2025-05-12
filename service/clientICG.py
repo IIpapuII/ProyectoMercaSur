@@ -23,7 +23,7 @@ def create_fidelizacion(cliente):
                 if cliente.tipocliente == 'Cliente' or cliente.tipocliente == 'Colaborador':
                         
                     # Obtener consulta base
-                    consulta = SQLQuery.objects.filter(pk=5).first().consulta
+                    consulta = SQLQuery.objects.filter(pk=7).first().consulta
 
                     # Obtener nuevo IDTARJETA
                     cursor.execute("SELECT ISNULL(MAX(IDTARJETA), 0) + 1 FROM TARJETAS")
@@ -223,7 +223,7 @@ def crearClienteICG(intanse_cliente):
     try:
         conexion = conectar_sql_server()
         cursor = conexion.cursor()
-        consulta = SQLQuery.objects.filter(pk=4).first().consulta
+        consulta = SQLQuery.objects.filter(pk=6).first().consulta
         valores = (
             '13050501',                                     # CODCONTABLE (Valor predeterminado del SQL)
             nombreCompleto,                                 # NOMBRECLIENTE
@@ -289,6 +289,7 @@ def crearClienteICG(intanse_cliente):
             intanse_cliente.Actualizado = False
             intanse_cliente.save()
             if intanse_cliente.correo_notificacion == True:
+                print("proceso de enviar correo")
                 enviar_correo(intanse_cliente)
         else:
             print("error codcliente")
