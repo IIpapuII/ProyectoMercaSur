@@ -4,9 +4,34 @@ from automatizaciones.models import SQLQuery
 from geopy.distance import geodesic
 from datetime import datetime
 from clientes.correo import enviar_correo
+from clientes.utils import generar_nuevo_codcliente
 
+def getClienteICG(numero_documento):
+    """
+    Obtiene información del cliente desde la base de datos SQL Server.
+    Args:
+        numero_documento: El número de documento del cliente a consultar.
+    Returns:
+        list: Lista de datos del cliente.
+    """
+    try:
+        conexion = conectar_sql_server()
+        consulta = SQLQuery.objects.filter(pk=3).first()
+        consulta = consulta.consulta.format(numero_documento)
+        data = ejecutar_consulta_data(conexion, consulta)
+        print(data)
+        return data
+    except:
+        return "error Data"
 
 def create_fidelizacion(cliente):
+    """
+    Crea una tarjeta de fidelización para el cliente si cumple con los requisitos.
+    Args:
+        cliente: Instancia del cliente a procesar.
+    Returns:
+        str: Mensaje indicando el resultado de la operación.
+    """
     try:
         conexion = conectar_sql_server()
         cursor = conexion.cursor()
@@ -43,10 +68,14 @@ def create_fidelizacion(cliente):
                         'T',  # ENTREGADA
                         cliente.numero_documento
                     )
-
-                    cursor.execute(consulta, valores)
-                    conexion.commit()
-                    return "Tarjeta creada exitosamente."
+                    existe_cliente = getClienteICG(cliente.numero_documento)
+                    if existe_cliente:
+                        # Ejecutar la consulta de inserción
+                        cursor.execute(consulta, valores)
+                        conexion.commit()
+                        return "Tarjeta creada exitosamente."
+                    else:
+                        return "El cliente no existe en la base de datos."
                 else:
                     return "Es una empresa no fideliza"
     except Exception as e:
@@ -175,17 +204,6 @@ def actualizar_campos_libres_cliente(cliente):
         print("Error al actualizar cliente en CLIENTESCAMPOSLIBRES:", e)
 
 
-def getClienteICG(numero_documento):
-    try:
-        conexion = conectar_sql_server()
-        consulta = SQLQuery.objects.filter(pk=3).first()
-        consulta = consulta.consulta.format(numero_documento)
-        data = ejecutar_consulta_data(conexion, consulta)
-        print(data)
-        return data
-    except:
-        return "error Data"
-
 def ConsultarClienteICG(numero_documento):
     try:
         data = getClienteICG(numero_documento)
@@ -219,12 +237,13 @@ def crearClienteICG(intanse_cliente):
     elif intanse_cliente.tipocliente == 'Empresa':
         tipocliente = 5
     else :
-        tipocliente = 5
+        tipocliente = 14
     try:
         conexion = conectar_sql_server()
         cursor = conexion.cursor()
         consulta = SQLQuery.objects.filter(pk=6).first().consulta
         valores = (
+            generar_nuevo_codcliente(),                     # CODCLIENTE (Usamos el mismo que el número de documento)
             '13050501',                                     # CODCONTABLE (Valor predeterminado del SQL)
             nombreCompleto,                                 # NOMBRECLIENTE
             nombreCompleto,                                 # NOMBRECOMERCIAL (Usamos el mismo que NOMBRECLIENTE)
@@ -277,8 +296,12 @@ def crearClienteICG(intanse_cliente):
             0,                                              # NOCALCULARCARGO5ARTIC (Valor predeterminado del SQL)
             0                                               # NOCALCULARCARGO6ARTIC (Valor predeterminado del SQL)
         )
-        cursor.execute(consulta, valores)
-        conexion.commit()
+        try:
+            cursor.execute(consulta, valores)
+            conexion.commit()
+        except Exception as e:
+            conexion.rollback()
+            print(f"Error al ejecutar la consulta: {e}")
         cliente = getClienteICG(intanse_cliente.numero_documento)
         if cliente:
             intanse_cliente.codcliente = cliente[0][0]
