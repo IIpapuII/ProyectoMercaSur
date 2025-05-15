@@ -1,11 +1,18 @@
 from django.contrib import admin
-from .models import RegistroCliente, ZonaPermitida, barrio, CodigoTemporal
+from .models import RegistroCliente, ZonaPermitida, barrio, CodigoTemporal, SecuenciaCodCliente
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 from import_export.fields import Field
 from import_export.widgets import DateWidget
 from import_export.formats.base_formats import XLS, XLSX
-# Register your models here.
+
+@admin.register(SecuenciaCodCliente)
+class SecuenciaCodClienteAdmin(admin.ModelAdmin):
+    list_display = ('id', 'ultimo_codigo', 'rango_maximo')
+    search_fields = ('id',)
+    ordering = ('id',)
+    list_per_page = 20
+    list_filter = ('id',)
 
 @admin.register(CodigoTemporal)
 class CodigoTemporalAdmin(admin.ModelAdmin):

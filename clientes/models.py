@@ -6,8 +6,20 @@ from django.db import models
 from django.forms import ValidationError
 import uuid
 
+class SecuenciaCodCliente(models.Model):
+    ultimo_codigo = models.IntegerField(default=51500001)  # El anterior al inicial
+    rango_maximo = models.IntegerField(default=545000000)  # Puedes cambiar este valor
+
+    class Meta:
+        verbose_name = "Secuencia de Código de Cliente"
+        verbose_name_plural = "Secuencias de Códigos de Clientes"
+        db_table = 'secuencia_cod_cliente'
+        ordering = ['-ultimo_codigo']
+    def __str__(self):
+        return f"Último código: {self.ultimo_codigo}, Rango máximo: {self.rango_maximo}"
+
 class RegistroCliente(models.Model):
-    codcliente = models.IntegerField(blank=True, null=True)
+    codcliente = models.IntegerField(blank=True, null=True, unique=True)
     primer_apellido = models.CharField(max_length=100)
     segundo_apellido = models.CharField(max_length=100, blank=True, null=True)
     primer_nombre = models.CharField(max_length=100)
