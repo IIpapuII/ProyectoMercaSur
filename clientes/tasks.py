@@ -12,9 +12,11 @@ def generar_enviar_codigo_temporal():
     # Generar el código temporal
     try:
         codigo_temporal = CodigoTemporal.objects.create()
+        destinatorio = [email.strip() for email in settings.EMAIL_CODIGO_COLABORADOR.split(',') if email.strip()]
+        print(f"Destinatarios: {destinatorio}")
         enviar_correo_con_template(
             asunto="Código Temporal Generado",
-            destinatario= ast.literal_eval(settings.EMAIL_CODIGO_COLABORADOR),
+            destinatario= destinatorio,
             template_path='codigo_temporal.html',
             contexto={
                 'codigo': codigo_temporal.codigo,
