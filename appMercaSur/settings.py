@@ -49,6 +49,7 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com' # Servidor SMTP de tu proveedor
 EMAIL_PORT = 587             # Puerto SMTP (587 para TLS, 465 para SSL)
 EMAIL_USE_TLS = True         # Usar TLS (True para puerto 587)
+EMAIL_CODIGO_COLABORADOR = os.getenv('CODIGO_COLABORADOR')
 
 
 EMAIL_HOST_USER = os.getenv('DJANGO_EMAIL_USER')

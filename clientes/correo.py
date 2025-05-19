@@ -80,3 +80,24 @@ def enviar_correo_html(asunto="", destinatarios=None, cuerpo_html="", contexto=N
 
     except Exception as e:
         print(e)
+
+def enviar_correo_con_template(asunto,destinatario, template_path, contexto):
+    """
+    Envía un correo electrónico con cuerpo HTML renderizado desde un template.
+    
+    :param asunto: Asunto del correo.
+    :param destinatario: Lista de destinatarios ['correo@ejemplo.com'] o string único.
+    :param template_path: Ruta al template HTML ('emails/codigo_temporal.html').
+    :param contexto: Diccionario con los datos para el template.
+    :param remitente: Dirección de correo del remitente.
+    """
+    cuerpo_html = render_to_string(template_name=template_path, context=contexto)
+    remitente = settings.EMAIL_HOST_USER
+    email = EmailMessage(
+        subject=asunto,
+        body=cuerpo_html,
+        from_email=remitente,
+        to= list(destinatario)
+    )
+    email.content_subtype = "html"  # Para enviar como HTML
+    email.send()
