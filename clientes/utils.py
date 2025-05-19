@@ -32,3 +32,9 @@ def calcular_edad(fecha_nacimiento):
         edad -= 1
 
     return edad
+
+def bool_a_tf(valor_bool):
+    """
+    Convierte un valor booleano a 'T' o 'F'.
+    """
+    return 'T' if valor_bool else 'F'

@@ -4,7 +4,7 @@ from automatizaciones.models import SQLQuery
 from geopy.distance import geodesic
 from datetime import datetime
 from clientes.correo import enviar_correo
-from clientes.utils import generar_nuevo_codcliente, calcular_edad
+from clientes.utils import generar_nuevo_codcliente, calcular_edad, bool_a_tf
 
 def getClienteICG(numero_documento):
     """
@@ -211,15 +211,15 @@ def actualizar_campos_libres_cliente(cliente):
             validar or 'F',           # CLIENTE_INTERNO
             validar or 'F',             # VENTA_INTERNA
             calcular_edad(cliente.fecha_nacimiento) or 0, # EDA
-            cliente.acepto_politica or 'F',                  # HABEAS_DATA
+            bool_a_tf(cliente.acepto_politica) or 'F',                  # HABEAS_DATA
             cliente.otra_mascota or 'NO TIENE',                # OTRA_MACOSTA
-            cliente.preferencias_email or '',                       # EMAIL
-            cliente.preferencias_whatsapp or '',                      # WHATSAPP
-            cliente.preferencias_sms or '',                      # SMS
-            cliente.preferencias_redes_sociales or '',               # REDES_SOCIALES
-            cliente.preferencias_llamada or '',                     # LLAMADAS
-            cliente.preferencias_ninguna or '',                 # NINGUN_MEDIO
-            cliente.ip_usuario or '',                   # IP_USUARIO
+            bool_a_tf(cliente.preferencias_email) or 'F',                       # EMAIL
+            bool_a_tf(cliente.preferencias_whatsapp) or 'F',                      # WHATSAPP
+            bool_a_tf(cliente.preferencias_sms) or 'F',                      # SMS
+            bool_a_tf(cliente.preferencias_redes_sociales) or 'F',               # REDES_SOCIALES
+            bool_a_tf(cliente.preferencias_llamada) or 'F',                     # LLAMADAS
+            bool_a_tf(cliente.preferencias_ninguna) or 'F',                 # NINGUN_MEDIO
+            cliente.ip_usuario or 'F',                   # IP_USUARIO
             cliente.codcliente                         # CODCLIENTE
         )
 
