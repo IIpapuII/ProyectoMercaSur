@@ -192,7 +192,7 @@ def actualizar_campos_libres_cliente(cliente):
             REDES_SOCIALES = ?,
             LLAMADAS = ?,
             NINGUN_MEDIO = ?,
-            IP_USUARIO = ?,
+            IP_USUARIO = ?
         WHERE CODCLIENTE = ?
         """
         ubicacion =  determinar_sucursal(latitud=cliente.latitud, longitud=cliente.longitud)
