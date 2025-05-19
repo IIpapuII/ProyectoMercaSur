@@ -4,7 +4,7 @@ from automatizaciones.models import SQLQuery
 from geopy.distance import geodesic
 from datetime import datetime
 from clientes.correo import enviar_correo
-from clientes.utils import generar_nuevo_codcliente
+from clientes.utils import generar_nuevo_codcliente, calcular_edad
 
 def getClienteICG(numero_documento):
     """
@@ -39,7 +39,7 @@ def create_fidelizacion(cliente):
         cursor = conexion.cursor()
         cursor.execute("SELECT t.IDTARJETA FROM TARJETAS t WHERE t.CODCLIENTE = ?", (cliente.codcliente,))
         tarjeta = cursor.fetchone()
-        nombreCompleto = f'{cliente.primer_nombre} {cliente.segundo_nombre} {cliente.primer_apellido} {cliente.segundo_apellido}'
+        nombreCompleto = f'{cliente.primer_nombre or ''} {cliente.segundo_nombre or  ''} {cliente.primer_apellido or  ''} {cliente.segundo_apellido or ''}'.strip()
 
         if cliente.fidelizacion:
             if tarjeta:
@@ -163,7 +163,10 @@ def actualizar_campos_libres_cliente(cliente):
     try:
         conexion = conectar_sql_server()
         cursor = conexion.cursor()
-
+        if cliente.tipocliente == 'Colaborador':
+            validar = 'T'
+        else:
+            validar = 'F'
         sql_update = """
         UPDATE CLIENTESCAMPOSLIBRES
         SET 
@@ -177,7 +180,19 @@ def actualizar_campos_libres_cliente(cliente):
             NOMBRE_1 = ?, 
             OTROS_NOMBRES = ?, 
             ORIGENCREACION = ?, 
-            SEXO = ?
+            SEXO = ?,
+            CLIENTE_INTERNO = ?,
+            VENTA_INTERNA = ?,
+            EDAD = ?,
+            HABEAS_DATA = ?,
+            OTRA_MACOSTA = ?,
+            EMAIL = ?,
+            WHATSAPP = ?,
+            SMS = ?,
+            REDES_SOCIALES = ?,
+            LLAMADAS = ?,
+            NINGUN_MEDIO = ?,
+            IP_USUARIO = ?,
         WHERE CODCLIENTE = ?
         """
         ubicacion =  determinar_sucursal(latitud=cliente.latitud, longitud=cliente.longitud)
@@ -185,7 +200,7 @@ def actualizar_campos_libres_cliente(cliente):
         valores = (
             cliente.barrio or '',                       # BARRIO
             cliente.mascota or 'NO TIENE',                # MASCOTA
-            ubicacion or 'CALDAS',                                # SUCURSAL_ALMACEN (valor fijo, o podrías adaptarlo)
+            cliente.punto_compra or ubicacion or 'CALDAS',                                # SUCURSAL_ALMACEN (valor fijo, o podrías adaptarlo)
             cliente.tipocliente or 'CC',                # TIPO_DE_DOCUMENTO ('CC' por defecto si no hay tipo)
             cliente.primer_apellido or '',              # APELLIDO_1
             cliente.segundo_apellido or '',             # APELLIDO_2
@@ -193,6 +208,18 @@ def actualizar_campos_libres_cliente(cliente):
             cliente.segundo_nombre or '',               # OTROS_NOMBRES
             ubicacion or 'CALDAS',                                 # ORIGENCREACION (puedes cambiarlo si quieres)
             cliente.genero,                             # SEXO (podrías mapear de alguna forma si tienes ese dato)
+            validar or 'F',           # CLIENTE_INTERNO
+            validar or 'F',             # VENTA_INTERNA
+            calcular_edad(cliente.fecha_nacimiento) or 0, # EDA
+            cliente.acepto_politica or 'F',                  # HABEAS_DATA
+            cliente.otra_mascota or 'NO TIENE',                # OTRA_MACOSTA
+            cliente.preferencias_email or '',                       # EMAIL
+            cliente.preferencias_whatsapp or '',                      # WHATSAPP
+            cliente.preferencias_sms or '',                      # SMS
+            cliente.preferencias_redes_sociales or '',               # REDES_SOCIALES
+            cliente.preferencias_llamada or '',                     # LLAMADAS
+            cliente.preferencias_ninguna or '',                 # NINGUN_MEDIO
+            cliente.ip_usuario or '',                   # IP_USUARIO
             cliente.codcliente                         # CODCLIENTE
         )
 
@@ -229,7 +256,7 @@ def ConsultarClienteICG(numero_documento):
 
 
 def crearClienteICG(intanse_cliente):
-    nombreCompleto = f'{intanse_cliente.primer_nombre} {intanse_cliente.segundo_nombre} {intanse_cliente.primer_apellido} {intanse_cliente.segundo_apellido}'
+    nombreCompleto = f'{cliente.primer_nombre or ''} {cliente.segundo_nombre or  ''} {cliente.primer_apellido or  ''} {cliente.segundo_apellido or ''}'.strip()
     if intanse_cliente.tipocliente == 'Clientes':
         tipocliente = 14
     elif intanse_cliente.tipocliente == 'Colaborador':
@@ -325,7 +352,7 @@ def actualizarClienteICG(intanse_cliente):
     conexion = conectar_sql_server()
     cursor = conexion.cursor()
 
-    nombreCompleto = f'{intanse_cliente.primer_nombre} {intanse_cliente.segundo_nombre or ""} {intanse_cliente.primer_apellido} {intanse_cliente.segundo_apellido or ""}'.strip()
+    nombreCompleto = f'{intanse_cliente.primer_nombre or ''} {intanse_cliente.segundo_nombre or  ''} {intanse_cliente.primer_apellido or  ''} {intanse_cliente.segundo_apellido or ''}'.strip()
 
     campos = []
     valores = []

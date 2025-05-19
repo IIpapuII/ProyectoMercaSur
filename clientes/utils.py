@@ -1,5 +1,7 @@
 from django.db import transaction
 from .models import SecuenciaCodCliente
+from django.utils import timezone
+
 
 def generar_nuevo_codcliente():
     with transaction.atomic():
@@ -12,3 +14,21 @@ def generar_nuevo_codcliente():
         secuencia.ultimo_codigo = nuevo_codigo
         secuencia.save()
         return nuevo_codigo
+
+def calcular_edad(fecha_nacimiento):
+    """
+    Calcula la edad en años a partir de una fecha de nacimiento usando timezone.now() de Django.
+    
+    Parámetros:
+    - fecha_nacimiento (datetime.date): Fecha de nacimiento de la persona.
+
+    Retorna:
+    - int: Edad actual de la persona en años.
+    """
+    hoy = timezone.now().date()
+    edad = hoy.year - fecha_nacimiento.year
+
+    if (hoy.month, hoy.day) < (fecha_nacimiento.month, fecha_nacimiento.day):
+        edad -= 1
+
+    return edad
