@@ -185,7 +185,7 @@ def actualizar_campos_libres_cliente(cliente):
             VENTA_INTERNA = ?,
             EDAD = ?,
             HABEAS_DATA = ?,
-            OTRA_MACOSTA = ?,
+            OTRA_MASCOTA = ?,
             EMAIL = ?,
             WHATSAPP = ?,
             SMS = ?,
