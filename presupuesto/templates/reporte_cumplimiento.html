@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+{% load static %}
+{% load humanize %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reporte de Cumplimiento Presupuestario</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    {# Chart.js CDN #}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { padding: 20px; }
+        .form-section { border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 5px; background-color: #f9f9f9;}
+        th, td { vertical-align: middle; font-size: 0.9em; text-align: right;}
+        th { text-align: center; /* background-color: #f2f2f2; quitamos el fondo fijo para que tome el del semáforo */ }
+        td.text-left { text-align: left; }
+        tfoot td { font-weight: bold; /* background-color: #e9e9e9; quitamos el fondo fijo */ }
+
+        .semaforo-rojo { background-color: #f8d7da !important; color: #721c24 !important; }
+        .semaforo-amarillo { background-color: #fff3cd !important; color: #856404 !important; }
+        .semaforo-verde { background-color: #d4edda !important; color: #155724 !important; }
+        .semaforo-azul { background-color: #cce5ff !important; color: #004085 !important; }
+        .semaforo-na { background-color: #e9ecef !important; color: #495057 !important; }
+        
+        .chart-container {
+            width: 80%; /* Ajusta según necesidad */
+            max-width: 100%%;
+            max-height: 500px;
+            margin: 30px auto; /* Centrar y dar espacio */
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <h1 class="mb-4">Reporte de Cumplimiento Presupuestario</h1>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert {% if message.tags %}alert-{{ message.tags }}{% else %}alert-info{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="form-section mb-4">
+            <h3 class="h5 mb-3">Seleccionar Periodo y Criterios</h3>
+            <form method="get" action="{% url 'vista_reporte_cumplimiento' %}">
+                {{ filtro_form.non_field_errors }}
+                 <div class="row align-items-end">
+                    <div class="col-md-3 mb-3">
+                        {{ filtro_form.sede.label_tag }}
+                        {{ filtro_form.sede }}
+                        {{ filtro_form.sede.errors }}
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        {{ filtro_form.categoria.label_tag }}
+                        {{ filtro_form.categoria }}
+                        {{ filtro_form.categoria.errors }}
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        {{ filtro_form.anio.label_tag }}
+                        {{ filtro_form.anio }}
+                        {{ filtro_form.anio.errors }}
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        {{ filtro_form.mes.label_tag }}
+                        {{ filtro_form.mes }}
+                        {{ filtro_form.mes.errors }}
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <button type="submit" class="btn btn-success w-100">Generar Reporte</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+
+        {% if datos_reporte %}
+            <hr class="my-4">
+            <h2 class="h4 mb-3">
+                Cumplimiento para: {{ contexto_filtro.sede_nombre }} - {{ contexto_filtro.categoria_nombre }}
+                <small class="text-muted">({{ contexto_filtro.mes }}/{{ contexto_filtro.anio }})</small>
+            </h2>
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped table-hover table-sm">
+                    {# Aplicar clase de semáforo del resumen mensual al thead #}
+                    <thead class="{% if resumen_mensual %}{{ resumen_mensual.semaforo_clase }}{% else %}table-light{% endif %}">
+                        <tr>
+                            <th scope="col" class="text-left">Fecha</th>
+                            <th scope="col" class="text-left">Día</th>
+                            <th scope="col">Ppto. Diario ($)</th>
+                            <th scope="col">Venta Diaria ($)</th>
+                            <th scope="col">Diferencia ($)</th>
+                            <th scope="col">Cumplimiento (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for dia in datos_reporte %}
+                            <tr class="{{ dia.semaforo_clase }}">
+                                <td class="text-left">{{ dia.fecha|date:"d/m/Y" }}</td>
+                                <td class="text-left">{{ dia.dia_semana }}</td> {# Cambiado desde dia.dia_semana_nombre si así lo pasas #}
+                                <td>{{ dia.presupuesto_diario|floatformat:2|intcomma }}</td>
+                                <td>{{ dia.venta_diaria|floatformat:2|intcomma }}</td>
+                                <td class="{% if dia.diferencia < 0 %}text-danger{% else %}text-success{% endif %}">
+                                    {{ dia.diferencia|floatformat:2|intcomma }}
+                                </td>
+                                <td>
+                                    {% if dia.cumplimiento_pct is not None %}
+                                        {{ dia.cumplimiento_pct|floatformat:1 }}%
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if resumen_mensual %}
+                    <tfoot class="{{ resumen_mensual.semaforo_clase }}">
+                        <tr>
+                            <td colspan="2" class="text-left"><strong>TOTALES DEL MES:</strong></td>
+                            <td><strong>{{ resumen_mensual.total_presupuesto|floatformat:2|intcomma }}</strong></td>
+                            <td><strong>{{ resumen_mensual.total_venta|floatformat:2|intcomma }}</strong></td>
+                            <td class="{% if resumen_mensual.total_diferencia < 0 %}text-danger{% else %}text-success{% endif %}">
+                                <strong>{{ resumen_mensual.total_diferencia|floatformat:2|intcomma }}</strong>
+                            </td>
+                            <td>
+                                <strong>
+                                {% if resumen_mensual.cumplimiento_pct is not None %}
+                                    {{ resumen_mensual.cumplimiento_pct|floatformat:1 }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </strong>
+                            </td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+
+            {# Contenedor para la gráfica #}
+            <div class="chart-container mt-5">
+                <h3 class="text-center h5 mb-3">Gráfica de Presupuesto vs. Venta Diaria</h3>
+                <canvas id="cumplimientoChart"></canvas>
+            </div>
+
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    const ctx = document.getElementById('cumplimientoChart').getContext('2d');
+                    const labels = {{ chart_labels|safe }}; // Recibe de la vista
+                    const pptoData = {{ chart_data_ppto|safe }}; // Recibe de la vista
+                    const ventaData = {{ chart_data_venta|safe }}; // Recibe de la vista
+
+                    new Chart(ctx, {
+                        type: 'line', // Puedes cambiar a 'line' si prefieres
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: 'Presupuesto Diario ($)',
+                                    data: pptoData,
+                                    borderColor: 'rgba(54, 162, 235, 1)',
+                                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                                    borderWidth: 1,
+                                    yAxisID: 'y', // Asignar al eje Y principal
+                                },
+                                {
+                                    label: 'Venta Diaria ($)',
+                                    data: ventaData,
+                                    borderColor: 'rgba(75, 192, 192, 1)',
+                                    backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                                    borderWidth: 1,
+                                    yAxisID: 'y', // Asignar al eje Y principal
+                                }
+                                // Podrías añadir un dataset para el % de cumplimiento en un segundo eje Y si quisieras
+                                // {
+                                //     label: 'Cumplimiento (%)',
+                                //     data: [ ... tus datos de % ... ],
+                                //     borderColor: 'rgba(255, 99, 132, 1)',
+                                //     backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                //     type: 'line', // Mostrar como línea
+                                //     yAxisID: 'y1', // Asignar a un segundo eje Y
+                                // }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false, // Para que se ajuste mejor al contenedor
+                            interaction: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                            stacked: false, // Para que las barras no se apilen
+                            scales: {
+                                y: { // Eje Y principal para los montos $
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'left',
+                                    title: {
+                                        display: true,
+                                        text: 'Monto ($)'
+                                    },
+                                    beginAtZero: true // Empezar el eje Y en cero
+                                },
+                                // y1: { // Eje Y secundario (opcional, para el %)
+                                //     type: 'linear',
+                                //     display: true, // Cambiar a true si añades el dataset de %
+                                //     position: 'right',
+                                //     title: {
+                                //         display: true,
+                                //         text: 'Cumplimiento (%)'
+                                //     },
+                                //     grid: {
+                                //         drawOnChartArea: false, // Solo mostrar líneas de grid para el eje Y principal
+                                //     },
+                                //     min: 0,
+                                //     max: 120 // O un máximo adecuado para el %
+                                // }
+                            },
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            let label = context.dataset.label || '';
+                                            if (label) {
+                                                label += ': ';
+                                            }
+                                            if (context.parsed.y !== null) {
+                                                if (context.dataset.label.includes('%')) {
+                                                    label += context.parsed.y.toFixed(1) + '%';
+                                                } else {
+                                                    label += '$' + context.parsed.y.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                                }
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+            </script>
+
+        {% elif filtro_form.is_bound and not filtro_form.errors and not datos_reporte %}
+             <div class="alert alert-light mt-4">
+                Puede que no haya presupuestos calculados o ventas registradas para los criterios seleccionados.
+            </div>
+        {% endif %}
+
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

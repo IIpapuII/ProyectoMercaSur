@@ -1,10 +1,18 @@
+import json
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer, VentapollosSerializer
 from rest_framework import generics, permissions
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import ventapollos
+from .models import VentaDiariaReal, ventapollos
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.utils.safestring import mark_safe
+from django.shortcuts import render
+from django.contrib import messages # Para mostrar mensajes al usuario
+from .forms import FiltroCumplimientoForm, SedeAñoMesForm, PresupuestoCategoriaFormSet
+from .models import Sede, CategoriaVenta, PresupuestoMensualCategoria, PresupuestoDiarioCategoria
+from .utils import calcular_presupuesto_con_porcentajes_dinamicos, obtener_clase_semaforo
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -36,3 +44,328 @@ class VentaPollosListAPIView(generics.ListAPIView):
             queryset = queryset.filter(ubicacion__iexact=ubicacion)  # usa iexact para ignorar mayúsculas/minúsculas
 
         return queryset
+
+# --- Vista Para Cálculo ---
+def vista_presupuesto_por_categoria(request):
+    categorias_queryset = CategoriaVenta.objects.all().order_by('nombre')
+
+    if not categorias_queryset.exists():
+         messages.error(request, "Error: No hay categorías de venta/presupuesto definidas en el sistema.")
+         # Aquí podrías renderizar un template simple de error o redirigir
+         return render(request, 'error_configuracion.html', {'mensaje': "No hay categorías definidas."})
+
+
+    sede_form = SedeAñoMesForm(request.POST or None, prefix='main')
+    
+    # Para el formset, necesitamos construirlo con la cantidad correcta de formularios
+    # tanto para GET como para POST si hay errores de validación y se re-renderiza.
+    if request.method == 'POST':
+        presupuesto_formset = PresupuestoCategoriaFormSet(request.POST, prefix='categorias')
+    else: # GET request
+        # Crear un formset vacío con un formulario por cada categoría para la carga inicial
+        presupuesto_formset = PresupuestoCategoriaFormSet(
+            initial=[{} for _ in categorias_queryset], 
+            prefix='categorias'
+        )
+
+    # Combinar categorías con sus respectivos formularios para el template
+    # Esto es importante para que en el template se puedan mostrar los labels correctos
+    categorias_and_forms_for_template = list(zip(categorias_queryset, presupuesto_formset.forms))
+    if not categorias_and_forms_for_template and categorias_queryset.exists() and not presupuesto_formset.forms:
+        # Fallback si presupuesto_formset.forms está vacío pero debería tener forms (ej. GET inicial sin 'initial' en formset)
+        # Esto puede suceder si la instanciación del formset para GET no crea los forms explícitamente.
+        # Re-instanciar con 'extra' o 'initial' adecuado es clave.
+        # El 'initial' en la definición del formset para GET ahora debería manejar esto.
+        pass
+
+
+    resultados_diarios = None
+    totales_finales_categoria = None
+    gran_total_componentes = None
+    contexto_presupuesto_input = None
+
+    if request.method == 'POST':
+        print("Procesando POST para cálculo...")
+        if sede_form.is_valid() and presupuesto_formset.is_valid():
+            print("Formularios Válidos para cálculo.")
+            sede = sede_form.cleaned_data['sede']
+            anio = sede_form.cleaned_data['anio']
+            mes = sede_form.cleaned_data['mes']
+
+            presupuestos_input = {}
+            input_valid = True
+            
+            for i, form_cat in enumerate(presupuesto_formset.cleaned_data): # Iterar sobre cleaned_data
+                try:
+                    # Necesitamos asegurar que el índice 'i' corresponda a categorias_queryset[i]
+                    # Esto asume que presupuesto_formset.cleaned_data mantiene el orden y longitud
+                    if i < len(categorias_queryset):
+                        categoria_obj = categorias_queryset[i]
+                        presupuesto_valor_str = form_cat.get('presupuesto') # form_cat es un dict aquí
+                        presupuesto_valor = Decimal(presupuesto_valor_str) if presupuesto_valor_str else Decimal('0.00')
+
+                        if presupuesto_valor < 0:
+                            # Para añadir error al form específico, necesitaríamos iterar sobre forms, no cleaned_data
+                            # presupuesto_formset.forms[i].add_error('presupuesto', 'El presupuesto no puede ser negativo.')
+                            messages.error(request, f"El presupuesto para {categoria_obj.nombre} no puede ser negativo.")
+                            input_valid = False
+                        else:
+                            presupuestos_input[categoria_obj.nombre] = presupuesto_valor
+                            PresupuestoMensualCategoria.objects.update_or_create(
+                                sede=sede, categoria=categoria_obj, anio=anio, mes=mes,
+                                defaults={'presupuesto_total_categoria': presupuesto_valor}
+                            )
+                    else: # Más forms en el formset que categorías, lo cual no debería pasar con extra=0
+                        messages.error(request, "Discrepancia en el número de formularios y categorías.")
+                        input_valid = False; break
+                except IndexError:
+                    messages.error(request, "Error de concordancia entre categorías y formularios del formset.")
+                    input_valid = False; break
+                except (InvalidOperation, TypeError, KeyError) as e: # KeyError si 'presupuesto' no está en form_cat
+                    messages.error(request, f"Error en los datos de entrada para una categoría.")
+                    input_valid = False; break
+            
+            if input_valid:
+                print(f"Inputs recolectados: {presupuestos_input}")
+                # Asegurarse de que 'total' (o el nombre de tu categoría global) esté en presupuestos_input si se espera
+                # Si el error es "categoría 'total' no tiene porcentajes", y 'total' no está en presupuestos_input,
+                # entonces el problema es que no se está enviando un presupuesto para 'total'.
+                if not presupuestos_input: # Si no se recolectó ningún presupuesto válido
+                    messages.warning(request, "No se ingresaron presupuestos para procesar.")
+                else:
+                    resultados_diarios, totales_finales_categoria, gran_total_componentes = \
+                        calcular_presupuesto_con_porcentajes_dinamicos(anio, mes, presupuestos_input)
+
+                    if resultados_diarios is not None:
+                        messages.success(request, "Cálculo de presupuesto diario realizado y datos guardados con éxito.")
+                        contexto_presupuesto_input = {
+                            'sede_nombre': sede.nombre, 'anio': anio, 'mes': mes,
+                            'categorias_nombres': sorted(list(presupuestos_input.keys())),
+                            'presupuestos_input': presupuestos_input
+                        }
+                        # Guardar Resultados Diarios en BD
+                        qs_mensuales = PresupuestoMensualCategoria.objects.filter(sede=sede, anio=anio, mes=mes)
+                        PresupuestoDiarioCategoria.objects.filter(presupuesto_mensual__in=qs_mensuales).delete()
+                        nuevos_diarios = []
+                        for dia_data in resultados_diarios:
+                            for cat_nombre, datos_cat_dia in dia_data['budgets_by_category'].items():
+                                try:
+                                    presup_mensual_cat_obj = qs_mensuales.get(categoria__nombre=cat_nombre)
+                                    nuevos_diarios.append(PresupuestoDiarioCategoria(
+                                        presupuesto_mensual=presup_mensual_cat_obj,
+                                        fecha=dia_data['fecha'],
+                                        dia_semana_nombre=dia_data['dia_semana_nombre'],
+                                        porcentaje_dia_especifico=datos_cat_dia['porcentaje_usado'],
+                                        presupuesto_calculado=datos_cat_dia['valor']
+                                    ))
+                                except PresupuestoMensualCategoria.DoesNotExist:
+                                    print(f"Advertencia: No se encontró PresupuestoMensual para {sede.nombre}/{cat_nombre}/{mes}/{anio} al guardar diarios.")
+                        if nuevos_diarios:
+                            PresupuestoDiarioCategoria.objects.bulk_create(nuevos_diarios)
+                            print(f"Guardados {len(nuevos_diarios)} registros diarios.")
+                    else:
+                        messages.error(request, "Falló el cálculo del presupuesto diario. Revise la configuración de porcentajes (¿suman 100%?, ¿están los 7 días para cada categoría activa?).")
+        else: # Formularios principales no válidos
+            print("Formularios Inválidos para cálculo (sede_form o presupuesto_formset).")
+            messages.warning(request, "Por favor corrija los errores en el formulario de cálculo.")
+            # Re-construir categorias_and_forms_for_template si hay errores para mostrar los forms de nuevo
+            categorias_and_forms_for_template = list(zip(categorias_queryset, presupuesto_formset.forms))
+
+    context = {
+        'sede_form': sede_form,
+        'presupuesto_formset': presupuesto_formset,
+        'categorias_and_forms': categorias_and_forms_for_template,
+        'resultados': resultados_diarios,
+        'totales_finales_categoria': totales_finales_categoria,
+        'gran_total_componentes': gran_total_componentes,
+        'contexto_presupuesto_input': contexto_presupuesto_input,
+    }
+    return render(request, 'calcular_presupuesto.html', context) # Nueva plantilla
+
+
+# --- Vista Para Consulta ---
+def vista_consultar_presupuesto(request):
+    filter_form = SedeAñoMesForm(request.GET or None, prefix='filter')
+    
+    resultados_diarios = None
+    totales_finales_categoria = None
+    gran_total_componentes = None
+    contexto_presupuesto_input = None
+
+    if filter_form.is_valid():
+        sede = filter_form.cleaned_data['sede']
+        anio = filter_form.cleaned_data['anio']
+        mes = filter_form.cleaned_data['mes']
+        print(f"Consultando para: Sede={sede}, Año={anio}, Mes={mes}")
+
+        presupuestos_mensuales_guardados = PresupuestoMensualCategoria.objects.filter(
+            sede=sede, anio=anio, mes=mes
+        ).select_related('categoria').order_by('categoria__nombre')
+
+        if not presupuestos_mensuales_guardados.exists():
+            messages.info(request, f"No se encontraron datos de presupuesto guardados para {sede.nombre} en {mes}/{anio}.")
+        else:
+            input_presupuestos = {pm.categoria.nombre: pm.presupuesto_total_categoria for pm in presupuestos_mensuales_guardados}
+            categorias_consultadas_nombres = sorted(list(input_presupuestos.keys()))
+            
+            contexto_presupuesto_input = {
+                'sede_nombre': sede.nombre, 'anio': anio, 'mes': mes,
+                'categorias_nombres': categorias_consultadas_nombres,
+                'presupuestos_input': input_presupuestos
+            }
+            print(f"Contexto Input reconstruido: {contexto_presupuesto_input}")
+
+            fechas_con_datos = PresupuestoDiarioCategoria.objects.filter(
+                presupuesto_mensual__in=presupuestos_mensuales_guardados
+            ).values_list('fecha', flat=True).distinct().order_by('fecha')
+
+            if not fechas_con_datos:
+                messages.warning(request, f"Presupuestos mensuales encontrados para {sede.nombre} en {mes}/{anio}, pero no hay datos diarios calculados asociados.")
+            else:
+                resultados_diarios_list = []
+                totales_finales_categoria_dict = {cat_nombre: Decimal('0.00') for cat_nombre in categorias_consultadas_nombres}
+                gran_total_componentes_val = Decimal('0.00')
+
+                for fecha_dia in fechas_con_datos:
+                    dia_data = {
+                        'fecha': fecha_dia, 'dia_semana_nombre': '',
+                        'budgets_by_category': {}, 'total_dia_componentes': Decimal('0.00')
+                    }
+                    registros_diarios_del_dia = PresupuestoDiarioCategoria.objects.filter(
+                        presupuesto_mensual__in=presupuestos_mensuales_guardados, fecha=fecha_dia
+                    ).select_related('presupuesto_mensual__categoria')
+
+                    if registros_diarios_del_dia:
+                         dia_data['dia_semana_nombre'] = registros_diarios_del_dia.first().dia_semana_nombre
+
+                    for cat_nombre in categorias_consultadas_nombres:
+                        registro_cat_dia = next((r for r in registros_diarios_del_dia if r.presupuesto_mensual.categoria.nombre == cat_nombre), None)
+                        if registro_cat_dia:
+                            valor = registro_cat_dia.presupuesto_calculado
+                            pct_usado = registro_cat_dia.porcentaje_dia_especifico
+                            dia_data['budgets_by_category'][cat_nombre] = {'valor': valor, 'porcentaje_usado': pct_usado}
+                            totales_finales_categoria_dict[cat_nombre] += valor
+                            if cat_nombre != "Total Sede": # Nombre exacto de tu categoría global
+                                dia_data['total_dia_componentes'] += valor
+                        else:
+                            dia_data['budgets_by_category'][cat_nombre] = {'valor': Decimal('0.00'), 'porcentaje_usado': Decimal('0.00')}
+                    
+                    dia_data['total_dia_componentes'] = dia_data['total_dia_componentes'].quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    resultados_diarios_list.append(dia_data)
+                    gran_total_componentes_val += dia_data['total_dia_componentes']
+                
+                for cat_n in totales_finales_categoria_dict:
+                    totales_finales_categoria_dict[cat_n] = totales_finales_categoria_dict[cat_n].quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                
+                resultados_diarios = resultados_diarios_list
+                totales_finales_categoria = totales_finales_categoria_dict
+                gran_total_componentes = gran_total_componentes_val.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                messages.success(request, f"Mostrando datos guardados para {sede.nombre} en {mes}/{anio}.")
+    else:
+        if request.GET and not filter_form.is_valid():
+             messages.warning(request, "Por favor corrija los errores en el formulario de filtro.")
+
+    context = {
+        'filter_form': filter_form,
+        'resultados': resultados_diarios,
+        'totales_finales_categoria': totales_finales_categoria,
+        'gran_total_componentes': gran_total_componentes,
+        'contexto_presupuesto_input': contexto_presupuesto_input, # Contiene 'categorias_nombres'
+    }
+    return render(request, 'consultar_presupuesto.html', context) # Nueva plantilla
+
+def vista_reporte_cumplimiento(request):
+    filtro_form = FiltroCumplimientoForm(request.GET or None)
+    datos_reporte = []
+    resumen_mensual = None
+    contexto_filtro = None
+    
+    # Datos para la gráfica
+    chart_labels = []
+    chart_data_ppto = []
+    chart_data_venta = []
+
+    if filtro_form.is_valid():
+        sede = filtro_form.cleaned_data['sede']
+        categoria = filtro_form.cleaned_data['categoria']
+        anio = filtro_form.cleaned_data['anio']
+        mes = filtro_form.cleaned_data['mes']
+
+        contexto_filtro = {
+            'sede_nombre': sede.nombre,
+            'categoria_nombre': categoria.nombre,
+            'anio': anio,
+            'mes': mes
+        }
+
+        presupuestos_diarios = PresupuestoDiarioCategoria.objects.filter(
+            presupuesto_mensual__sede=sede,
+            presupuesto_mensual__categoria=categoria,
+            presupuesto_mensual__anio=anio,
+            presupuesto_mensual__mes=mes
+        ).order_by('fecha')
+
+        if not presupuestos_diarios.exists():
+            messages.info(request, f"No se encontraron presupuestos diarios calculados para {categoria.nombre} en {sede.nombre} para el periodo {mes}/{anio}.")
+        else:
+            ventas_diarias_qs = VentaDiariaReal.objects.filter(
+                sede=sede,
+                categoria=categoria,
+                fecha__year=anio,
+                fecha__month=mes
+            )
+            ventas_map = {v.fecha: v.venta_real for v in ventas_diarias_qs}
+
+            total_ppto_mes = Decimal('0.00')
+            total_venta_mes = Decimal('0.00')
+
+            for ppto_dia in presupuestos_diarios:
+                venta_dia_real = ventas_map.get(ppto_dia.fecha, Decimal('0.00'))
+                diferencia = venta_dia_real - ppto_dia.presupuesto_calculado
+                cumplimiento_pct = None
+                if ppto_dia.presupuesto_calculado > 0:
+                    cumplimiento_pct = (venta_dia_real / ppto_dia.presupuesto_calculado * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+                
+                semaforo_clase = obtener_clase_semaforo(cumplimiento_pct) # Obtener clase de semáforo
+
+                datos_reporte.append({
+                    'fecha': ppto_dia.fecha,
+                    'dia_semana': ppto_dia.dia_semana_nombre, # Asegúrate que este campo exista o usa ppto_dia.fecha.strftime("%A")
+                    'presupuesto_diario': ppto_dia.presupuesto_calculado,
+                    'venta_diaria': venta_dia_real,
+                    'diferencia': diferencia,
+                    'cumplimiento_pct': cumplimiento_pct,
+                    'semaforo_clase': semaforo_clase
+                })
+                total_ppto_mes += ppto_dia.presupuesto_calculado
+                total_venta_mes += venta_dia_real
+
+                # Preparar datos para la gráfica
+                chart_labels.append(ppto_dia.fecha.strftime('%d')) # Solo el día para etiquetas más cortas
+                chart_data_ppto.append(float(ppto_dia.presupuesto_calculado)) # Chart.js prefiere floats
+                chart_data_venta.append(float(venta_dia_real))
+            
+            cumplimiento_total_mes = None
+            if total_ppto_mes > 0:
+                cumplimiento_total_mes = (total_venta_mes / total_ppto_mes * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+
+            resumen_mensual = {
+                'total_presupuesto': total_ppto_mes,
+                'total_venta': total_venta_mes,
+                'total_diferencia': total_venta_mes - total_ppto_mes,
+                'cumplimiento_pct': cumplimiento_total_mes,
+                'semaforo_clase': obtener_clase_semaforo(cumplimiento_total_mes)
+            }
+            if not datos_reporte:
+                 messages.info(request, f"No se generaron datos para el reporte de {categoria.nombre} en {sede.nombre} para el periodo {mes}/{anio}, aunque se encontraron presupuestos.")
+
+    context = {
+        'filtro_form': filtro_form,
+        'datos_reporte': datos_reporte,
+        'resumen_mensual': resumen_mensual,
+        'contexto_filtro': contexto_filtro,
+        'chart_labels': mark_safe(json.dumps(chart_labels)), # Serializar a JSON para JS
+        'chart_data_ppto': mark_safe(json.dumps(chart_data_ppto)),
+        'chart_data_venta': mark_safe(json.dumps(chart_data_venta)),
+    }
+    return render(request, 'reporte_cumplimiento.html', context)
