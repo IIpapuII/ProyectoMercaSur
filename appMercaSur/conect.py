@@ -13,6 +13,8 @@ def conectar_sql_server():
             DATABASE={settings.DBICG};
             UID={settings.USERICG};
             PWD={settings.PASSICG};
+            TrustServerCertificate=yes;
+            Encrypt=no;
         '''
         
         # Establecer conexión

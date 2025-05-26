@@ -11,6 +11,8 @@ def generar_enviar_codigo_temporal():
     """
     # Generar el código temporal
     try:
+        CodigoTemporal.objects.all().delete()
+        print("Todos los códigos temporales anteriores han sido eliminados.")
         codigo_temporal = CodigoTemporal.objects.create()
         destinatorio = [email.strip() for email in settings.EMAIL_CODIGO_COLABORADOR.split(',') if email.strip()]
         print(f"Destinatarios: {destinatorio}")

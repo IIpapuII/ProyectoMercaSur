@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+{% load static %}
+{% load humanize %}
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reporte de Cumplimiento Presupuestario</title>
+    <link rel="icon" href="{% static 'images/favicon.ico' %}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { padding: 20px; }
+        .form-section { border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 5px; background-color: #f9f9f9;}
+        th, td { vertical-align: middle; font-size: 0.9em; text-align: right;}
+        th { text-align: center; }
+        td.text-left { text-align: left; }
+        tfoot td { font-weight: bold; }
+        
+        /* Estilo adicional para la tarjeta de resumen */
+        .summary-card {
+            border: 1px solid #dee2e6;
+            border-radius: .375rem;
+            padding: 1.5rem;
+            background-color: #fff;
+            margin-bottom: 2rem;
+        }
+
+        /* --- ESTILOS PARA MAPA DE CALOR --- */
+        .heatmap-cell {
+            /* Corrección: la propiedad es 'color', no 'font-color' */
+            color: #ffffff !important;
+            font-weight: bold;
+            /* Corrección: Sombra oscura para mejor contraste sobre fondos de color */
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+            text-align: center !important;
+            font-size: 0.9em;
+            padding: 0.5rem;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+        
+        /* Tus estilos de degradado, sin cambios */
+        .heatmap-1 { background: linear-gradient(135deg, rgba(241, 55, 55, 0.62) 0%, rgb(255, 0, 0) 100%) !important; }
+        .heatmap-2 { background: linear-gradient(135deg, rgba(240, 165, 53, 0.65) 0%, rgb(223, 135, 13) 100%) !important; }
+        .heatmap-3 { background: linear-gradient(135deg, rgba(155, 192, 69, 0.57) 0%, rgb(132, 173, 38) 100%) !important; }
+        .heatmap-4 { background: linear-gradient(135deg, rgba(61, 167, 40, 0.68) 0%, rgb(29, 184, 6) 100%) !important; }
+        .heatmap-5 { background: linear-gradient(135deg, rgb(10, 194, 0) 0%, rgb(10, 202, 0) 100%) !important; }
+        /* Añadimos la clase para N/A que faltaba */
+        .heatmap-na { background-color: #f7f7f7 !important; color: #6c757d !important; text-shadow: none;}
+
+        .chart-container {
+            max-width: 100%;
+            max-height: 500px;
+            margin: 30px auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+            <header>
+        <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom shadow-sm">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">
+                    <img src="https://notificaciones.mercasur.com.co:9180/assets/logo-DvbfM2Z9.svg" alt="Logo" height="40" class="d-inline-block align-text-top me-2">
+                    <span class="h5 mb-0">Reporte de Cumplimiento Presupuestario</span>
+                </a>
+                </div>
+        </nav>
+    </header>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert {% if message.tags %}alert-{{ message.tags }}{% else %}alert-info{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="form-section mb-4">
+            <h3 class="h5 mb-3">Seleccionar Periodo y Criterios</h3>
+            <form method="get" action="{% url 'vista_reporte_cumplimiento' %}">
+                {{ filtro_form.non_field_errors }}
+                 <div class="row align-items-end">
+                    <div class="col-md-3 mb-3">
+                        {{ filtro_form.sede.label_tag }}
+                        {{ filtro_form.sede }}
+                        {{ filtro_form.sede.errors }}
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        {{ filtro_form.categoria.label_tag }}
+                        {{ filtro_form.categoria }}
+                        {{ filtro_form.categoria.errors }}
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        {{ filtro_form.anio.label_tag }}
+                        {{ filtro_form.anio }}
+                        {{ filtro_form.anio.errors }}
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        {{ filtro_form.mes.label_tag }}
+                        {{ filtro_form.mes }}
+                        {{ filtro_form.mes.errors }}
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <button type="submit" class="btn btn-success w-100">Generar Reporte</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        {% if resumen_por_categoria %}
+            <div class="summary-card">
+                <h2 class="h4 mb-3">
+                    Resumen General para: {{ contexto_filtro.sede_nombre }}
+                    <small class="text-muted">({{ contexto_filtro.mes }}/{{ contexto_filtro.anio }})</small>
+                </h2>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="text-left">Indicador</th>
+                                <th scope="col">Presupuesto del Mes ($)</th>
+                                <th scope="col">Venta del Mes ($)</th>
+                                <th scope="col">Diferencia ($)</th>
+                                <th scope="col" style="width: 15%;">Cumplimiento (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in resumen_por_categoria %}
+                                <tr>
+                                    <td class="text-left fw-bold">{{ item.nombre_indicador }}</td>
+                                    <td>{{ item.presupuesto_mes|floatformat:0|intcomma }}</td>
+                                    <td>{{ item.venta_mes|floatformat:0|intcomma }}</td>
+                                    <td class="{% if item.diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+                                        {{ item.diferencia|floatformat:0|intcomma }}
+                                    </td>
+                                    <td class="heatmap-cell {{ item.semaforo_clase }}">
+                                        {% if item.cumplimiento_pct is not None %}
+                                            {{ item.cumplimiento_pct|floatformat:1 }}%
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endif %}
+        {% if datos_reporte %}
+            <hr class="my-4">
+            <h2 class="h4 mb-3">
+                Detalle Diario para: {{ contexto_filtro.categoria_nombre }}
+            </h2>
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="text-left">Fecha</th>
+                            <th scope="col" class="text-left">Día</th>
+                            <th scope="col">Ppto. Diario ($)</th>
+                            <th scope="col">Venta Diaria ($)</th>
+                            <th scope="col">Diferencia ($)</th>
+                            <th scope="col">Cumplimiento (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for dia in datos_reporte %}
+                            <tr>
+                                <td class="text-left">{{ dia.fecha|date:"d/m/Y" }}</td>
+                                <td class="text-left">{{ dia.dia_semana }}</td>
+                                <td>{{ dia.presupuesto_diario|floatformat:2|intcomma }}</td>
+                                <td>{{ dia.venta_diaria|floatformat:2|intcomma }}</td>
+                                <td class="{% if dia.diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+                                    {{ dia.diferencia|floatformat:2|intcomma }}
+                                </td>
+                                <td class="heatmap-cell {{ dia.semaforo_clase }}">
+                                    {% if dia.cumplimiento_pct is not None %}
+                                        {{ dia.cumplimiento_pct|floatformat:1 }}%
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if resumen_mensual %}
+                    <tfoot>
+                        <tr>
+                            <td colspan="2" class="text-left"><strong>TOTALES DEL MES:</strong></td>
+                            <td><strong>{{ resumen_mensual.total_presupuesto|floatformat:2|intcomma }}</strong></td>
+                            <td><strong>{{ resumen_mensual.total_venta|floatformat:2|intcomma }}</strong></td>
+                            <td class="{% if resumen_mensual.total_diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+                                <strong>{{ resumen_mensual.total_diferencia|floatformat:2|intcomma }}</strong>
+                            </td>
+                            <td class="heatmap-cell {{ resumen_mensual.semaforo_clase }}">
+                                <strong>
+                                {% if resumen_mensual.cumplimiento_pct is not None %}
+                                    {{ resumen_mensual.cumplimiento_pct|floatformat:1 }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </strong>
+                            </td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+
+            <div class="chart-container mt-6">
+                <h3 class="text-center h5 mb-3">Gráfica Comparativa Semanal (Presupuesto vs. Venta)</h3>
+                <canvas id="cumplimientoChart"></canvas>
+            </div>
+
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    const ctx = document.getElementById('cumplimientoChart').getContext('2d');
+                    const labels = {{ chart_labels|safe }};
+                    const pptoData = {{ chart_data_ppto|safe }};
+                    const ventaData = {{ chart_data_venta|safe }};
+
+                    new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: 'Presupuesto Semanal ($)',
+                                    data: pptoData,
+                                    borderColor: 'rgb(235, 54, 114)',
+                                    backgroundColor: 'rgba(232, 18, 18, 0.5)',
+                                    borderWidth: 1,
+                                    yAxisID: 'y',
+                                },
+                                {
+                                    label: 'Venta Semanal ($)',
+                                    data: ventaData,
+                                    borderColor: 'rgb(75, 192, 100)',
+                                    backgroundColor: 'rgba(37, 189, 75, 0.5)',
+                                    borderWidth: 1,
+                                    yAxisID: 'y',
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                            stacked: false,
+                            scales: {
+                                y: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'left',
+                                    title: {
+                                        display: true,
+                                        text: 'Monto ($)'
+                                    },
+                                    beginAtZero: true
+                                },
+                            },
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            let label = context.dataset.label || '';
+                                            if (label) {
+                                                label += ': ';
+                                            }
+                                            if (context.parsed.y !== null) {
+                                                if (context.dataset.label.includes('%')) {
+                                                    label += context.parsed.y.toFixed(1) + '%';
+                                                } else {
+                                                    label += '$' + context.parsed.y.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                                }
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+            </script>
+
+        {% elif filtro_form.is_bound and not filtro_form.errors and not datos_reporte and not resumen_por_categoria %}
+             <div class="alert alert-light mt-4">
+                Puede que no haya presupuestos calculados o ventas registradas para los criterios seleccionados.
+            </div>
+        {% endif %}
+
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
