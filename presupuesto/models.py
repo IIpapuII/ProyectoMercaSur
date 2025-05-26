@@ -1,26 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
-# Create your models here.
-
-class ventapollos(models.Model):
-    choiseUbicacion = (
-        ('CALDAS', 'CALDAS'),
-        ('CENTRO', 'CENTRO'),
-    )
-    id = models.AutoField(primary_key=True)
-    fecha = models.DateField(verbose_name='Fecha')
-    ubicacion = models.CharField(max_length=100, choices=choiseUbicacion, verbose_name='Ubicación')
-    ValorVenta = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Valor de Venta')
-    create_date = models.DateTimeField(auto_now_add=True)
-    update_date = models.DateTimeField(auto_now=True)
-    class Meta:
-        verbose_name = 'Concesión de Pollos'
-        verbose_name_plural = 'Consesión de Pollos'
-        ordering = ['-fecha']
-
-    def __str__(self):
-        return f'{self.fecha} - {self.ubicacion} - {self.ValorVenta}'
 
 # Sede y CategoriaVenta permanecen igual que en la respuesta anterior
 class Sede(models.Model):
@@ -36,6 +16,7 @@ class PorcentajeDiarioConfig(models.Model):
     Almacena el conjunto de porcentajes de distribución diaria para una categoría.
     Cada categoría (Fruver, Carnes, Total Sede, etc.) tendrá 7 registros aquí.
     """
+    sede = models.ForeignKey(Sede, on_delete=models.CASCADE, related_name="config_porcentajes", null=True)
     categoria = models.ForeignKey(CategoriaVenta, on_delete=models.CASCADE, related_name="config_porcentajes")
     DIA_SEMANA_CHOICES = [
         (0, 'Lunes'), (1, 'Martes'), (2, 'Miércoles'),
@@ -119,3 +100,39 @@ class VentaDiariaReal(models.Model):
 
     def __str__(self):
         return f"{self.fecha} - {self.sede.nombre} - {self.categoria.nombre} - Venta: ${self.venta_real:,.2f}"
+
+class ventapollos(models.Model):
+    choiseUbicacion = (
+        ('CALDAS', 'CALDAS'),
+        ('CENTRO', 'CENTRO'),
+    )
+    id = models.AutoField(primary_key=True)
+    fecha = models.DateField(verbose_name='Fecha')
+    ubicacion = models.CharField(max_length=100, choices=choiseUbicacion, verbose_name='Ubicación')
+    ValorVenta = models.DecimalField(max_digits=10, decimal_places=2, verbose_name='Valor de Venta')
+    create_date = models.DateTimeField(auto_now_add=True)
+    update_date = models.DateTimeField(auto_now=True)
+    class Meta:
+        verbose_name = 'Concesión de Pollos'
+        verbose_name_plural = 'Consesión de Pollos'
+        ordering = ['-fecha']
+
+    def save(self, *args, **kwargs):
+        if self.ubicacion == 'CALDAS':
+            VentaDiariaReal.objects.create(
+                sede=Sede.objects.get(nombre='CALDAS'),
+                categoria=CategoriaVenta.objects.get(nombre='POLLO'),
+                fecha=self.fecha,
+                venta_real=self.ValorVenta
+            )
+        elif self.ubicacion == 'CENTRO':
+            VentaDiariaReal.objects.create(
+                sede=Sede.objects.get(nombre='CENTRO'),
+                categoria=CategoriaVenta.objects.get(nombre='POLLO'),
+                fecha=self.fecha,
+                venta_real=self.ValorVenta
+            )
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.fecha} - {self.ubicacion} - {self.ValorVenta}'

@@ -5,28 +5,53 @@
 <head>
     <meta charset="UTF-8">
     <title>Reporte de Cumplimiento Presupuestario</title>
+    <link rel="icon" href="{% static 'images/favicon.ico' %}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    {# Chart.js CDN #}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { padding: 20px; }
         .form-section { border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 5px; background-color: #f9f9f9;}
         th, td { vertical-align: middle; font-size: 0.9em; text-align: right;}
-        th { text-align: center; /* background-color: #f2f2f2; quitamos el fondo fijo para que tome el del semáforo */ }
+        th { text-align: center; }
         td.text-left { text-align: left; }
-        tfoot td { font-weight: bold; /* background-color: #e9e9e9; quitamos el fondo fijo */ }
-
-        .semaforo-rojo { background-color: #f8d7da !important; color: #721c24 !important; }
-        .semaforo-amarillo { background-color: #fff3cd !important; color: #856404 !important; }
-        .semaforo-verde { background-color: #d4edda !important; color: #155724 !important; }
-        .semaforo-azul { background-color: #cce5ff !important; color: #004085 !important; }
-        .semaforo-na { background-color: #e9ecef !important; color: #495057 !important; }
+        tfoot td { font-weight: bold; }
         
+        /* Estilo adicional para la tarjeta de resumen */
+        .summary-card {
+            border: 1px solid #dee2e6;
+            border-radius: .375rem;
+            padding: 1.5rem;
+            background-color: #fff;
+            margin-bottom: 2rem;
+        }
+
+        /* --- ESTILOS PARA MAPA DE CALOR --- */
+        .heatmap-cell {
+            /* Corrección: la propiedad es 'color', no 'font-color' */
+            color: #ffffff !important;
+            font-weight: bold;
+            /* Corrección: Sombra oscura para mejor contraste sobre fondos de color */
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+            text-align: center !important;
+            font-size: 0.9em;
+            padding: 0.5rem;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+        
+        /* Tus estilos de degradado, sin cambios */
+        .heatmap-1 { background: linear-gradient(135deg, rgba(241, 55, 55, 0.62) 0%, rgb(255, 0, 0) 100%) !important; }
+        .heatmap-2 { background: linear-gradient(135deg, rgba(240, 165, 53, 0.65) 0%, rgb(223, 135, 13) 100%) !important; }
+        .heatmap-3 { background: linear-gradient(135deg, rgba(155, 192, 69, 0.57) 0%, rgb(132, 173, 38) 100%) !important; }
+        .heatmap-4 { background: linear-gradient(135deg, rgba(61, 167, 40, 0.68) 0%, rgb(29, 184, 6) 100%) !important; }
+        .heatmap-5 { background: linear-gradient(135deg, rgb(10, 194, 0) 0%, rgb(10, 202, 0) 100%) !important; }
+        /* Añadimos la clase para N/A que faltaba */
+        .heatmap-na { background-color: #f7f7f7 !important; color: #6c757d !important; text-shadow: none;}
+
         .chart-container {
-            width: 80%; /* Ajusta según necesidad */
-            max-width: 100%%;
+            max-width: 100%;
             max-height: 500px;
-            margin: 30px auto; /* Centrar y dar espacio */
+            margin: 30px auto;
             padding: 20px;
             border: 1px solid #ddd;
             border-radius: 5px;
@@ -36,7 +61,16 @@
 </head>
 <body>
     <div class="container-fluid">
-        <h1 class="mb-4">Reporte de Cumplimiento Presupuestario</h1>
+            <header>
+        <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom shadow-sm">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">
+                    <img src="https://notificaciones.mercasur.com.co:9180/assets/logo-DvbfM2Z9.svg" alt="Logo" height="40" class="d-inline-block align-text-top me-2">
+                    <span class="h5 mb-0">Reporte de Cumplimiento Presupuestario</span>
+                </a>
+                </div>
+        </nav>
+    </header>
 
         {% if messages %}
             {% for message in messages %}
@@ -79,18 +113,55 @@
             </form>
         </div>
 
-
+        {% if resumen_por_categoria %}
+            <div class="summary-card">
+                <h2 class="h4 mb-3">
+                    Resumen General para: {{ contexto_filtro.sede_nombre }}
+                    <small class="text-muted">({{ contexto_filtro.mes }}/{{ contexto_filtro.anio }})</small>
+                </h2>
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="text-left">Indicador</th>
+                                <th scope="col">Presupuesto del Mes ($)</th>
+                                <th scope="col">Venta del Mes ($)</th>
+                                <th scope="col">Diferencia ($)</th>
+                                <th scope="col" style="width: 15%;">Cumplimiento (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in resumen_por_categoria %}
+                                <tr>
+                                    <td class="text-left fw-bold">{{ item.nombre_indicador }}</td>
+                                    <td>{{ item.presupuesto_mes|floatformat:0|intcomma }}</td>
+                                    <td>{{ item.venta_mes|floatformat:0|intcomma }}</td>
+                                    <td class="{% if item.diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+                                        {{ item.diferencia|floatformat:0|intcomma }}
+                                    </td>
+                                    <td class="heatmap-cell {{ item.semaforo_clase }}">
+                                        {% if item.cumplimiento_pct is not None %}
+                                            {{ item.cumplimiento_pct|floatformat:1 }}%
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endif %}
         {% if datos_reporte %}
             <hr class="my-4">
             <h2 class="h4 mb-3">
-                Cumplimiento para: {{ contexto_filtro.sede_nombre }} - {{ contexto_filtro.categoria_nombre }}
-                <small class="text-muted">({{ contexto_filtro.mes }}/{{ contexto_filtro.anio }})</small>
+                Detalle Diario para: {{ contexto_filtro.categoria_nombre }}
             </h2>
 
             <div class="table-responsive">
                 <table class="table table-bordered table-striped table-hover table-sm">
-                    {# Aplicar clase de semáforo del resumen mensual al thead #}
-                    <thead class="{% if resumen_mensual %}{{ resumen_mensual.semaforo_clase }}{% else %}table-light{% endif %}">
+                    <thead>
                         <tr>
                             <th scope="col" class="text-left">Fecha</th>
                             <th scope="col" class="text-left">Día</th>
@@ -102,15 +173,15 @@
                     </thead>
                     <tbody>
                         {% for dia in datos_reporte %}
-                            <tr class="{{ dia.semaforo_clase }}">
+                            <tr>
                                 <td class="text-left">{{ dia.fecha|date:"d/m/Y" }}</td>
-                                <td class="text-left">{{ dia.dia_semana }}</td> {# Cambiado desde dia.dia_semana_nombre si así lo pasas #}
+                                <td class="text-left">{{ dia.dia_semana }}</td>
                                 <td>{{ dia.presupuesto_diario|floatformat:2|intcomma }}</td>
                                 <td>{{ dia.venta_diaria|floatformat:2|intcomma }}</td>
-                                <td class="{% if dia.diferencia < 0 %}text-danger{% else %}text-success{% endif %}">
+                                <td class="{% if dia.diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
                                     {{ dia.diferencia|floatformat:2|intcomma }}
                                 </td>
-                                <td>
+                                <td class="heatmap-cell {{ dia.semaforo_clase }}">
                                     {% if dia.cumplimiento_pct is not None %}
                                         {{ dia.cumplimiento_pct|floatformat:1 }}%
                                     {% else %}
@@ -121,15 +192,15 @@
                         {% endfor %}
                     </tbody>
                     {% if resumen_mensual %}
-                    <tfoot class="{{ resumen_mensual.semaforo_clase }}">
+                    <tfoot>
                         <tr>
                             <td colspan="2" class="text-left"><strong>TOTALES DEL MES:</strong></td>
                             <td><strong>{{ resumen_mensual.total_presupuesto|floatformat:2|intcomma }}</strong></td>
                             <td><strong>{{ resumen_mensual.total_venta|floatformat:2|intcomma }}</strong></td>
-                            <td class="{% if resumen_mensual.total_diferencia < 0 %}text-danger{% else %}text-success{% endif %}">
+                            <td class="{% if resumen_mensual.total_diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
                                 <strong>{{ resumen_mensual.total_diferencia|floatformat:2|intcomma }}</strong>
                             </td>
-                            <td>
+                            <td class="heatmap-cell {{ resumen_mensual.semaforo_clase }}">
                                 <strong>
                                 {% if resumen_mensual.cumplimiento_pct is not None %}
                                     {{ resumen_mensual.cumplimiento_pct|floatformat:1 }}%
@@ -144,61 +215,51 @@
                 </table>
             </div>
 
-            {# Contenedor para la gráfica #}
-            <div class="chart-container mt-5">
-                <h3 class="text-center h5 mb-3">Gráfica de Presupuesto vs. Venta Diaria</h3>
+            <div class="chart-container mt-6">
+                <h3 class="text-center h5 mb-3">Gráfica Comparativa Semanal (Presupuesto vs. Venta)</h3>
                 <canvas id="cumplimientoChart"></canvas>
             </div>
 
             <script>
                 document.addEventListener('DOMContentLoaded', function () {
                     const ctx = document.getElementById('cumplimientoChart').getContext('2d');
-                    const labels = {{ chart_labels|safe }}; // Recibe de la vista
-                    const pptoData = {{ chart_data_ppto|safe }}; // Recibe de la vista
-                    const ventaData = {{ chart_data_venta|safe }}; // Recibe de la vista
+                    const labels = {{ chart_labels|safe }};
+                    const pptoData = {{ chart_data_ppto|safe }};
+                    const ventaData = {{ chart_data_venta|safe }};
 
                     new Chart(ctx, {
-                        type: 'line', // Puedes cambiar a 'line' si prefieres
+                        type: 'bar',
                         data: {
                             labels: labels,
                             datasets: [
                                 {
-                                    label: 'Presupuesto Diario ($)',
+                                    label: 'Presupuesto Semanal ($)',
                                     data: pptoData,
-                                    borderColor: 'rgba(54, 162, 235, 1)',
-                                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                                    borderColor: 'rgb(235, 54, 114)',
+                                    backgroundColor: 'rgba(232, 18, 18, 0.5)',
                                     borderWidth: 1,
-                                    yAxisID: 'y', // Asignar al eje Y principal
+                                    yAxisID: 'y',
                                 },
                                 {
-                                    label: 'Venta Diaria ($)',
+                                    label: 'Venta Semanal ($)',
                                     data: ventaData,
-                                    borderColor: 'rgba(75, 192, 192, 1)',
-                                    backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                                    borderColor: 'rgb(75, 192, 100)',
+                                    backgroundColor: 'rgba(37, 189, 75, 0.5)',
                                     borderWidth: 1,
-                                    yAxisID: 'y', // Asignar al eje Y principal
+                                    yAxisID: 'y',
                                 }
-                                // Podrías añadir un dataset para el % de cumplimiento en un segundo eje Y si quisieras
-                                // {
-                                //     label: 'Cumplimiento (%)',
-                                //     data: [ ... tus datos de % ... ],
-                                //     borderColor: 'rgba(255, 99, 132, 1)',
-                                //     backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                                //     type: 'line', // Mostrar como línea
-                                //     yAxisID: 'y1', // Asignar a un segundo eje Y
-                                // }
                             ]
                         },
                         options: {
                             responsive: true,
-                            maintainAspectRatio: false, // Para que se ajuste mejor al contenedor
+                            maintainAspectRatio: false,
                             interaction: {
                                 mode: 'index',
                                 intersect: false,
                             },
-                            stacked: false, // Para que las barras no se apilen
+                            stacked: false,
                             scales: {
-                                y: { // Eje Y principal para los montos $
+                                y: {
                                     type: 'linear',
                                     display: true,
                                     position: 'left',
@@ -206,22 +267,8 @@
                                         display: true,
                                         text: 'Monto ($)'
                                     },
-                                    beginAtZero: true // Empezar el eje Y en cero
+                                    beginAtZero: true
                                 },
-                                // y1: { // Eje Y secundario (opcional, para el %)
-                                //     type: 'linear',
-                                //     display: true, // Cambiar a true si añades el dataset de %
-                                //     position: 'right',
-                                //     title: {
-                                //         display: true,
-                                //         text: 'Cumplimiento (%)'
-                                //     },
-                                //     grid: {
-                                //         drawOnChartArea: false, // Solo mostrar líneas de grid para el eje Y principal
-                                //     },
-                                //     min: 0,
-                                //     max: 120 // O un máximo adecuado para el %
-                                // }
                             },
                             plugins: {
                                 tooltip: {
@@ -248,7 +295,7 @@
                 });
             </script>
 
-        {% elif filtro_form.is_bound and not filtro_form.errors and not datos_reporte %}
+        {% elif filtro_form.is_bound and not filtro_form.errors and not datos_reporte and not resumen_por_categoria %}
              <div class="alert alert-light mt-4">
                 Puede que no haya presupuestos calculados o ventas registradas para los criterios seleccionados.
             </div>

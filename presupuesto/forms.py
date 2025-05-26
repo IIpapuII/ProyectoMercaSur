@@ -3,6 +3,7 @@ from .models import Sede, CategoriaVenta # Importa los modelos necesarios
 from decimal import Decimal
 from datetime import date
 from django.forms import formset_factory
+from .models import CategoriaVenta, Sede 
 
 class SedeAñoMesForm(forms.Form):
     """Formulario para seleccionar la Sede, Año y Mes."""
@@ -48,9 +49,9 @@ PresupuestoCategoriaFormSet = formset_factory(PresupuestoCategoriaForm, extra=0)
 
 class FiltroCumplimientoForm(forms.Form):
     sede = forms.ModelChoiceField(
-        queryset=Sede.objects.all().order_by('nombre'),
+        queryset=Sede.objects.none(),
         label="Seleccione Sede",
-        empty_label=None, # Forzar selección
+        empty_label="--Ninguna sede permitida--", # Forzar selección
         widget=forms.Select(attrs={'class': 'form-control'})
     )
     # Hacer la categoría opcional, si no se selecciona, se podrían mostrar todas o un resumen.
@@ -73,3 +74,21 @@ class FiltroCumplimientoForm(forms.Form):
         label="Mes",
         widget=forms.NumberInput(attrs={'class': 'form-control', 'min':'1', 'max':'12'})
     )
+    def __init__(self, *args, **kwargs):
+        # Extraemos el usuario que pasamos desde la vista
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        if user:
+            if user.groups.filter(name='Acceso Total Sedes').exists() or user.is_superuser:
+                queryset_sedes = Sede.objects.all().order_by('nombre')
+            else:
+                # Obtenemos la lista de nombres de los grupos del usuario.
+                nombres_de_grupos = user.groups.values_list('name', flat=True)
+                queryset_sedes = Sede.objects.filter(nombre__in=nombres_de_grupos).order_by('nombre')
+
+            # Asignamos el queryset filtrado al campo 'sede'
+            self.fields['sede'].queryset = queryset_sedes
+
+            if queryset_sedes.exists():
+                self.fields['sede'].empty_label = None

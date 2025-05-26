@@ -4,7 +4,7 @@ from .serializers import CustomTokenObtainPairSerializer, VentapollosSerializer
 from rest_framework import generics, permissions
 from rest_framework.filters import OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import VentaDiariaReal, ventapollos
+from .models import VentaDiariaReal, ventapollos, CategoriaVenta
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.utils.safestring import mark_safe
 from django.shortcuts import render
@@ -13,6 +13,8 @@ from .forms import FiltroCumplimientoForm, SedeAñoMesForm, PresupuestoCategoria
 from .models import Sede, CategoriaVenta, PresupuestoMensualCategoria, PresupuestoDiarioCategoria
 from .utils import calcular_presupuesto_con_porcentajes_dinamicos, obtener_clase_semaforo
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from django.db.models import Sum
+from appMercaSur.decorators import jwt_login_required
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -274,97 +276,146 @@ def vista_consultar_presupuesto(request):
     }
     return render(request, 'consultar_presupuesto.html', context) # Nueva plantilla
 
+@jwt_login_required
 def vista_reporte_cumplimiento(request):
-    filtro_form = FiltroCumplimientoForm(request.GET or None)
+    filtro_form = FiltroCumplimientoForm(request.GET or None, user=request.user)
     datos_reporte = []
     resumen_mensual = None
     contexto_filtro = None
-    
-    # Datos para la gráfica
-    chart_labels = []
-    chart_data_ppto = []
-    chart_data_venta = []
+    resumen_por_categoria = [] # Inicializamos la nueva lista aquí
+    chart_labels, chart_data_ppto, chart_data_venta = [], [], [] # Inicializar para el caso de formulario no válido
 
     if filtro_form.is_valid():
         sede = filtro_form.cleaned_data['sede']
-        categoria = filtro_form.cleaned_data['categoria']
+        categoria_seleccionada = filtro_form.cleaned_data['categoria'] # Para el detalle
         anio = filtro_form.cleaned_data['anio']
         mes = filtro_form.cleaned_data['mes']
 
         contexto_filtro = {
             'sede_nombre': sede.nombre,
-            'categoria_nombre': categoria.nombre,
+            'categoria_nombre': categoria_seleccionada.nombre, # Para el título del detalle
             'anio': anio,
             'mes': mes
         }
 
+        # --- INICIO: LÓGICA PARA LA TABLA DE RESUMEN GENERAL POR CATEGORÍA ---
+        todas_las_categorias = CategoriaVenta.objects.all() # O como obtengas tus categorías activas
+
+        for cat_obj in todas_las_categorias:
+            presupuesto_total_cat_qs = PresupuestoDiarioCategoria.objects.filter(
+                presupuesto_mensual__sede=sede,
+                presupuesto_mensual__categoria=cat_obj,
+                presupuesto_mensual__anio=anio,
+                presupuesto_mensual__mes=mes
+            ).aggregate(total_presupuesto=Sum('presupuesto_calculado'))
+            
+            presupuesto_total_cat = presupuesto_total_cat_qs['total_presupuesto'] or Decimal('0.00')
+
+            venta_total_cat_qs = VentaDiariaReal.objects.filter(
+                sede=sede,
+                categoria=cat_obj,
+                fecha__year=anio,
+                fecha__month=mes
+            ).aggregate(total_venta=Sum('venta_real'))
+            
+            venta_total_cat = venta_total_cat_qs['total_venta'] or Decimal('0.00')
+
+            diferencia_cat = venta_total_cat - presupuesto_total_cat
+            cumplimiento_cat_pct = None
+            if presupuesto_total_cat > 0:
+                cumplimiento_cat_pct = (venta_total_cat / presupuesto_total_cat * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+
+            # Solo agregamos si hay presupuesto para esa categoría en el periodo
+            if presupuesto_total_cat > 0:
+                resumen_por_categoria.append({
+                    'nombre_indicador': cat_obj.nombre,
+                    'presupuesto_mes': presupuesto_total_cat,
+                    'venta_mes': venta_total_cat,
+                    'diferencia': diferencia_cat,
+                    'cumplimiento_pct': cumplimiento_cat_pct,
+                    'semaforo_clase': obtener_clase_semaforo(cumplimiento_cat_pct)
+                })
         presupuestos_diarios = PresupuestoDiarioCategoria.objects.filter(
             presupuesto_mensual__sede=sede,
-            presupuesto_mensual__categoria=categoria,
+            presupuesto_mensual__categoria=categoria_seleccionada,
             presupuesto_mensual__anio=anio,
             presupuesto_mensual__mes=mes
         ).order_by('fecha')
 
         if not presupuestos_diarios.exists():
-            messages.info(request, f"No se encontraron presupuestos diarios calculados para {categoria.nombre} en {sede.nombre} para el periodo {mes}/{anio}.")
+            messages.info(request, f"No se encontraron presupuestos diarios calculados para {categoria_seleccionada.nombre} en {sede.nombre} para el periodo {mes}/{anio}.")
+            # No reseteamos las variables del gráfico aquí si ya se calcularon para el resumen
         else:
             ventas_diarias_qs = VentaDiariaReal.objects.filter(
                 sede=sede,
-                categoria=categoria,
+                categoria=categoria_seleccionada,
                 fecha__year=anio,
                 fecha__month=mes
             )
             ventas_map = {v.fecha: v.venta_real for v in ventas_diarias_qs}
 
-            total_ppto_mes = Decimal('0.00')
-            total_venta_mes = Decimal('0.00')
+            total_ppto_mes_detalle = Decimal('0.00') # Renombrado para evitar confusión con totales de resumen
+            total_venta_mes_detalle = Decimal('0.00')
+            
+            dias_semana_ordenados = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+            resumen_semanal_detalle = { # Renombrado
+                dia: {'presupuesto': Decimal('0'), 'venta': Decimal('0')}
+                for dia in dias_semana_ordenados
+            }
 
             for ppto_dia in presupuestos_diarios:
                 venta_dia_real = ventas_map.get(ppto_dia.fecha, Decimal('0.00'))
-                diferencia = venta_dia_real - ppto_dia.presupuesto_calculado
-                cumplimiento_pct = None
-                if ppto_dia.presupuesto_calculado > 0:
-                    cumplimiento_pct = (venta_dia_real / ppto_dia.presupuesto_calculado * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
                 
-                semaforo_clase = obtener_clase_semaforo(cumplimiento_pct) # Obtener clase de semáforo
+                nombre_dia = ppto_dia.dia_semana_nombre
+                if nombre_dia in resumen_semanal_detalle:
+                    resumen_semanal_detalle[nombre_dia]['presupuesto'] += ppto_dia.presupuesto_calculado
+                    resumen_semanal_detalle[nombre_dia]['venta'] += venta_dia_real
 
+                diferencia = venta_dia_real - ppto_dia.presupuesto_calculado
+                cumplimiento_pct_dia = None # Renombrado
+                if ppto_dia.presupuesto_calculado > 0:
+                    cumplimiento_pct_dia = (venta_dia_real / ppto_dia.presupuesto_calculado * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+                
                 datos_reporte.append({
                     'fecha': ppto_dia.fecha,
-                    'dia_semana': ppto_dia.dia_semana_nombre, # Asegúrate que este campo exista o usa ppto_dia.fecha.strftime("%A")
+                    'dia_semana': ppto_dia.dia_semana_nombre,
                     'presupuesto_diario': ppto_dia.presupuesto_calculado,
                     'venta_diaria': venta_dia_real,
                     'diferencia': diferencia,
-                    'cumplimiento_pct': cumplimiento_pct,
-                    'semaforo_clase': semaforo_clase
+                    'cumplimiento_pct': cumplimiento_pct_dia,
+                    'semaforo_clase': obtener_clase_semaforo(cumplimiento_pct_dia) # Usar el mismo semáforo
                 })
-                total_ppto_mes += ppto_dia.presupuesto_calculado
-                total_venta_mes += venta_dia_real
 
-                # Preparar datos para la gráfica
-                chart_labels.append(ppto_dia.fecha.strftime('%d')) # Solo el día para etiquetas más cortas
-                chart_data_ppto.append(float(ppto_dia.presupuesto_calculado)) # Chart.js prefiere floats
-                chart_data_venta.append(float(venta_dia_real))
+                total_ppto_mes_detalle += ppto_dia.presupuesto_calculado
+                total_venta_mes_detalle += venta_dia_real
             
-            cumplimiento_total_mes = None
-            if total_ppto_mes > 0:
-                cumplimiento_total_mes = (total_venta_mes / total_ppto_mes * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+            # Datos para el gráfico del detalle
+            chart_labels = dias_semana_ordenados
+            chart_data_ppto = [float(resumen_semanal_detalle[dia]['presupuesto']) for dia in dias_semana_ordenados]
+            chart_data_venta = [float(resumen_semanal_detalle[dia]['venta']) for dia in dias_semana_ordenados]
 
-            resumen_mensual = {
-                'total_presupuesto': total_ppto_mes,
-                'total_venta': total_venta_mes,
-                'total_diferencia': total_venta_mes - total_ppto_mes,
-                'cumplimiento_pct': cumplimiento_total_mes,
-                'semaforo_clase': obtener_clase_semaforo(cumplimiento_total_mes)
+            cumplimiento_total_mes_detalle = None # Renombrado
+            if total_ppto_mes_detalle > 0:
+                cumplimiento_total_mes_detalle = (total_venta_mes_detalle / total_ppto_mes_detalle * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+
+            resumen_mensual = { # Este es el resumen del pie de la tabla de detalle
+                'total_presupuesto': total_ppto_mes_detalle,
+                'total_venta': total_venta_mes_detalle,
+                'total_diferencia': total_venta_mes_detalle - total_ppto_mes_detalle,
+                'cumplimiento_pct': cumplimiento_total_mes_detalle,
+                'semaforo_clase': obtener_clase_semaforo(cumplimiento_total_mes_detalle)
             }
-            if not datos_reporte:
-                 messages.info(request, f"No se generaron datos para el reporte de {categoria.nombre} en {sede.nombre} para el periodo {mes}/{anio}, aunque se encontraron presupuestos.")
+            if not datos_reporte and presupuestos_diarios.exists(): # Ajuste en la condición del mensaje
+                 messages.info(request, f"Se encontraron presupuestos para {categoria_seleccionada.nombre} en {sede.nombre} para {mes}/{anio}, pero no se generaron datos de ventas para el detalle diario.")
+    # else: # Si el formulario no es válido, las variables del gráfico ya están inicializadas como listas vacías
 
     context = {
         'filtro_form': filtro_form,
+        'resumen_por_categoria': resumen_por_categoria, # Añadido al contexto
         'datos_reporte': datos_reporte,
         'resumen_mensual': resumen_mensual,
         'contexto_filtro': contexto_filtro,
-        'chart_labels': mark_safe(json.dumps(chart_labels)), # Serializar a JSON para JS
+        'chart_labels': mark_safe(json.dumps(chart_labels)),
         'chart_data_ppto': mark_safe(json.dumps(chart_data_ppto)),
         'chart_data_venta': mark_safe(json.dumps(chart_data_venta)),
     }

@@ -2,9 +2,9 @@
 import calendar
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from .models import CategoriaVenta, PorcentajeDiarioConfig # Importar modelos necesarios
+from .models import CategoriaVenta, PorcentajeDiarioConfig, PresupuestoDiarioCategoria, PresupuestoMensualCategoria # Importar modelos necesarios
 
-def calcular_presupuesto_con_porcentajes_dinamicos(anio, mes, presupuestos_input_por_categoria):
+def calcular_presupuesto_con_porcentajes_dinamicos(sede_id, anio, mes, presupuestos_input_por_categoria):
     """
     Calcula presupuestos diarios usando el Método A:
     ValorDiario = (PresupuestoMensual * PctDia / 100) / NumOcurrenciasDia.
@@ -22,7 +22,7 @@ def calcular_presupuesto_con_porcentajes_dinamicos(anio, mes, presupuestos_input
                - gran_total_componentes (Decimal): Suma final de los componentes (excl. Total Sede).
                Retorna (None, None, None) si hay error fundamental.
     """
-    print(f"Iniciando cálculo (Método A) para {mes}/{anio}")
+    print(f"Iniciando cálculo (Método A) para Sede ID: {sede_id}, Periodo: {mes}/{anio}")
     if not (1 <= mes <= 12):
         print("Error: Mes inválido.")
         return None, None, None
@@ -44,7 +44,7 @@ def calcular_presupuesto_con_porcentajes_dinamicos(anio, mes, presupuestos_input
             presupuestos_input_por_categoria[nombre_cat] = presupuesto_decimal # Asegurar Decimal
 
             categoria_obj = CategoriaVenta.objects.get(nombre=nombre_cat)
-            configs = PorcentajeDiarioConfig.objects.filter(categoria=categoria_obj)
+            configs = PorcentajeDiarioConfig.objects.filter(categoria=categoria_obj, sede =sede_id)
             if configs.count() != 7:
                 print(f"Error Crítico: '{nombre_cat}' no tiene 7 porcentajes diarios configurados.")
                 continue # Saltar categoría
@@ -52,11 +52,7 @@ def calcular_presupuesto_con_porcentajes_dinamicos(anio, mes, presupuestos_input
             mapa_porcentajes_categoria[nombre_cat] = {c.dia_semana: c.porcentaje for c in configs}
             suma_pct = sum(mapa_porcentajes_categoria[nombre_cat].values())
             if suma_pct != Decimal('100.00'):
-                # Aunque el método A no depende matemáticamente de la suma=100 tanto como el método ponderado,
-                # lógicamente, los porcentajes deberían representar un todo. Es una buena práctica mantener la validación.
                 print(f"Advertencia: Los porcentajes para '{nombre_cat}' no suman 100.00 (Suma: {suma_pct}). Los resultados podrían no ser los esperados conceptualmente.")
-                # Decidir si continuar o fallar: por ahora continuamos pero con advertencia.
-                # return None, None, None # Opcional: fallar si no suma 100
 
             categorias_validas.append(nombre_cat)
 
@@ -199,16 +195,81 @@ def calcular_presupuesto_con_porcentajes_dinamicos(anio, mes, presupuestos_input
 
 def obtener_clase_semaforo(cumplimiento_pct):
     """
-    Devuelve la clase CSS para el semáforo basado en el porcentaje de cumplimiento.
-    Los umbrales son ejemplos basados en tu imagen.
+    Función mejorada para devolver clases estilo mapa de calor.
     """
     if cumplimiento_pct is None:
-        return "semaforo-na" # No aplica o sin datos
-    if cumplimiento_pct >= Decimal('101.0'): # Mayor o igual a 101%
-        return "semaforo-azul"
-    elif cumplimiento_pct >= Decimal('95.0'): # De 91% a 100.99%
-        return "semaforo-verde"
-    elif cumplimiento_pct >= Decimal('90.0'): # De 71% a 90.99%
-        return "semaforo-amarillo"
-    else: # Menor a 71%
-        return "semaforo-rojo"
+        return 'heatmap-na'  
+    if cumplimiento_pct < 90:
+        return 'heatmap-1'  
+    if cumplimiento_pct < 95:
+        return 'heatmap-2'  
+    if cumplimiento_pct < 97:
+        return 'heatmap-3'  
+    if cumplimiento_pct <= 101:
+        return 'heatmap-4'  
+    
+    return 'heatmap-5' 
+
+def recalcular_presupuestos_diarios_para_periodo(sede_id, anio, mes):
+    """
+    Función central que recalcula y guarda los presupuestos diarios para una sede/periodo.
+    Esta función será llamada desde la señal y desde la vista.
+    """
+    print(f"--- Iniciando recálculo para Sede ID: {sede_id}, Periodo: {mes}/{anio} ---")
+    
+    # 1. Recolectar todos los presupuestos mensuales para el periodo/sede dados.
+    presupuestos_mensuales = PresupuestoMensualCategoria.objects.filter(
+        sede_id=sede_id, anio=anio, mes=mes
+    )
+    
+    if not presupuestos_mensuales.exists():
+        print("No se encontraron presupuestos mensuales para este periodo. No se hace nada.")
+        return False, "No se encontraron presupuestos mensuales para recalcular."
+
+    # Construir el diccionario que la función de cálculo espera
+    presupuestos_input = {
+        pm.categoria.nombre: pm.presupuesto_total_categoria
+        for pm in presupuestos_mensuales
+    }
+
+    # 2. Llamar a la función de cálculo original.
+    resultados_diarios, _, _ = calcular_presupuesto_con_porcentajes_dinamicos(
+        sede_id, anio, mes, presupuestos_input
+    )
+
+    if resultados_diarios is None:
+        print("El cálculo falló. Revisa la configuración de porcentajes.")
+        return False, "Falló el cálculo. Revisa la configuración de porcentajes."
+
+    # 3. Guardar los nuevos resultados en la base de datos (lógica extraída de tu vista).
+    # Primero, borrar los registros diarios antiguos para este periodo y sede.
+    PresupuestoDiarioCategoria.objects.filter(
+        presupuesto_mensual__in=presupuestos_mensuales
+    ).delete()
+
+    # Luego, crear los nuevos registros diarios en bloque.
+    nuevos_diarios = []
+    for dia_data in resultados_diarios:
+        for cat_nombre, datos_cat_dia in dia_data['budgets_by_category'].items():
+            try:
+                # Encontrar el objeto PresupuestoMensualCategoria correspondiente
+                presup_mensual_obj = next(
+                    pm for pm in presupuestos_mensuales if pm.categoria.nombre == cat_nombre
+                )
+                
+                nuevos_diarios.append(PresupuestoDiarioCategoria(
+                    presupuesto_mensual=presup_mensual_obj,
+                    fecha=dia_data['fecha'],
+                    dia_semana_nombre=dia_data['dia_semana_nombre'],
+                    porcentaje_dia_especifico=datos_cat_dia['porcentaje_usado'],
+                    presupuesto_calculado=datos_cat_dia['valor']
+                ))
+            except StopIteration:
+                print(f"Advertencia: No se encontró PresupuestoMensual para {cat_nombre} al guardar diarios.")
+
+    if nuevos_diarios:
+        PresupuestoDiarioCategoria.objects.bulk_create(nuevos_diarios)
+        print(f"Cálculo exitoso: {len(nuevos_diarios)} registros diarios guardados/actualizados.")
+        return True, "Cálculo realizado y guardado con éxito."
+    
+    return False, "No se generaron nuevos registros diarios."

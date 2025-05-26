@@ -43,7 +43,7 @@ def procesar_articulos_task():
     except Exception as e:
         print(f"🚨 Error en procesar_articulos_task: {e}")
 
-@shared_task(bind=True, max_retries=1, default_retry_delay=60)
+@shared_task()
 def procesar_articulos_task_total():
     """Tarea programada para actualizar y enviar artículos modificados."""
     try:
