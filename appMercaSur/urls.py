@@ -20,10 +20,12 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
+    path('ckeditor/', include('django_ckeditor_5.urls')),
     path('admin/', admin.site.urls),
     path('automatizaciones/', include('automatizaciones.urls')),
     path('api/', include('clientes.urls')),
     path('', include('presupuesto.urls')),
+    path('', include('SoporteTI.urls')),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
