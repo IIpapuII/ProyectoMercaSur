@@ -46,6 +46,7 @@ class Equipment(models.Model):
     serial_number = models.CharField(max_length=100, unique=True, verbose_name="Número de serie")
     name = models.CharField(max_length=100, verbose_name="Nombre del equipo")
     model_equipmet = models.CharField(max_length=100, verbose_name="Model del Equipo", blank= True, null= True)
+    activo_fijo = models.CharField(max_length=100, verbose_name="Activo Fijo", blank= True, null= True)
     category = models.ForeignKey(EquipmentCategory, on_delete=models.SET_NULL, null=True, verbose_name="Categoría")
     purchase_date = models.DateField(verbose_name="Fecha de compra")
     warranty_expiration_date = models.DateField(blank=True, null=True, verbose_name="Fecha de expiración de garantía")
