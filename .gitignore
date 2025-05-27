@@ -17,6 +17,8 @@ start_celery_worker.bat
 start_celery_beat.bat
 run_django.bat
 articulos_modificados.csv
+equipment_photos/
+media/
 # If your build process includes running collectstatic, then you probably don't need or want to include staticfiles/
 # in your Git repository. Update and uncomment the following line accordingly.
 # <django-project-name>/staticfiles/

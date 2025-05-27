@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     'django.contrib.humanize',
     'whitenoise.runserver_nostatic',
     'django_celery_beat',
+    'django_ckeditor_5',
     'automatizaciones',
     'import_export',
     'clientes',
@@ -76,6 +77,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_extensions',
     'presupuesto',
+    'SoporteTI',
 ]
 SESSION_COOKIE_AGE = 1800
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -104,6 +106,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
     ),
 }
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -135,6 +138,59 @@ TEMPLATES = [
     },
 ]
 
+CKEDITOR_5_CONFIGS = {
+    "default": {
+        "toolbar": [
+            "heading", "bold", "italic", "underline", "strikethrough",
+            "bulletedList", "numberedList", "todoList",
+            "blockQuote", "code", "codeBlock",
+            "imageUpload", "mediaEmbed", "insertTable",
+            "undo", "redo", "highlight", "fontSize", "fontColor",
+            "mathType", "mention", "emoji"
+        ],
+        "heading": {
+            "options": [
+                {"model": "paragraph", "title": "Párrafo", "class": "ck-heading_paragraph"},
+                {"model": "heading1", "view": "h1", "title": "Título 1", "class": "ck-heading_heading1"},
+                {"model": "heading2", "view": "h2", "title": "Título 2", "class": "ck-heading_heading2"},
+                {"model": "heading3", "view": "h3", "title": "Título 3", "class": "ck-heading_heading3"},
+            ]
+        },
+        "codeBlock": {
+            "languages": [
+                {"language": "plaintext", "label": "Texto Plano"},
+                {"language": "python", "label": "Python"},
+                {"language": "javascript", "label": "JavaScript"},
+                {"language": "html", "label": "HTML"},
+            ]
+        },
+        "fontSize": {
+            "options": ["tiny", "small", "default", "big", "huge"],
+        },
+        "fontColor": {
+            "colors": [
+                {"color": "hsl(0, 100%, 50%)", "label": "Rojo"},
+                {"color": "hsl(120, 100%, 25%)", "label": "Verde"},
+                {"color": "hsl(240, 100%, 50%)", "label": "Azul"},
+            ],
+        },
+        "highlight": {
+            "options": [
+                {"model": "yellowMarker", "class": "marker-yellow", "title": "Resaltado amarillo"},
+                {"model": "greenMarker", "class": "marker-green", "title": "Resaltado verde"},
+            ]
+        },
+        "mathType": True,  # Activa MathType para ecuaciones
+        "mention": {
+            "feeds": [
+                {"marker": "@", "feed": ["@admin", "@user1", "@user2"], "minimumCharacters": 1}
+            ]
+        },
+        "emoji": True,  # Activa soporte para emojis
+        "theme": "auto",  
+        "language": "es",
+    }
+}
 WSGI_APPLICATION = 'appMercaSur.wsgi.application'
 
 
@@ -188,10 +244,14 @@ USE_TZ = True  # Habilitar soporte para zonas horarias
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+print(MEDIA_URL, MEDIA_ROOT)
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -246,3 +306,6 @@ JAZZMIN_UI_TWEAKS = {
     },
     "actions_sticky_top": False
 }
+
+CKEDITOR_UPLOAD_PATH = "uploads/"
+CKEDITOR_ALLOW_NONIMAGE_FILES = False
