@@ -22,7 +22,7 @@ class EmployeeAdmin(admin.ModelAdmin):
 
 @admin.register(Equipment)
 class EquipmentAdmin(admin.ModelAdmin):
-    list_display = ('name', 'serial_number', 'status', 'category', 'assigned_to', 'photo_preview')
+    list_display = ('name', 'serial_number','activo_fijo', 'status', 'category', 'assigned_to', 'photo_preview')
     list_filter = ('status', 'category', 'assigned_to')
     search_fields = ('name', 'serial_number')
     list_per_page = 20
