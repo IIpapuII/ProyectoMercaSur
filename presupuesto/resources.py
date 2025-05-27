@@ -2,6 +2,10 @@
 
 from import_export import resources, fields, widgets
 from import_export.formats.base_formats import XLS, XLSX
+import logging
+logger = logging.getLogger(__name__)
+from .utils import recalcular_presupuestos_diarios_para_periodo
+from django.db import transaction
 from .models import (
     Sede, CategoriaVenta, PorcentajeDiarioConfig,
     PresupuestoMensualCategoria, PresupuestoDiarioCategoria,
@@ -41,14 +45,40 @@ class PorcentajeDiarioConfigResource(resources.ModelResource):
     class Meta:
         model = PorcentajeDiarioConfig
         fields = ('id', 'sede', 'categoria', 'dia_semana', 'porcentaje')
-        import_id_fields = ('categoria', 'dia_semana')
+        import_id_fields = ('sede','categoria', 'dia_semana')
         skip_unchanged = True
         report_skipped = True
         formats = [XLS, XLSX]
 
 class PresupuestoMensualCategoriaResource(resources.ModelResource):
-    sede = fields.Field(column_name='sede', attribute='sede', widget=widgets.ForeignKeyWidget(Sede, field='nombre'))
-    categoria = fields.Field(column_name='categoria', attribute='categoria', widget=widgets.ForeignKeyWidget(CategoriaVenta, field='nombre'))
+    sede = fields.Field(column_name='sede', attribute='sede',
+                        widget=widgets.ForeignKeyWidget(Sede, field='nombre'))
+    categoria = fields.Field(column_name='categoria', attribute='categoria',
+                             widget=widgets.ForeignKeyWidget(CategoriaVenta, field='nombre'))
+
+    # Recolecta combinaciones únicas
+    combinaciones_recalculo = set()
+
+    def before_import_row(self, row, **kwargs):
+        self.combinaciones_recalculo.add((row['sede'], row['anio'], row['mes']))
+
+    def after_import(self, dataset, result, using_transactions, dry_run, **kwargs):
+        for sede_nombre, anio, mes in self.combinaciones_recalculo:
+            try:
+                sede = Sede.objects.get(nombre=sede_nombre)
+                success, message = recalcular_presupuestos_diarios_para_periodo(
+                    sede_id=sede.id,
+                    anio=anio,
+                    mes=mes
+                )
+                if not success:
+                    raise Exception(message)
+            except Exception as e:
+                logger.error(
+                    f"[ImportError] Error al recalcular para Sede={sede_nombre}, Año={anio}, Mes={mes}: {e}",
+                    exc_info=True
+                )
+
     class Meta:
         model = PresupuestoMensualCategoria
         fields = ('id', 'sede', 'categoria', 'anio', 'mes', 'presupuesto_total_categoria')

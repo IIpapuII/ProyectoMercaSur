@@ -30,8 +30,8 @@ class PorcentajeDiarioConfig(models.Model):
     )
 
     class Meta:
-        unique_together = ('categoria', 'dia_semana') # Solo un porcentaje por día para cada categoría
-        ordering = ['categoria', 'dia_semana']
+        unique_together = ('sede','categoria', 'dia_semana') # Solo un porcentaje por día para cada categoría
+        ordering = ['sede','categoria', 'dia_semana']
         verbose_name = "Configuración de Porcentaje Diario"
         verbose_name_plural = "Configuraciones de Porcentajes Diarios"
 
@@ -121,14 +121,14 @@ class ventapollos(models.Model):
         if self.ubicacion == 'CALDAS':
             VentaDiariaReal.objects.create(
                 sede=Sede.objects.get(nombre='CALDAS'),
-                categoria=CategoriaVenta.objects.get(nombre='POLLO'),
+                categoria=CategoriaVenta.objects.get(nombre='CONCESION POLLO'),
                 fecha=self.fecha,
                 venta_real=self.ValorVenta
             )
         elif self.ubicacion == 'CENTRO':
             VentaDiariaReal.objects.create(
                 sede=Sede.objects.get(nombre='CENTRO'),
-                categoria=CategoriaVenta.objects.get(nombre='POLLO'),
+                categoria=CategoriaVenta.objects.get(nombre='CONCESION POLLO'),
                 fecha=self.fecha,
                 venta_real=self.ValorVenta
             )

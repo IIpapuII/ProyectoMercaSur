@@ -256,7 +256,7 @@ def ConsultarClienteICG(numero_documento):
 
 
 def crearClienteICG(intanse_cliente):
-    nombreCompleto = f'{cliente.primer_nombre or ''} {cliente.segundo_nombre or  ''} {cliente.primer_apellido or  ''} {cliente.segundo_apellido or ''}'.strip()
+    nombreCompleto = f'{intanse_cliente.primer_nombre or ''} {intanse_cliente.segundo_nombre or  ''} {intanse_cliente.primer_apellido or  ''} {intanse_cliente.segundo_apellido or ''}'.strip()
     if intanse_cliente.tipocliente == 'Clientes':
         tipocliente = 14
     elif intanse_cliente.tipocliente == 'Colaborador':

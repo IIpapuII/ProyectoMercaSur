@@ -1,4 +1,5 @@
 import json
+from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer, VentapollosSerializer
 from rest_framework import generics, permissions
@@ -14,7 +15,9 @@ from .models import Sede, CategoriaVenta, PresupuestoMensualCategoria, Presupues
 from .utils import calcular_presupuesto_con_porcentajes_dinamicos, obtener_clase_semaforo
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from django.db.models import Sum
-from appMercaSur.decorators import jwt_login_required
+from appMercaSur.decorators import smart_jwt_login_required
+
+from django.views.decorators.csrf import csrf_exempt
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -48,6 +51,7 @@ class VentaPollosListAPIView(generics.ListAPIView):
         return queryset
 
 # --- Vista Para Cálculo ---
+@smart_jwt_login_required
 def vista_presupuesto_por_categoria(request):
     categorias_queryset = CategoriaVenta.objects.all().order_by('nombre')
 
@@ -186,6 +190,7 @@ def vista_presupuesto_por_categoria(request):
 
 
 # --- Vista Para Consulta ---
+@smart_jwt_login_required
 def vista_consultar_presupuesto(request):
     filter_form = SedeAñoMesForm(request.GET or None, prefix='filter')
     
@@ -276,7 +281,7 @@ def vista_consultar_presupuesto(request):
     }
     return render(request, 'consultar_presupuesto.html', context) # Nueva plantilla
 
-@jwt_login_required
+@smart_jwt_login_required
 def vista_reporte_cumplimiento(request):
     filtro_form = FiltroCumplimientoForm(request.GET or None, user=request.user)
     datos_reporte = []
@@ -420,3 +425,38 @@ def vista_reporte_cumplimiento(request):
         'chart_data_venta': mark_safe(json.dumps(chart_data_venta)),
     }
     return render(request, 'reporte_cumplimiento.html', context)
+
+@csrf_exempt
+@smart_jwt_login_required
+def iniciar_sesion_django(request):
+    user = request.user
+    roles = list(user.groups.values_list('name', flat=True))
+
+    role_redirects_vue = {
+        'admin': '/admin-dashboard',
+        'ventaspollos': '/concesion-pollos',
+    }
+    role_redirects_django = {
+        'presupuesto': '/presupuesto/reporte-cumplimiento/',
+
+        # Agrega otras rutas de Django aquí si es necesario
+    }
+
+    redirect_url = '/' 
+
+    for role in roles:
+        if role in role_redirects_django:
+            redirect_url = role_redirects_django[role]
+            break 
+    
+    if redirect_url == '/':
+        for role in roles:
+            if role in role_redirects_vue:
+                redirect_url = role_redirects_vue[role]
+                break
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Sesión de Django iniciada.',
+        'redirect_url': redirect_url
+    })

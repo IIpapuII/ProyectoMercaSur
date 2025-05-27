@@ -1,6 +1,6 @@
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.urls import path
-from .views import CustomTokenObtainPairView, VentaPollosCreateAPIView, VentaPollosListAPIView, vista_presupuesto_por_categoria, vista_consultar_presupuesto, vista_reporte_cumplimiento
+from .views import CustomTokenObtainPairView, VentaPollosCreateAPIView, VentaPollosListAPIView, iniciar_sesion_django, vista_presupuesto_por_categoria, vista_consultar_presupuesto, vista_reporte_cumplimiento
 
 
 urlpatterns = [
@@ -11,4 +11,5 @@ urlpatterns = [
     path('presupuesto/calcular/', vista_presupuesto_por_categoria, name='vista_presupuesto_calcular'),
     path('presupuesto/consultar/', vista_consultar_presupuesto, name='vista_presupuesto_consultar'),
     path('presupuesto/reporte-cumplimiento/', vista_reporte_cumplimiento, name='vista_reporte_cumplimiento'),
+    path('api/iniciar-sesion-django/', iniciar_sesion_django, name='iniciar_sesion_django'),
 ]

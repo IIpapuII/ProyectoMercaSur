@@ -30,8 +30,9 @@ CODIGO_SECRETO_VALIDO = os.getenv('CODIGO_ACCESO_EMPRESA')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
-
+ALLOWED_HOSTS = ["notificaciones.mercasur.com.co","localhost","127.0.0.1"]
+CSRF_TRUSTED_ORIGINS = ['https://notificaciones.mercasur.com.co:9180']
+VUE_LOGIN_URL = 'https://notificaciones.mercasur.com.co:9180/inicio-sesion'
 
 SERVERICG = os.getenv("SERVERICG")
 DBICG = os.getenv("DATABASEICG")
@@ -76,7 +77,8 @@ INSTALLED_APPS = [
     'django_extensions',
     'presupuesto',
 ]
-
+SESSION_COOKIE_AGE = 1800
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173", 
     "http://127.0.0.1:5173",
@@ -86,6 +88,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://notificaciones.mercasur.com.co:9180",
     "http://127.0.0.1:9000"
 ]
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',

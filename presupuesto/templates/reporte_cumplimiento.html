@@ -64,11 +64,18 @@
             <header>
         <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom shadow-sm">
             <div class="container-fluid">
-                <a class="navbar-brand" href="#">
+                <a class="navbar-brand" href="https://notificaciones.mercasur.com.co:9180/inicio-sesion">
                     <img src="https://notificaciones.mercasur.com.co:9180/assets/logo-DvbfM2Z9.svg" alt="Logo" height="40" class="d-inline-block align-text-top me-2">
                     <span class="h5 mb-0">Reporte de Cumplimiento Presupuestario</span>
                 </a>
+                <div class="d-flex align-items-center">
+                    {% if user.is_authenticated %}
+                        <span class="navbar-text me-3">
+                            Bienvenido, <strong>{{ user.username }}</strong>
+                        </span>
+                    {% endif %}
                 </div>
+            </div>
         </nav>
     </header>
 
