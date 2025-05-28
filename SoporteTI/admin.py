@@ -1,6 +1,14 @@
 from django.contrib import admin
 from django.utils.safestring import mark_safe
-from .models import Employee, Equipment, Department, EquipmentCategory,CategoryOfIncidence, Binnacle
+from .models import Employee, Equipment, Department, EquipmentCategory,CategoryOfIncidence, Binnacle, Location
+from .resources import EquipmentResource, BinnacleResource
+from import_export.admin import ImportExportModelAdmin
+
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'description')
+    search_fields = ('name',)
+    list_per_page = 20
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
@@ -21,9 +29,10 @@ class EmployeeAdmin(admin.ModelAdmin):
     list_per_page = 20
 
 @admin.register(Equipment)
-class EquipmentAdmin(admin.ModelAdmin):
-    list_display = ('name', 'serial_number','activo_fijo', 'status', 'category', 'assigned_to', 'photo_preview')
-    list_filter = ('status', 'category', 'assigned_to')
+class EquipmentAdmin(ImportExportModelAdmin):
+    resource_class = EquipmentResource
+    list_display = ('location_equipment','name','model_equipmet','serial_number','activo_fijo', 'status', 'category', 'assigned_to', 'photo_preview')
+    list_filter = ('status', 'category', 'assigned_to', 'location_equipment')
     search_fields = ('name', 'serial_number')
     list_per_page = 20
     
@@ -39,10 +48,11 @@ class CategoryOfIncidenceAdmin(admin.ModelAdmin):
     list_display = ('name_category',)
 
 @admin.register(Binnacle)
-class BinnacleAdmin(admin.ModelAdmin):
-    list_display =('title','Category','created_at', 'status','user')
-    list_filter =('status','Category',)
-    search_fields = ('description',)
+class BinnacleAdmin(ImportExportModelAdmin):
+    resource_class = BinnacleResource
+    list_display =('title','Category','location','employee_service','created_at', 'status','user')
+    list_filter =('status','Category', 'equipment_service', 'employee_service', 'location')
+    search_fields = ('description','title',)
     ordering = ('-created_at',)
     list_per_page = 40
     
