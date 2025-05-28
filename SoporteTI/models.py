@@ -8,10 +8,19 @@ class Department(models.Model):
     description = models.TextField(blank=True, null=True, verbose_name="Descripción")
 
     def __str__(self):
-        
         return self.name
     class Meta:
       verbose_name = "Departamento"
+
+class Location(models.Model):
+    name = models.CharField(max_length=100, unique=True, verbose_name="Ubicación")
+    description = models.TextField(blank=True, null=True, verbose_name="Descripción")
+
+    def __str__(self):
+        return self.name
+    class Meta:
+      verbose_name = "Ubicación"
+      verbose_name_plural = "Ubicaciones"
 
 class Employee(models.Model):
     first_name = models.CharField(max_length=50, verbose_name="Nombre")
@@ -57,7 +66,7 @@ class Equipment(models.Model):
         verbose_name="Estado"
     )
     assigned_to = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Asignado a")
-    location = models.CharField(max_length=200, blank=True, verbose_name="Ubicación")
+    location_equipment = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Ubicación")
     notes = models.TextField(blank=True, null=True, verbose_name="Notas")
     photo = models.ImageField(upload_to='equipment_photos/', blank=True, null=True, verbose_name="Evidencia fotográfica")
     date_create = models.DateTimeField(verbose_name='Fecha de Creación', auto_now_add=True, null= True , blank=True)
@@ -91,6 +100,7 @@ class Binnacle(models.Model):
     Category = models.ForeignKey(CategoryOfIncidence, on_delete=models.CASCADE, verbose_name='Categoria de Insidencia' )
     equipment_service = models.ForeignKey(Equipment, on_delete=models.CASCADE, verbose_name ='Equipo', blank = True, null= True)
     employee_service = models.ForeignKey(Employee, on_delete=models.CASCADE, verbose_name='Empleado de solicitud', blank = True, null= True)
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, verbose_name='Ubicación', blank = True, null= True)
     description = CKEditor5Field(verbose_name="Descripción", config_name="default")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, verbose_name="Estado" , default = STATUS_CHOICES[0])
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
