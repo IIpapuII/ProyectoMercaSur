@@ -2,6 +2,18 @@ from import_export import resources, fields
 from import_export.widgets import ForeignKeyWidget
 from .models import Equipment, Binnacle, EquipmentCategory, Employee, Location, CategoryOfIncidence
 from import_export.formats.base_formats import XLSX, XLS
+from import_export.widgets import ForeignKeyWidget
+
+class FullNameWidget(ForeignKeyWidget):
+    def clean(self, value, row=None, *args, **kwargs):
+        try:
+            first_name, last_name = value.strip().split(' ', 1)
+            return self.model.objects.get(first_name=first_name, last_name=last_name)
+        except (ValueError, self.model.DoesNotExist):
+            raise ValueError(f"Empleado no encontrado con nombre completo: {value}")
+
+    def render(self, value, obj=None, **kwargs):  # Acepta kwargs adicionales
+        return f"{value.first_name} {value.last_name}" if value else ''
 
 class EquipmentResource(resources.ModelResource):
     category = fields.Field(
@@ -12,13 +24,14 @@ class EquipmentResource(resources.ModelResource):
     assigned_to = fields.Field(
         column_name='assigned_to',
         attribute='assigned_to',
-        widget=ForeignKeyWidget(Employee, 'email')
+        widget=FullNameWidget(Employee)
     )
     location_equipment = fields.Field(
         column_name='location_equipment',
         attribute='location_equipment',
         widget=ForeignKeyWidget(Location, 'name')
     )
+    
 
     class Meta:
         model = Equipment
@@ -30,7 +43,6 @@ class EquipmentResource(resources.ModelResource):
             'activo_fijo',
             'category',
             'purchase_date',
-            'warranty_expiration_date',
             'status',
             'assigned_to',
             'location_equipment',
@@ -56,7 +68,7 @@ class BinnacleResource(resources.ModelResource):
     employee_service = fields.Field(
         column_name='employee_service',
         attribute='employee_service',
-        widget=ForeignKeyWidget(Employee, 'email')
+        widget=FullNameWidget(Employee)
     )
     location = fields.Field(
         column_name='location',

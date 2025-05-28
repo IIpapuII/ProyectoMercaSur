@@ -11,6 +11,9 @@ import json # Para guardar args/kwargs como JSON en PeriodicTask
 # Importa tu modelo EnvioProgramado (ajusta la ruta si es necesario)
 # Ejemplo: from .models import EnvioProgramado
 from .models import CorreoEnviado
+from celery.signals import task_failure
+from django.core.mail import send_mail
+from django.conf import settings
 
 # --- ¡¡IMPORTANTE!! Define el nombre completo de tu tarea de procesamiento ---
 # Debe coincidir exactamente con el nombre registrado por Celery (usualmente 'nombre_app.tasks.nombre_funcion')
@@ -145,3 +148,33 @@ def eliminar_tarea_periodica_signal(sender, instance, **kwargs):
         # Captura otros posibles errores durante la eliminación
         print(f"❌ ERROR al intentar eliminar PeriodicTask '{task_name}': {e}")
 
+@task_failure.connect
+def on_task_failure(sender=None, task_id=None, exception=None,
+                    args=None, kwargs=None, traceback=None,
+                    einfo=None, **kw):
+    """
+    Se dispara ante cualquier excepción no capturada en cualquier tarea de Celery.
+    Envía un correo usando send_mail a la lista de ADMINS configurada.
+    """
+    # Construir asunto y cuerpo
+    subject = f"[Celery] Tarea fallida: {sender.name}"
+    message = (
+        f"Tarea:      {sender.name}\n"
+        f"ID tarea:  {task_id}\n"
+        f"Excepción: {exception}\n"
+        f"Args:       {args}\n"
+        f"Kwargs:     {kwargs}\n\n"
+        f"Traceback completo:\n{einfo.traceback}"
+    )
+    print(message)
+    # Extraer destinatarios de settings.ADMINS
+    recipients = [email for (_, email) in settings.ADMINS]
+    print(recipients)
+    # Enviar el correo
+    send_mail(
+        subject,
+        message,
+        settings.SERVER_EMAIL,  # o DEFAULT_FROM_EMAIL
+        recipients,
+        fail_silently=False,
+    )

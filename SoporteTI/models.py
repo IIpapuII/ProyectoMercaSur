@@ -25,12 +25,13 @@ class Location(models.Model):
 class Employee(models.Model):
     first_name = models.CharField(max_length=50, verbose_name="Nombre")
     last_name = models.CharField(max_length=50, verbose_name="Apellido")
-    email = models.EmailField(unique=True, verbose_name="Correo electrónico")
+    email = models.EmailField(verbose_name="Correo electrónico")
     phone = models.CharField(max_length=20, verbose_name="Teléfono", blank=True, null=True)
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Departamento")
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
+    
     class Meta:
       verbose_name = "Empleados"
       verbose_name_plural = "Empleados"
@@ -51,6 +52,9 @@ class Equipment(models.Model):
         IN_USE = 'In Use', 'En uso'
         MAINTENANCE = 'Maintenance', 'Mantenimiento'
         RETIRED = 'Retirado', 'Retirado'
+        BUENO = 'Bueno', 'Bueno Estado'
+        MAL_ESTADO = 'Mal Estado', 'Mal Estado'
+        NUEVO = 'Nuevo', 'Nuevo'
 
     serial_number = models.CharField(max_length=100, unique=True, verbose_name="Número de serie")
     name = models.CharField(max_length=100, verbose_name="Nombre del equipo")
@@ -58,7 +62,6 @@ class Equipment(models.Model):
     activo_fijo = models.CharField(max_length=100, verbose_name="Activo Fijo", blank= True, null= True)
     category = models.ForeignKey(EquipmentCategory, on_delete=models.SET_NULL, null=True, verbose_name="Categoría")
     purchase_date = models.DateField(verbose_name="Fecha de compra")
-    warranty_expiration_date = models.DateField(blank=True, null=True, verbose_name="Fecha de expiración de garantía")
     status = models.CharField(
         max_length=20,
         choices=EquipmentStatus.choices,

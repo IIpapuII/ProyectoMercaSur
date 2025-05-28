@@ -42,6 +42,7 @@ def procesar_articulos_task():
 
     except Exception as e:
         print(f"🚨 Error en procesar_articulos_task: {e}")
+        raise
 
 @shared_task()
 def procesar_articulos_task_total():
@@ -73,6 +74,7 @@ def procesar_articulos_task_total():
 
     except Exception as e:
         print(f"🚨 Error en procesar_articulos_task: {e}")
+        raise
 
 @shared_task
 def procesar_articulos_parze_task():
@@ -106,6 +108,7 @@ def procesar_articulos_parze_task():
 
     except Exception as e:
         print(f"🚨 Error en procesar_articulos_task: {e}")
+        raise
 
 @shared_task
 def actualizar_descuentos_task():
@@ -141,6 +144,7 @@ def actualizar_descuentos_task():
 
     except Exception as e:
         print(f"🚨 Error en actualizar_descuentos_task: {e}")
+        raise
 
 
 # --- Helper para actualizar estado ---
@@ -178,10 +182,12 @@ def actualizar_estado_envio(envio_id, nuevo_estado, error_msg=None, task_id=None
 
     except CorreoEnviado.DoesNotExist:
          print(f"Error al actualizar estado: Envio ID {envio_id} no encontrado.")
+         raise
     except Exception as e:
          # Captura errores de bloqueo de base de datos u otros problemas
          print(f"Error inesperado al actualizar estado para Envio ID {envio_id}: {e}")
          # Podrías querer reintentar la tarea aquí si es un error de bloqueo temporal
+         raise
 
 # Nombre de la tarea
 TASK_NAME = 'automatizaciones.tasks.procesar_y_enviar_correo_task' 
@@ -237,10 +243,13 @@ def procesar_y_enviar_correo_task(self, envio_id):
                  actualizar_estado_envio(envio_id, 'ERROR_QUERY', error_msg=e_inesperado_query)
                  raise Ignore() # No reintentar
             finally:
-                 # --- Cerrar conexión ---
-                 if conexion_db:
-                     conexion_db.close()
-                     print(f"Tarea {task_id}: Conexión a BD cerrada.")
+                if conexion_db:
+                    try:
+                        if not conexion_db.closed:  # 👈 Evita cerrar si ya está cerrada
+                            conexion_db.close()
+                            print(f"Tarea {task_id}: Conexión a BD cerrada en finally.")
+                    except Exception as e_close:
+                        print(f"Tarea {task_id}: Error al cerrar conexión en finally: {e_close}")
         else:
              print(f"Tarea {task_id}: No hay consulta SQL asociada. Correo informativo.")
              # contexto_final ya tiene 'fecha_actual'
@@ -301,3 +310,4 @@ def procesar_y_enviar_correo_task(self, envio_id):
                 print(f"Tarea {task_id}: Conexión a BD cerrada en finally.")
             except Exception as e_close:
                 print(f"Tarea {task_id}: Error al cerrar conexión en finally: {e_close}")
+

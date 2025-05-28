@@ -46,6 +46,10 @@ API_URLRAPPI = os.getenv('API_URL_RAPPI')
 API_ENDPOINTRAPPI = os.getenv('API_ENDPOINT_RAPPI')
 API_KEY_PARZE = os.getenv('API_KEYPARZE')
 URL_PARZE = os.getenv('URl_PARZE')
+
+ADMINS = [
+    ('Nemesio Serrano', 'desarrollador@mercasur.com.co'),  # <- aquí los que quieren ver el error
+]
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com' # Servidor SMTP de tu proveedor
 EMAIL_PORT = 587             # Puerto SMTP (587 para TLS, 465 para SSL)
@@ -55,6 +59,9 @@ EMAIL_CODIGO_COLABORADOR = os.getenv('CODIGO_COLABORADOR')
 
 EMAIL_HOST_USER = os.getenv('DJANGO_EMAIL_USER')
 EMAIL_HOST_PASSWORD = os.getenv('DJANGO_EMAIL_PASSWORD')
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Application definition
 
@@ -70,7 +77,7 @@ INSTALLED_APPS = [
     'whitenoise.runserver_nostatic',
     'django_celery_beat',
     'django_ckeditor_5',
-    'automatizaciones',
+    'automatizaciones.apps.AutomatizacionesConfig',
     'import_export',
     'clientes',
     'rest_framework',
@@ -309,3 +316,34 @@ JAZZMIN_UI_TWEAKS = {
 
 CKEDITOR_UPLOAD_PATH = "uploads/"
 CKEDITOR_ALLOW_NONIMAGE_FILES = False
+
+from kombu import Queue
+CELERY_QUEUES = (
+    Queue('cola_articulos',       routing_key='cola_articulos'),
+    Queue('cola_articulos_total', routing_key='cola_articulos_total'),
+    Queue('cola_parze',           routing_key='cola_parze'),
+    Queue('cola_descuentos',      routing_key='cola_descuentos'),
+    Queue('cola_correo',          routing_key='cola_correo'),
+    Queue('codigo_temporal',      routing_key='codigo_temporal'),
+)
+
+CELERY_ROUTES = {
+    'appMercaSur.tasks.procesar_articulos_task': {
+        'queue': 'cola_articulos', 'routing_key': 'cola_articulos'
+    },
+    'appMercaSur.tasks.procesar_articulos_task_total': {
+        'queue': 'cola_articulos_total', 'routing_key': 'cola_articulos_total'
+    },
+    'appMercaSur.tasks.procesar_articulos_parze_task': {
+        'queue': 'cola_parze', 'routing_key': 'cola_parze'
+    },
+    'appMercaSur.tasks.actualizar_descuentos_task': {
+        'queue': 'cola_descuentos', 'routing_key': 'cola_descuentos'
+    },
+    'automatizaciones.tasks.procesar_y_enviar_correo_task': {
+        'queue': 'cola_correo', 'routing_key': 'cola_correo'
+    },
+     'clientes.tasks.generar_enviar_codigo_temporal':{
+         'queue': 'codigo_temporal', 'routing_key': 'codigo_temporal'
+    }
+}

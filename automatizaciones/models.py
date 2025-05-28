@@ -161,29 +161,29 @@ class EnvioLog(models.Model):
     
 class CorreoEnviado(models.Model):
     ESTADO_CHOICES = [
-    ('PLANTILLA', 'Plantilla'), # Estado inicial para una configuración recurrente
-    ('ACTIVO', 'Activo'), # La tarea periódica está habilitada
-    ('INACTIVO', 'Inactivo'), # La tarea periódica está deshabilitada
-    ('ERROR_CONFIG', 'Error Configuración'), # Problema al crear/actualizar tarea Beat
-    # Estados de ejecución (opcional si quieres rastrear cada ejecución individual)
-    # ('PROCESANDO', 'Procesando Últ. Ejecución'),
-    # ('ENVIADO_ULT', 'Últ. Ejecución Enviada'),
-    # ('ERROR_ULT', 'Error Últ. Ejecución'),
+        ('PLANTILLA', 'Plantilla'),
+        ('ACTIVO', 'Activo'),
+        ('INACTIVO', 'Inactivo'),
+        ('ERROR_CONFIG', 'Error Configuración'),
     ]
+
+    # Identificación y estado general
     nombre_tarea = models.CharField(
-        max_length=200, unique=True,
+        max_length=200, unique=True, null=True,
         verbose_name="Nombre Único Tarea Programada",
-        help_text="Nombre descriptivo y único para identificar esta programación en Celery Beat.",
-        null=True
+        help_text="Nombre descriptivo y único para identificar esta programación en Celery Beat."
     )
     activo = models.BooleanField(
-        default=False, verbose_name="Habilitado",
+        default=False,
+        verbose_name="Habilitado",
         help_text="Marcar para activar la programación de este envío."
     )
-    consulta = models.ForeignKey(SQLQuery, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Consulta SQL Origen")
-    asunto = models.CharField(max_length=255, verbose_name="Asunto")
-    destinatarios = models.TextField(help_text="Correos separados por coma (,).", verbose_name="Destinatarios")
-    cuerpo_html = models.TextField(help_text="Se debe hacer uso de django template para pasar la información", verbose_name="Cuerpo html")
+    estado = models.CharField(
+        max_length=20, choices=ESTADO_CHOICES, default='PLANTILLA',
+        verbose_name="Estado Configuración"
+    )
+
+    # Programación
     crontab = models.ForeignKey(
         CrontabSchedule, on_delete=models.PROTECT, null=True, blank=True,
         verbose_name="Horario Crontab",
@@ -195,22 +195,48 @@ class CorreoEnviado(models.Model):
         help_text="Programación por intervalo (ej. cada 30 minutos). Dejar en blanco si usa Crontab."
     )
 
-    # Estado y Metadatos
-    estado = models.CharField(
-        max_length=20, choices=ESTADO_CHOICES, default='PLANTILLA',
-        verbose_name="Estado Configuración"
+    # Contenido del correo
+    consulta = models.ForeignKey(
+        'SQLQuery', on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name="Consulta SQL Origen"
     )
-    fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name="Fecha Creación", null=True)
-    fecha_modificacion = models.DateTimeField(auto_now=True, verbose_name="Última Modificación")
-    # Podrías añadir campos para rastrear la última ejecución si es necesario
-    # ultima_ejecucion_ok = models.DateTimeField(null=True, blank=True, editable=False)
-    # ultimo_error = models.TextField(null=True, blank=True, editable=False)
+    asunto = models.CharField(max_length=255, verbose_name="Asunto")
+    destinatarios = models.TextField(
+        verbose_name="Destinatarios",
+        help_text="Correos separados por coma (,)."
+    )
+    cuerpo_html = models.TextField(
+        verbose_name="Cuerpo HTML",
+        help_text="Se debe usar Django Template para pasar la información dinámica."
+    )
 
-    # Referencia a la tarea periódica creada (opcional pero útil)
+    # Referencia técnica y monitoreo
     periodic_task = models.OneToOneField(
         PeriodicTask, on_delete=models.SET_NULL, null=True, blank=True,
         editable=False, related_name='envio_programado_config'
     )
+    error_detalle = models.TextField(blank=True, null=True)
+
+    # Campos técnicos de seguimiento de ejecución
+    task_id = models.CharField(
+        max_length=100, blank=True, null=True, editable=False,
+        verbose_name="ID de Tarea Celery",
+        help_text="ID de la tarea Celery que procesó este envío."
+    )
+    fecha_procesamiento = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Fecha de Procesamiento",
+        help_text="Momento en que la tarea comenzó el procesamiento."
+    )
+    fecha_envio = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Fecha de Envío",
+        help_text="Momento en que el correo fue enviado correctamente."
+    )
+
+    # Metadatos de control
+    fecha_creacion = models.DateTimeField(auto_now_add=True, null=True, verbose_name="Fecha Creación")
+    fecha_modificacion = models.DateTimeField(auto_now=True, verbose_name="Última Modificación")
 
     class Meta:
         verbose_name = 'Configuración Envío Programado'
@@ -218,11 +244,12 @@ class CorreoEnviado(models.Model):
         ordering = ['nombre_tarea']
 
     def lista_destinatarios(self):
-        if not self.destinatarios: return []
+        if not self.destinatarios:
+            return []
         return [email.strip() for email in self.destinatarios.split(",") if email.strip() and '@' in email.strip()]
 
     def __str__(self):
-        schedule_info = ""
+        schedule_info = "Sin programación"
         if self.crontab:
             schedule_info = f"Cron: {self.crontab}"
         elif self.intervalo:
@@ -231,15 +258,11 @@ class CorreoEnviado(models.Model):
         return f"[{status}] {self.nombre_tarea} ({schedule_info})"
 
     def clean(self):
-        """ Validaciones del modelo. """
+        """ Validaciones personalizadas al guardar. """
         super().clean()
-        # Asegurar que solo se seleccione un tipo de horario
         if self.crontab and self.intervalo:
             raise ValidationError("Seleccione solo un tipo de horario (Crontab o Intervalo), no ambos.")
-        # Asegurar que se seleccione al menos uno si está activo
         if self.activo and not (self.crontab or self.intervalo):
             raise ValidationError("Un envío activo debe tener un horario Crontab o de Intervalo seleccionado.")
-        # Validar nombre único (aunque ya lo hace unique=True, es buena práctica)
         if CorreoEnviado.objects.filter(nombre_tarea=self.nombre_tarea).exclude(pk=self.pk).exists():
-             raise ValidationError({'nombre_tarea': 'Ya existe una tarea programada con este nombre.'})
-         
+            raise ValidationError({'nombre_tarea': 'Ya existe una tarea programada con este nombre.'})

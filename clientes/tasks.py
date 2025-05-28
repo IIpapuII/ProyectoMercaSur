@@ -30,4 +30,5 @@ def generar_enviar_codigo_temporal():
         print(f"Código temporal generado: {codigo_temporal.codigo}")
     except Exception as e:
         print(f"Error al generar o enviar el código temporal: {e}")
+        raise
     
