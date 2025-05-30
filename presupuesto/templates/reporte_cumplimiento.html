@@ -121,44 +121,77 @@
         </div>
 
         {% if resumen_por_categoria %}
-            <div class="summary-card">
-                <h2 class="h4 mb-3">
-                    Resumen General para: {{ contexto_filtro.sede_nombre }}
-                    <small class="text-muted">({{ contexto_filtro.mes }}/{{ contexto_filtro.anio }})</small>
-                </h2>
-                <div class="table-responsive">
-                    <table class="table table-bordered table-hover table-sm">
-                        <thead class="table-light">
-                            <tr>
-                                <th scope="col" class="text-left">Indicador</th>
-                                <th scope="col">Presupuesto del Mes ($)</th>
-                                <th scope="col">Venta del Mes ($)</th>
-                                <th scope="col">Diferencia ($)</th>
-                                <th scope="col" style="width: 15%;">Cumplimiento (%)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in resumen_por_categoria %}
-                                <tr>
-                                    <td class="text-left fw-bold">{{ item.nombre_indicador }}</td>
-                                    <td>{{ item.presupuesto_mes|floatformat:0|intcomma }}</td>
-                                    <td>{{ item.venta_mes|floatformat:0|intcomma }}</td>
-                                    <td class="{% if item.diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
-                                        {{ item.diferencia|floatformat:0|intcomma }}
-                                    </td>
-                                    <td class="heatmap-cell {{ item.semaforo_clase }}">
-                                        {% if item.cumplimiento_pct is not None %}
-                                            {{ item.cumplimiento_pct|floatformat:1 }}%
-                                        {% else %}
-                                            N/A
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+<div class="summary-card">
+    <form method="get" action="{% url 'vista_reporte_cumplimiento' %}" class="row g-2 align-items-end mb-3">
+        <input type="hidden" name="sede" value="{{ filtro_form.cleaned_data.sede.id }}">
+        <input type="hidden" name="categoria" value="{{ filtro_form.cleaned_data.categoria.id }}">
+        <input type="hidden" name="anio" value="{{ filtro_form.cleaned_data.anio }}">
+        <input type="hidden" name="mes" value="{{ filtro_form.cleaned_data.mes }}">
+        <div class="col-md-3">
+            <label for="fecha_inicio" class="form-label">Desde:</label>
+            <input type="date" name="fecha_inicio" id="fecha_inicio" class="form-control" value="{{ request.GET.fecha_inicio }}">
+        </div>
+        <div class="col-md-3">
+            <label for="fecha_fin" class="form-label">Hasta:</label>
+            <input type="date" name="fecha_fin" id="fecha_fin" class="form-control" value="{{ request.GET.fecha_fin }}">
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-success w-100">Filtrar Resumen</button>
+        </div>
+    </form>
+
+    <h2 class="h4 mb-2">
+        Resumen General para: {{ contexto_filtro.sede_nombre }}
+        <small class="text-muted">({{ contexto_filtro.mes }}/{{ contexto_filtro.anio }})</small>
+    </h2>
+
+    {% if fecha_inicio or fecha_fin %}
+        <p class="text-muted small">
+            * Mostrando datos
+            {% if fecha_inicio %} desde <strong>{{ fecha_inicio|date:"d/m/Y" }}</strong>{% endif %}
+            {% if fecha_inicio and fecha_fin %} hasta {% endif %}
+            {% if fecha_fin %}<strong>{{ fecha_fin|date:"d/m/Y" }}</strong>{% endif %}.
+        </p>
+    {% else %}
+        <p class="text-muted small">
+            * El presupuesto mostrado corresponde al acumulado hasta la fecha actual del mes.
+        </p>
+    {% endif %}
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover table-sm">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col" class="text-left">Indicador</th>
+                    <th scope="col">Presupuesto acumulado ($)</th>
+                    <th scope="col">Venta del Mes ($)</th>
+                    <th scope="col">Diferencia ($)</th>
+                    <th scope="col" style="width: 15%;">Cumplimiento (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in resumen_por_categoria %}
+                    <tr>
+                        <td class="text-left fw-bold">{{ item.nombre_indicador }}</td>
+                        <td>{{ item.presupuesto_mes|floatformat:0|intcomma }}</td>
+                        <td>{{ item.venta_mes|floatformat:0|intcomma }}</td>
+                        <td class="{% if item.diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+                            {{ item.diferencia|floatformat:0|intcomma }}
+                        </td>
+                        <td class="heatmap-cell {{ item.semaforo_clase }}">
+                            {% if item.cumplimiento_pct is not None %}
+                                {{ item.cumplimiento_pct|floatformat:1 }}%
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
         {% endif %}
         {% if datos_reporte %}
             <hr class="my-4">
@@ -227,80 +260,235 @@
                 <canvas id="cumplimientoChart"></canvas>
             </div>
 
-            <script>
-                document.addEventListener('DOMContentLoaded', function () {
-                    const ctx = document.getElementById('cumplimientoChart').getContext('2d');
-                    const labels = {{ chart_labels|safe }};
-                    const pptoData = {{ chart_data_ppto|safe }};
-                    const ventaData = {{ chart_data_venta|safe }};
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const ctx = document.getElementById('cumplimientoChart').getContext('2d');
+    const labels = {{ chart_labels|safe }};
+    const pptoData = {{ chart_data_ppto|safe }};
+    const ventaData = {{ chart_data_venta|safe }};
 
-                    new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: labels,
-                            datasets: [
-                                {
-                                    label: 'Presupuesto Semanal ($)',
-                                    data: pptoData,
-                                    borderColor: 'rgb(235, 54, 114)',
-                                    backgroundColor: 'rgba(232, 18, 18, 0.5)',
-                                    borderWidth: 1,
-                                    yAxisID: 'y',
-                                },
-                                {
-                                    label: 'Venta Semanal ($)',
-                                    data: ventaData,
-                                    borderColor: 'rgb(75, 192, 100)',
-                                    backgroundColor: 'rgba(37, 189, 75, 0.5)',
-                                    borderWidth: 1,
-                                    yAxisID: 'y',
-                                }
-                            ]
+    // Calcular cumplimiento en %
+    const cumplimientoData = pptoData.map((ppto, idx) => {
+        const venta = ventaData[idx];
+        return ppto > 0 ? (venta / ppto * 100).toFixed(1) : 0;
+    });
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Presupuesto Semanal ($)',
+                    data: pptoData,
+                    borderColor: 'rgb(235, 54, 114)',
+                    backgroundColor: 'rgba(232, 18, 18, 0.5)',
+                    borderWidth: 1,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Venta Semanal ($)',
+                    data: ventaData,
+                    borderColor: 'rgb(75, 192, 100)',
+                    backgroundColor: 'rgba(37, 189, 75, 0.5)',
+                    borderWidth: 1,
+                    yAxisID: 'y',
+                    datalabels: {
+                        anchor: 'end',
+                        align: 'start',
+                        color: '#000',
+                        font: {
+                            weight: 'bold'
                         },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            interaction: {
-                                mode: 'index',
-                                intersect: false,
-                            },
-                            stacked: false,
-                            scales: {
-                                y: {
-                                    type: 'linear',
-                                    display: true,
-                                    position: 'left',
-                                    title: {
-                                        display: true,
-                                        text: 'Monto ($)'
-                                    },
-                                    beginAtZero: true
-                                },
-                            },
-                            plugins: {
-                                tooltip: {
-                                    callbacks: {
-                                        label: function(context) {
-                                            let label = context.dataset.label || '';
-                                            if (label) {
-                                                label += ': ';
-                                            }
-                                            if (context.parsed.y !== null) {
-                                                if (context.dataset.label.includes('%')) {
-                                                    label += context.parsed.y.toFixed(1) + '%';
-                                                } else {
-                                                    label += '$' + context.parsed.y.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                                                }
-                                            }
-                                            return label;
-                                        }
-                                    }
-                                }
+                        formatter: function(value, context) {
+                            const idx = context.dataIndex;
+                            const ppto = pptoData[idx];
+                            if (ppto > 0) {
+                                const porcentaje = (value / ppto * 100).toFixed(1);
+                                return porcentaje + '%';
+                            } else {
+                                return '0%';
                             }
                         }
-                    });
-                });
-            </script>
+                    }
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            stacked: false,
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Monto ($)'
+                    },
+                    beginAtZero: true
+                }
+            },
+            plugins: {
+                datalabels: {
+                    display: function(context) {
+                        // Solo mostrar en las barras de "Venta Semanal"
+                        return context.dataset.label === 'Venta Semanal ($)';
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            const value = context.parsed.y;
+
+                            if (label) label += ': ';
+                            label += '$' + value.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                            if (context.dataset.label === 'Venta Semanal ($)') {
+                                const idx = context.dataIndex;
+                                const ppto = pptoData[idx];
+                                if (ppto > 0) {
+                                    const porcentaje = ((value / ppto) * 100).toFixed(1);
+                                    label += ` (${porcentaje}%)`;
+                                }
+                            }
+
+                            return label;
+                        }
+                    }
+                }
+            }
+        },
+        plugins: [ChartDataLabels]
+    });
+});
+</script>
+<div class="chart-container mt-5">
+    <h3 class="text-center h5 mb-3">Gráfica Comparativa Anual (Presupuesto vs. Venta)</h3>
+    <canvas id="graficaAnualCumplimiento"></canvas>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const ctxAnual = document.getElementById('graficaAnualCumplimiento').getContext('2d');
+    const labelsAnual = {{ chart_labels_anual|safe }};
+    const pptoAnual = {{ chart_ppto_anual|safe }};
+    const ventaAnual = {{ chart_venta_anual|safe }};
+
+    // Calcular % de cumplimiento mensual
+    const cumplimientoAnual = pptoAnual.map((ppto, idx) => {
+        const venta = ventaAnual[idx];
+        return ppto > 0 ? parseFloat((venta / ppto) * 100).toFixed(1) : 0;
+    });
+
+    new Chart(ctxAnual, {
+        type: 'bar',
+        data: {
+            labels: labelsAnual,
+            datasets: [
+                {
+                    label: 'Presupuesto Mensual ($)',
+                    data: pptoAnual,
+                    backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Venta Mensual ($)',
+                    data: ventaAnual,
+                    borderColor: 'rgb(75, 192, 100)',
+                    backgroundColor: 'rgba(37, 189, 75, 0.5)',
+                    borderWidth: 1,
+                    yAxisID: 'y',
+                    datalabels: {
+                        anchor: 'end',
+                        align: 'start',
+                        color: '#000',
+                        font: {
+                            weight: 'bold'
+                        },
+                        formatter: function(value, context) {
+                            const idx = context.dataIndex;
+                            const porcentaje = cumplimientoAnual[idx];
+                            return porcentaje + '%';
+                        }
+                    }
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            stacked: false,
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Monto ($)'
+                    },
+                    beginAtZero: true
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Cumplimiento (%)'
+                    },
+                    beginAtZero: true,
+                    min: 0,
+                    max: 150,
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            },
+            plugins: {
+                datalabels: {
+                    display: function(context) {
+                        return context.dataset.label === 'Venta Mensual ($)';
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y;
+                            if (context.dataset.label.includes('%')) {
+                                return `${label}: ${value}%`;
+                            } else {
+                                return `${label}: $${value.toLocaleString('es-CO', { minimumFractionDigits: 0 })}`;
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        plugins: [ChartDataLabels]
+    });
+});
+</script>
 
         {% elif filtro_form.is_bound and not filtro_form.errors and not datos_reporte and not resumen_por_categoria %}
              <div class="alert alert-light mt-4">

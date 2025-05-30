@@ -86,7 +86,7 @@ INSTALLED_APPS = [
     'presupuesto',
     'SoporteTI',
 ]
-SESSION_COOKIE_AGE = 1800
+SESSION_COOKIE_AGE = 2800
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173", 
