@@ -16,6 +16,8 @@ from .utils import calcular_presupuesto_con_porcentajes_dinamicos, obtener_clase
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from django.db.models import Sum
 from appMercaSur.decorators import smart_jwt_login_required
+from django.utils.timezone import now
+from datetime import date, datetime
 
 from django.views.decorators.csrf import csrf_exempt
 
@@ -287,50 +289,75 @@ def vista_reporte_cumplimiento(request):
     datos_reporte = []
     resumen_mensual = None
     contexto_filtro = None
-    resumen_por_categoria = [] # Inicializamos la nueva lista aquí
-    chart_labels, chart_data_ppto, chart_data_venta = [], [], [] # Inicializar para el caso de formulario no válido
+    resumen_por_categoria = []
+    chart_labels, chart_data_ppto, chart_data_venta = [], [], []
+    chart_labels_anual, chart_ppto_anual, chart_venta_anual, chart_cumplimiento_anual = [], [], [], []
+
+    fecha_inicio = request.GET.get("fecha_inicio")
+    fecha_fin = request.GET.get("fecha_fin")
+    try:
+        fecha_inicio = datetime.strptime(fecha_inicio, '%Y-%m-%d').date() if fecha_inicio else None
+        fecha_fin = datetime.strptime(fecha_fin, '%Y-%m-%d').date() if fecha_fin else None
+    except ValueError:
+        fecha_inicio = None
+        fecha_fin = None
 
     if filtro_form.is_valid():
         sede = filtro_form.cleaned_data['sede']
-        categoria_seleccionada = filtro_form.cleaned_data['categoria'] # Para el detalle
+        categoria_seleccionada = filtro_form.cleaned_data['categoria']
         anio = filtro_form.cleaned_data['anio']
         mes = filtro_form.cleaned_data['mes']
 
+        hoy = now().date()
+        limite_fecha = hoy if hoy.month == mes and hoy.year == anio else date(anio, mes, 31)
+
         contexto_filtro = {
             'sede_nombre': sede.nombre,
-            'categoria_nombre': categoria_seleccionada.nombre, # Para el título del detalle
+            'categoria_nombre': categoria_seleccionada.nombre,
             'anio': anio,
             'mes': mes
         }
 
-        # --- INICIO: LÓGICA PARA LA TABLA DE RESUMEN GENERAL POR CATEGORÍA ---
-        todas_las_categorias = CategoriaVenta.objects.all() # O como obtengas tus categorías activas
+        todas_las_categorias = CategoriaVenta.objects.all()
 
         for cat_obj in todas_las_categorias:
-            presupuesto_total_cat_qs = PresupuestoDiarioCategoria.objects.filter(
-                presupuesto_mensual__sede=sede,
-                presupuesto_mensual__categoria=cat_obj,
-                presupuesto_mensual__anio=anio,
-                presupuesto_mensual__mes=mes
-            ).aggregate(total_presupuesto=Sum('presupuesto_calculado'))
-            
-            presupuesto_total_cat = presupuesto_total_cat_qs['total_presupuesto'] or Decimal('0.00')
+            filtro_presupuesto = {
+                'presupuesto_mensual__sede': sede,
+                'presupuesto_mensual__categoria': cat_obj
+            }
+            filtro_venta = {
+                'sede': sede,
+                'categoria': cat_obj
+            }
 
-            venta_total_cat_qs = VentaDiariaReal.objects.filter(
-                sede=sede,
-                categoria=cat_obj,
-                fecha__year=anio,
-                fecha__month=mes
-            ).aggregate(total_venta=Sum('venta_real'))
-            
-            venta_total_cat = venta_total_cat_qs['total_venta'] or Decimal('0.00')
+            if fecha_inicio:
+                filtro_presupuesto['fecha__gte'] = fecha_inicio
+                filtro_venta['fecha__gte'] = fecha_inicio
+            if fecha_fin:
+                filtro_presupuesto['fecha__lte'] = fecha_fin
+                filtro_venta['fecha__lte'] = fecha_fin
+            if not fecha_inicio and not fecha_fin:
+                filtro_presupuesto['presupuesto_mensual__anio'] = anio
+                filtro_presupuesto['presupuesto_mensual__mes'] = mes
+                filtro_presupuesto['fecha__lte'] = limite_fecha
+
+                filtro_venta['fecha__year'] = anio
+                filtro_venta['fecha__month'] = mes
+                filtro_venta['fecha__lte'] = limite_fecha
+
+            presupuesto_total_cat = PresupuestoDiarioCategoria.objects.filter(**filtro_presupuesto).aggregate(
+                total_presupuesto=Sum('presupuesto_calculado')
+            )['total_presupuesto'] or Decimal('0.00')
+
+            venta_total_cat = VentaDiariaReal.objects.filter(**filtro_venta).aggregate(
+                total_venta=Sum('venta_real')
+            )['total_venta'] or Decimal('0.00')
 
             diferencia_cat = venta_total_cat - presupuesto_total_cat
             cumplimiento_cat_pct = None
             if presupuesto_total_cat > 0:
                 cumplimiento_cat_pct = (venta_total_cat / presupuesto_total_cat * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
 
-            # Solo agregamos si hay presupuesto para esa categoría en el periodo
             if presupuesto_total_cat > 0:
                 resumen_por_categoria.append({
                     'nombre_indicador': cat_obj.nombre,
@@ -340,6 +367,49 @@ def vista_reporte_cumplimiento(request):
                     'cumplimiento_pct': cumplimiento_cat_pct,
                     'semaforo_clase': obtener_clase_semaforo(cumplimiento_cat_pct)
                 })
+
+        resumen_por_categoria = sorted(resumen_por_categoria, key=lambda x: x['presupuesto_mes'], reverse=True)
+
+        # GRAFICA ANUAL PRESUPUESTO VS VENTA
+        chart_labels_anual = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+        chart_ppto_anual = []
+        chart_venta_anual = []
+        chart_cumplimiento_anual = []
+
+        for m in range(1, 13):
+            filtro_ppto_mensual = {
+                'presupuesto_mensual__sede': sede,
+                'presupuesto_mensual__categoria': categoria_seleccionada,
+                'presupuesto_mensual__anio': anio,
+                'presupuesto_mensual__mes': m
+            }
+            filtro_venta_mensual = {
+                'sede': sede,
+                'categoria': categoria_seleccionada,
+                'fecha__year': anio,
+                'fecha__month': m
+            }
+
+            if fecha_inicio:
+                filtro_ppto_mensual['fecha__gte'] = fecha_inicio
+                filtro_venta_mensual['fecha__gte'] = fecha_inicio
+            if fecha_fin:
+                filtro_ppto_mensual['fecha__lte'] = fecha_fin
+                filtro_venta_mensual['fecha__lte'] = fecha_fin
+
+            ppto_qs = PresupuestoDiarioCategoria.objects.filter(**filtro_ppto_mensual).aggregate(total_ppto=Sum('presupuesto_calculado'))
+            total_ppto = ppto_qs['total_ppto'] or Decimal('0.00')
+
+            total_venta = VentaDiariaReal.objects.filter(**filtro_venta_mensual).aggregate(total_venta=Sum('venta_real'))['total_venta'] or Decimal('0.00')
+
+            chart_ppto_anual.append(float(total_ppto))
+            chart_venta_anual.append(float(total_venta))
+            if total_ppto > 0:
+                chart_cumplimiento_anual.append(round((total_venta / total_ppto) * 100, 1))
+            else:
+                chart_cumplimiento_anual.append(0.0)
+
+        # DETALLE DIARIO (YA EXISTENTE)
         presupuestos_diarios = PresupuestoDiarioCategoria.objects.filter(
             presupuesto_mensual__sede=sede,
             presupuesto_mensual__categoria=categoria_seleccionada,
@@ -348,8 +418,7 @@ def vista_reporte_cumplimiento(request):
         ).order_by('fecha')
 
         if not presupuestos_diarios.exists():
-            messages.info(request, f"No se encontraron presupuestos diarios calculados para {categoria_seleccionada.nombre} en {sede.nombre} para el periodo {mes}/{anio}.")
-            # No reseteamos las variables del gráfico aquí si ya se calcularon para el resumen
+            messages.info(request, f"No se encontraron presupuestos diarios para {categoria_seleccionada.nombre} en {sede.nombre} para {mes}/{anio}.")
         else:
             ventas_diarias_qs = VentaDiariaReal.objects.filter(
                 sede=sede,
@@ -359,28 +428,28 @@ def vista_reporte_cumplimiento(request):
             )
             ventas_map = {v.fecha: v.venta_real for v in ventas_diarias_qs}
 
-            total_ppto_mes_detalle = Decimal('0.00') # Renombrado para evitar confusión con totales de resumen
+            total_ppto_mes_detalle = Decimal('0.00')
             total_venta_mes_detalle = Decimal('0.00')
-            
+
             dias_semana_ordenados = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-            resumen_semanal_detalle = { # Renombrado
+            resumen_semanal_detalle = {
                 dia: {'presupuesto': Decimal('0'), 'venta': Decimal('0')}
                 for dia in dias_semana_ordenados
             }
 
             for ppto_dia in presupuestos_diarios:
                 venta_dia_real = ventas_map.get(ppto_dia.fecha, Decimal('0.00'))
-                
+
                 nombre_dia = ppto_dia.dia_semana_nombre
                 if nombre_dia in resumen_semanal_detalle:
                     resumen_semanal_detalle[nombre_dia]['presupuesto'] += ppto_dia.presupuesto_calculado
                     resumen_semanal_detalle[nombre_dia]['venta'] += venta_dia_real
 
                 diferencia = venta_dia_real - ppto_dia.presupuesto_calculado
-                cumplimiento_pct_dia = None # Renombrado
+                cumplimiento_pct_dia = None
                 if ppto_dia.presupuesto_calculado > 0:
                     cumplimiento_pct_dia = (venta_dia_real / ppto_dia.presupuesto_calculado * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
-                
+
                 datos_reporte.append({
                     'fecha': ppto_dia.fecha,
                     'dia_semana': ppto_dia.dia_semana_nombre,
@@ -388,41 +457,46 @@ def vista_reporte_cumplimiento(request):
                     'venta_diaria': venta_dia_real,
                     'diferencia': diferencia,
                     'cumplimiento_pct': cumplimiento_pct_dia,
-                    'semaforo_clase': obtener_clase_semaforo(cumplimiento_pct_dia) # Usar el mismo semáforo
+                    'semaforo_clase': obtener_clase_semaforo(cumplimiento_pct_dia)
                 })
 
                 total_ppto_mes_detalle += ppto_dia.presupuesto_calculado
                 total_venta_mes_detalle += venta_dia_real
-            
-            # Datos para el gráfico del detalle
+
             chart_labels = dias_semana_ordenados
             chart_data_ppto = [float(resumen_semanal_detalle[dia]['presupuesto']) for dia in dias_semana_ordenados]
             chart_data_venta = [float(resumen_semanal_detalle[dia]['venta']) for dia in dias_semana_ordenados]
 
-            cumplimiento_total_mes_detalle = None # Renombrado
+            cumplimiento_total_mes_detalle = None
             if total_ppto_mes_detalle > 0:
                 cumplimiento_total_mes_detalle = (total_venta_mes_detalle / total_ppto_mes_detalle * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
 
-            resumen_mensual = { # Este es el resumen del pie de la tabla de detalle
+            resumen_mensual = {
                 'total_presupuesto': total_ppto_mes_detalle,
                 'total_venta': total_venta_mes_detalle,
                 'total_diferencia': total_venta_mes_detalle - total_ppto_mes_detalle,
                 'cumplimiento_pct': cumplimiento_total_mes_detalle,
                 'semaforo_clase': obtener_clase_semaforo(cumplimiento_total_mes_detalle)
             }
-            if not datos_reporte and presupuestos_diarios.exists(): # Ajuste en la condición del mensaje
-                 messages.info(request, f"Se encontraron presupuestos para {categoria_seleccionada.nombre} en {sede.nombre} para {mes}/{anio}, pero no se generaron datos de ventas para el detalle diario.")
-    # else: # Si el formulario no es válido, las variables del gráfico ya están inicializadas como listas vacías
+
+            if not datos_reporte and presupuestos_diarios.exists():
+                messages.info(request, f"Se encontraron presupuestos para {categoria_seleccionada.nombre}, pero no ventas para mostrar detalle diario.")
 
     context = {
         'filtro_form': filtro_form,
-        'resumen_por_categoria': resumen_por_categoria, # Añadido al contexto
+        'resumen_por_categoria': resumen_por_categoria,
         'datos_reporte': datos_reporte,
         'resumen_mensual': resumen_mensual,
         'contexto_filtro': contexto_filtro,
         'chart_labels': mark_safe(json.dumps(chart_labels)),
         'chart_data_ppto': mark_safe(json.dumps(chart_data_ppto)),
         'chart_data_venta': mark_safe(json.dumps(chart_data_venta)),
+        'chart_labels_anual': mark_safe(json.dumps(chart_labels_anual)),
+        'chart_ppto_anual': mark_safe(json.dumps(chart_ppto_anual)),
+        'chart_venta_anual': mark_safe(json.dumps(chart_venta_anual)),
+        'chart_cumplimiento_anual': mark_safe(json.dumps([float(v) for v in chart_cumplimiento_anual])),
+        'fecha_inicio': fecha_inicio,
+        'fecha_fin': fecha_fin
     }
     return render(request, 'reporte_cumplimiento.html', context)
 
