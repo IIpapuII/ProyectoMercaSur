@@ -1,0 +1,11 @@
+{# templates/admin/clientes/registrocliente/change_list.html #}
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block object-tools %}
+  {{ block.super }}
+    <a class="btn btn-success btn-sm" href="{% url 'dashboard-clientes' %}">
+      {% trans "Ver Dashboard" %}
+    </a>
+{% endblock %}
