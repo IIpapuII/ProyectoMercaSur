@@ -68,6 +68,8 @@ class RegistroCliente(models.Model):
     creadoICG = models.BooleanField(default=False)
     correo_notificacion = models.BooleanField(default=False)
     punto_compra = models.CharField(max_length=100, null=True, blank=True)
+    creado_desde_fisico = models.BooleanField(default=False, verbose_name="Creado desde formato físico")
+    creado_desde_admin = models.BooleanField(default=False, verbose_name="Creado desde admin")
 
     def __str__(self):
         return f"{self.primer_nombre} {self.primer_apellido}"
@@ -77,7 +79,7 @@ class RegistroCliente(models.Model):
         db_table = 'RegistroCliente'
         unique_together = ('numero_documento','codcliente')
         ordering = ['-fecha_registro']
-
+     
 class ZonaPermitida(models.Model):
     """
     Representa una zona geográfica permitida definida por un punto central

@@ -33,7 +33,7 @@ def procesar_articulos_task():
             return
 
         # 5️⃣ Actualizar o crear artículos
-        update_or_create_articles(df)
+        update_or_create_articles(df,'Rappi')
 
         # 6️⃣ Enviar artículos modificados a Rappi
         send_modified_articles()
@@ -65,7 +65,7 @@ def procesar_articulos_task_total():
             return
 
         # 5️⃣ Actualizar o crear artículos
-        update_or_create_articles(df)
+        update_or_create_articles(df,'Rappi')
 
         # 6️⃣ Enviar artículos modificados a Rappi
         send_modified_articles_total()
@@ -97,7 +97,7 @@ def procesar_articulos_parze_task():
             return
 
         # 5️⃣ Actualizar o crear artículos
-        update_or_create_articles(df)
+        update_or_create_articles(df, 'Parze')
 
         # 6️⃣ Enviar artículos modificados a Rappi
         generar_csv_articulos_modificados()
@@ -133,14 +133,16 @@ def actualizar_descuentos_task():
             print("⚠️ No se pudo ejecutar la consulta.")
             return
 
-        # 5️⃣ Actualizar o crear artículos
-        update_or_create_articles(df)
+
+        print(f"🔄 Procesando artículos para canal: Parze")
+        update_or_create_articles(df, canal="Parze")
         generar_csv_articulos_modificados()
         enviar_csv_a_api()
-        print("Enviado")
         send_modified_articles()
-        marcarArticulosComoNoModificados()
-        print("✅ Proceso de actualización de descuentos completado.")
+        print("✅ Proceso completado para ambos canales.")
+        
+        procesar_articulos_task_total()
+        return "proceso exitoso"
 
     except Exception as e:
         print(f"🚨 Error en actualizar_descuentos_task: {e}")

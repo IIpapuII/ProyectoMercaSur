@@ -1,4 +1,6 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+
+from service.clientICG import crearClienteICG
 from .models import RegistroCliente, ZonaPermitida, barrio, CodigoTemporal, SecuenciaCodCliente
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
@@ -18,6 +20,43 @@ class SecuenciaCodClienteAdmin(admin.ModelAdmin):
 class CodigoTemporalAdmin(admin.ModelAdmin):
     pass
 
+@admin.action(description="Enviar a ICG y marcar como creado desde admin")
+def action_crear_desde_admin(modeladmin, request, queryset):
+    exitosos = 0
+    fallidos = 0
+
+    for cliente in queryset:
+        if cliente.creado_desde_fisico and not cliente.creado_desde_admin:
+            try:
+                crearClienteICG(cliente)
+                cliente.refresh_from_db()
+
+                if cliente.codcliente:
+                    cliente.creado_desde_admin = True
+                    cliente.creadoICG = True
+                    cliente.save(update_fields=["creado_desde_admin", "creadoICG"])
+                    exitosos += 1
+                else:
+                    fallidos += 1
+            except Exception as e:
+                fallidos += 1
+        else:
+            fallidos += 1
+
+    if exitosos:
+        modeladmin.message_user(
+            request,
+            f"Se procesaron correctamente {exitosos} cliente(s).",
+            level=messages.SUCCESS,
+        )
+    if fallidos:
+        modeladmin.message_user(
+            request,
+            f"No se pudieron procesar {fallidos} cliente(s) (ya creados o error).",
+            level=messages.WARNING,
+        )
+
+
 @admin.register(RegistroCliente)
 class RegistroClienteAdmin(admin.ModelAdmin):
     list_display = (
@@ -31,10 +70,11 @@ class RegistroClienteAdmin(admin.ModelAdmin):
         'fecha_registro'
     )
     search_fields = ('primer_nombre', 'primer_apellido', 'numero_documento')
-    list_filter = ('mascota', 'preferencias_email', 'preferencias_whatsapp', 'preferencias_sms')
+    list_filter = ('mascota', 'preferencias_email', 'preferencias_whatsapp', 'preferencias_sms', 'creado_desde_fisico' )
     ordering = ('-fecha_registro',)
     date_hierarchy = 'fecha_registro'
     list_per_page = 20
+    actions = [action_crear_desde_admin]
 
 @admin.register(ZonaPermitida)
 class ZonaPermitidaAdmin(admin.ModelAdmin):

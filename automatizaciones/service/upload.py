@@ -15,14 +15,19 @@ from datetime import time, timedelta
 
 
 @transaction.atomic
-def update_or_create_articles(df):
+def update_or_create_articles(df, canal):
     """Actualiza o crea artículos en la base de datos, marca los modificados y aplica descuentos."""
 
     print(df)
 
     # Obtener el día actual (0 = Lunes, 6 = Domingo)
     hoy = datetime.today().weekday()
-    descuentos_dia = DescuentoDiario.objects.filter(activo=True)
+    if canal == 'Parze':
+        descuentos_dia = DescuentoDiario.objects.filter(activo=True, aplica_en_parze=True)
+    elif canal == 'Rappi':
+        descuentos_dia = DescuentoDiario.objects.filter(activo=True, aplica_en_rappi=True)
+    else:
+        descuentos_dia = DescuentoDiario.objects.none()
 
     for _, row in df.iterrows():
         # Asegurar que los valores sean cadenas antes de aplicar strip()
@@ -66,10 +71,20 @@ def update_or_create_articles(df):
             modificado = True  
 
         # 🔹 Buscar descuento vigente por EAN
-        descuento_aplicado = DescuentoDiario.objects.filter(
-            ean=ean,
-            activo=True
-        ).first()
+        if canal == 'Parze':
+            descuento_aplicado = DescuentoDiario.objects.filter(
+                ean=ean,
+                activo=True,
+                aplica_en_parze=True
+            ).first()
+        elif canal == 'Rappi':
+            descuento_aplicado = DescuentoDiario.objects.filter(
+                ean=ean,
+                activo=True,
+                aplica_en_rappi=True
+            ).first()
+        else:
+            descuento_aplicado = None
         # 🔹 Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
         if not descuento_aplicado:
             for descuento in descuentos_dia:
@@ -354,6 +369,7 @@ def generar_csv_articulos_modificados():
             descuento = DescuentoDiario.objects.filter(
                 ean=articulo.ean,
                 activo=True,
+                aplica_en_parze=True
             ).filter(
                 Q(dia=hoy) |  
                 (Q(fecha_inicio__lte=fecha_hoy) & Q(fecha_fin__gte=fecha_hoy))  
@@ -364,6 +380,7 @@ def generar_csv_articulos_modificados():
                 descuentos_dia = DescuentoDiario.objects.filter(
                     dia=hoy,
                     activo=True,
+                    aplica_en_parze=True
                 )
 
                 for d in descuentos_dia:
