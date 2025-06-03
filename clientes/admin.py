@@ -69,8 +69,8 @@ class RegistroClienteAdmin(admin.ModelAdmin):
         'mascota',
         'fecha_registro'
     )
-    search_fields = ('primer_nombre', 'primer_apellido', 'numero_documento')
-    list_filter = ('mascota', 'preferencias_email', 'preferencias_whatsapp', 'preferencias_sms', 'creado_desde_fisico' )
+    search_fields = ('primer_nombre', 'primer_apellido', 'numero_documento','codcliente' )
+    list_filter = ('creado_desde_fisico','creado_desde_admin','creadoICG','fidelizacion', 'tipocliente' , 'punto_compra')
     ordering = ('-fecha_registro',)
     date_hierarchy = 'fecha_registro'
     list_per_page = 20

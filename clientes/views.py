@@ -202,6 +202,7 @@ def dashboard_clientes(request):
     pref_llamada   = RegistroCliente.objects.filter(preferencias_llamada=True).count()
     pref_ninguna   = RegistroCliente.objects.filter(preferencias_ninguna=True).count()
 
+
     # 5. Nuevas métricas solicitadas:
 
     # 5.1. Cantidad de clientes por tipocliente (ya lo tenemos en qs_tipo,
@@ -222,6 +223,12 @@ def dashboard_clientes(request):
     clientes_icg_sin_ip = RegistroCliente.objects.filter(
         codcliente__isnull=False,
         ip_usuario__isnull=True
+    ).count()
+
+    client_no_fidelizados = RegistroCliente.objects.filter(
+        fidelizacion=False,
+        tipocliente = 'Cliente',
+        creadoICG=True
     ).count()
 
     # 5.6. Listado de clientes sin codcliente (para mostrar nombres/IDs en un table opcional)
@@ -275,6 +282,7 @@ def dashboard_clientes(request):
         'clientes_desde_admin': clientes_desde_admin,
         'clientes_sin_cod': clientes_sin_cod,
         'clientes_icg_sin_ip': clientes_icg_sin_ip,
+        'client_no_fidelizados': client_no_fidelizados,
 
         # Listados opcionales (si quieres mostrar una tabla con detalles)
         'clientes_sin_cod_list': list(clientes_sin_cod_list),
