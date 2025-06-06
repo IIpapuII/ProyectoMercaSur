@@ -152,98 +152,120 @@ def validar_codigo_acceso(request):
 @login_required
 def dashboard_clientes(request):
     """
-    Vista que obtiene varias métricas de RegistroCliente y las envía al template
-    para graficarlas con Chart.js y mostrar KPIs adicionales.
+    Vista que obtiene varias métricas de RegistroCliente filtradas por rango de fechas
+    (si se proporcionan) y las envía al template para graficarlas con Chart.js y mostrar KPIs adicionales.
     """
 
-    # 1. Métricas generales (como antes)
-    total_clients     = RegistroCliente.objects.count()
-    created_icg       = RegistroCliente.objects.filter(creadoICG=True).count()
-    updated_clients   = RegistroCliente.objects.filter(Actualizado=True).count()
-    pending_clients   = RegistroCliente.objects.filter(
+    # 1. LECTURA DE PARÁMETROS GET PARA FILTRAR POR FECHA
+    #    - Se esperan en formato 'YYYY-MM-DD'
+    start_date_str = request.GET.get('start_date')
+    end_date_str   = request.GET.get('end_date')
+
+    hoy = timezone.now().date()
+
+    try:
+        if start_date_str:
+            start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        else:
+            raise ValueError
+        if end_date_str:
+            end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        else:
+            raise ValueError
+        if start_date > end_date:
+            raise ValueError
+    except (ValueError, TypeError):
+        # Si no vienen o son inválidos, usamos por defecto últimos 30 días
+        end_date   = hoy
+        start_date = hoy - datetime.timedelta(days=29)
+
+    # Para mantener los valores en el formulario de filtro
+    start_date_input = start_date.strftime('%Y-%m-%d')
+    end_date_input   = end_date.strftime('%Y-%m-%d')
+
+    # 2. QUERYSERVICE BASE FILTRADO POR EL RANGO SOBRE 'fecha_registro'
+    base_qs = RegistroCliente.objects.filter(
+        fecha_registro__date__gte=start_date,
+        fecha_registro__date__lte=end_date
+    )
+
+    # 3. MÉTRICAS GENERALES SOBRE EL RANGO
+    total_clients     = base_qs.count()
+    created_icg       = base_qs.filter(creadoICG=True).count()
+    updated_clients   = base_qs.filter(Actualizado=True).count()
+    pending_clients   = base_qs.filter(
         creadoICG=False,
         Actualizado=False
     ).count()
 
-    # 2. Serie temporal diaria de los últimos 30 días (creadosICG vs actualizados)
-    hoy        = timezone.now().date()
-    inicio_30  = hoy - datetime.timedelta(days=29)  # últimos 30 días incluyendo hoy
-    qs_diaria  = (
-        RegistroCliente.objects
-        .filter(fecha_registro__date__gte=inicio_30)
+    # 4. MÉTRICA “ICG + FIRMA” (creadoICG=True y firma_base64 no vacía)
+    icg_con_firma = base_qs.filter(
+        creadoICG=True
+    ).exclude(
+        Q(firma_base64='') | Q(firma_base64__isnull=True)
+    ).count()
+
+    # 5. SERIE TEMPORAL DIARIA (creadosICG, actualizados, ICG+FIRMA) DENTRO DEL RANGO
+    qs_diaria = (
+        base_qs
         .annotate(fecha=TruncDate('fecha_registro'))
         .values('fecha')
         .annotate(
             creados_icg  = Count('id', filter=Q(creadoICG=True)),
             actualizados = Count('id', filter=Q(Actualizado=True)),
+            icg_firma    = Count('id', filter=Q(creadoICG=True) & ~Q(firma_base64='') & Q(firma_base64__isnull=False)),
             total        = Count('id'),
         )
         .order_by('fecha')
     )
-    fechas_list         = [entry['fecha'].strftime('%Y-%m-%d') for entry in qs_diaria]
-    creados_icg_list    = [entry['creados_icg'] for entry in qs_diaria]
-    actualizados_list   = [entry['actualizados'] for entry in qs_diaria]
+    fechas_list       = [entry['fecha'].strftime('%Y-%m-%d') for entry in qs_diaria]
+    creados_icg_list  = [entry['creados_icg'] for entry in qs_diaria]
+    actualizados_list = [entry['actualizados'] for entry in qs_diaria]
+    icg_firma_list    = [entry['icg_firma'] for entry in qs_diaria]
 
-    # 3. Distribución por tipocliente (bar chart)
+    # 6. DISTRIBUCIÓN POR TIPOCLIENTE (bar chart) DENTRO DEL RANGO
     qs_tipo = (
-        RegistroCliente.objects
+        base_qs
         .values('tipocliente')
         .annotate(count=Count('id'))
         .order_by('tipocliente')
     )
-    tipos         = [entry['tipocliente'] or 'Sin tipo' for entry in qs_tipo]
-    tipo_counts   = [entry['count'] for entry in qs_tipo]
+    tipos       = [entry['tipocliente'] or 'Sin tipo' for entry in qs_tipo]
+    tipo_counts = [entry['count'] for entry in qs_tipo]
 
-    # 4. Conteo de preferencias de contacto (pie chart)
-    pref_email     = RegistroCliente.objects.filter(preferencias_email=True).count()
-    pref_whatsapp  = RegistroCliente.objects.filter(preferencias_whatsapp=True).count()
-    pref_sms       = RegistroCliente.objects.filter(preferencias_sms=True).count()
-    pref_redes     = RegistroCliente.objects.filter(preferencias_redes_sociales=True).count()
-    pref_llamada   = RegistroCliente.objects.filter(preferencias_llamada=True).count()
-    pref_ninguna   = RegistroCliente.objects.filter(preferencias_ninguna=True).count()
+    # 7. CONTEO DE PREFERENCIAS DE CONTACTO (pie chart) DENTRO DEL RANGO
+    pref_email     = base_qs.filter(preferencias_email=True).count()
+    pref_whatsapp  = base_qs.filter(preferencias_whatsapp=True).count()
+    pref_sms       = base_qs.filter(preferencias_sms=True).count()
+    pref_redes     = base_qs.filter(preferencias_redes_sociales=True).count()
+    pref_llamada   = base_qs.filter(preferencias_llamada=True).count()
+    pref_ninguna   = base_qs.filter(preferencias_ninguna=True).count()
 
-
-    # 5. Nuevas métricas solicitadas:
-
-    # 5.1. Cantidad de clientes por tipocliente (ya lo tenemos en qs_tipo,
-    #      pero aquí dejamos un total general resumido)
-    total_por_tipocliente = { entry['tipocliente'] or 'Sin tipo': entry['count'] for entry in qs_tipo }
-
-    # 5.2. ¿Cuántos clientes vienen de formato físico?
-    clientes_formato_fisico = RegistroCliente.objects.filter(creado_desde_fisico=True).count()
-
-    # 5.3. ¿Cuántos clientes fueron creados desde admin?
-    clientes_desde_admin = RegistroCliente.objects.filter(creado_desde_admin=True).count()
-
-    # 5.4. ¿Cuántos clientes NO tienen codcliente?
-    clientes_sin_cod = RegistroCliente.objects.filter(codcliente__isnull=True).count()
-
-    # 5.5. ¿Cuántos clientes tienen codcliente (no null) pero NO tienen ip_usuario?
-    #      Esto indica que existen en ICG (tienen codcliente) pero no terminaron el proceso de actualización.
-    clientes_icg_sin_ip = RegistroCliente.objects.filter(
+    # 8. NUEVAS MÉTRICAS SOLICITADAS DENTRO DEL RANGO
+    clientes_formato_fisico = base_qs.filter(creado_desde_fisico=True).count()
+    clientes_desde_admin    = base_qs.filter(creado_desde_admin=True).count()
+    clientes_sin_cod        = base_qs.filter(codcliente__isnull=True).count()
+    clientes_icg_sin_ip     = base_qs.filter(
         codcliente__isnull=False,
         ip_usuario__isnull=True
     ).count()
-
-    client_no_fidelizados = RegistroCliente.objects.filter(
+    client_no_fidelizados   = base_qs.filter(
         fidelizacion=False,
-        tipocliente = 'Cliente',
+        tipocliente='Cliente',
         creadoICG=True
     ).count()
 
-    # 5.6. Listado de clientes sin codcliente (para mostrar nombres/IDs en un table opcional)
-    clientes_sin_cod_list = RegistroCliente.objects.filter(codcliente__isnull=True).values(
+    # Listados para tablas de detalle
+    clientes_sin_cod_list = base_qs.filter(codcliente__isnull=True).values(
         'id', 'primer_nombre', 'primer_apellido', 'numero_documento'
     )
-
-    # 5.7. Listado de clientes icg_sin_ipusuario (opcionalmente, para detalle)
-    clientes_icg_sin_ip_list = RegistroCliente.objects.filter(
+    clientes_icg_sin_ip_list = base_qs.filter(
         codcliente__isnull=False, ip_usuario__isnull=True
     ).values('id', 'primer_nombre', 'primer_apellido', 'codcliente', 'numero_documento')
 
-    #6. Distribución por punto de compra (nuevo gráfico de barras)
+    # 9. DISTRIBUCIÓN POR PUNTO DE COMPRA (bar chart) DENTRO DEL RANGO
     qs_punto = (
-        RegistroCliente.objects
+        base_qs
         .values('punto_compra')
         .annotate(count=Count('id'))
         .order_by('punto_compra')
@@ -251,46 +273,51 @@ def dashboard_clientes(request):
     puntos_labels = [entry['punto_compra'] or 'Sin punto' for entry in qs_punto]
     puntos_counts = [entry['count'] for entry in qs_punto]
 
-    # 7. Construimos el contexto con todo lo anterior
+    # 10. CONSTRUCCIÓN DEL CONTEXTO
     context = {
+        # Rango de fechas para el formulario
+        'start_date_input':        start_date_input,
+        'end_date_input':          end_date_input,
+
         # Métricas generales
-        'total_clients': total_clients,
-        'created_icg': created_icg,
-        'updated_clients': updated_clients,
-        'pending_clients': pending_clients,
+        'total_clients':           total_clients,
+        'created_icg':             created_icg,
+        'updated_clients':         updated_clients,
+        'pending_clients':         pending_clients,
+        'icg_con_firma':           icg_con_firma,
 
         # Serie diaria (listas JSON)
-        'fechas_json': json.dumps(fechas_list),
-        'creados_icg_json': json.dumps(creados_icg_list),
-        'actualizados_json': json.dumps(actualizados_list),
+        'fechas_json':             json.dumps(fechas_list),
+        'creados_icg_json':        json.dumps(creados_icg_list),
+        'actualizados_json':       json.dumps(actualizados_list),
+        'icg_firma_json':          json.dumps(icg_firma_list),
 
-        # Distribución tipocliente (para gráfico)
-        'tipos_json': json.dumps(tipos),
-        'tipo_counts_json': json.dumps(tipo_counts),
+        # Distribución Tipocliente
+        'tipos_json':              json.dumps(tipos),
+        'tipo_counts_json':        json.dumps(tipo_counts),
 
-        # Preferencias (para gráfico)
-        'pref_email': pref_email,
-        'pref_whatsapp': pref_whatsapp,
-        'pref_sms': pref_sms,
-        'pref_redes': pref_redes,
-        'pref_llamada': pref_llamada,
-        'pref_ninguna': pref_ninguna,
+        # Preferencias
+        'pref_email':              pref_email,
+        'pref_whatsapp':           pref_whatsapp,
+        'pref_sms':                pref_sms,
+        'pref_redes':              pref_redes,
+        'pref_llamada':            pref_llamada,
+        'pref_ninguna':            pref_ninguna,
 
-        # Nuevas métricas:
-        'total_por_tipocliente': total_por_tipocliente,  # Diccionario { 'TIPO': conteo, ... }
+        # Nuevas métricas
         'clientes_formato_fisico': clientes_formato_fisico,
-        'clientes_desde_admin': clientes_desde_admin,
-        'clientes_sin_cod': clientes_sin_cod,
-        'clientes_icg_sin_ip': clientes_icg_sin_ip,
-        'client_no_fidelizados': client_no_fidelizados,
+        'clientes_desde_admin':    clientes_desde_admin,
+        'clientes_sin_cod':        clientes_sin_cod,
+        'clientes_icg_sin_ip':     clientes_icg_sin_ip,
+        'client_no_fidelizados':   client_no_fidelizados,
 
-        # Listados opcionales (si quieres mostrar una tabla con detalles)
-        'clientes_sin_cod_list': list(clientes_sin_cod_list),
-        'clientes_icg_sin_ip_list': list(clientes_icg_sin_ip_list),
+        # Listados para tablas
+        'clientes_sin_cod_list':   list(clientes_sin_cod_list),
+        'clientes_icg_sin_ip_list':list(clientes_icg_sin_ip_list),
 
-        # Distribución punto de compra (nuevo)
-        'puntos_json': json.dumps(puntos_labels),
-        'puntos_counts_json': json.dumps(puntos_counts),
+        # Distribución Punto de Compra
+        'puntos_json':             json.dumps(puntos_labels),
+        'puntos_counts_json':      json.dumps(puntos_counts),
     }
 
     return render(request, 'dashboard_clientes.html', context)

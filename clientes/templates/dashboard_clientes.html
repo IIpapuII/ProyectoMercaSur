@@ -79,7 +79,33 @@
         </nav>
     </header>
 <h1>Dashboard de Clientes</h1>
-
+<div class="row">
+    <div class="col m-4">
+                <div class="date-filter">
+            <form method="get" class="row gx-3 gy-2 align-items-center">
+                <div class="col-auto">
+                    <label for="start_date" class="form-label mb-1">Fecha inicio:</label>
+                    <input type="date" 
+                           id="start_date" 
+                           name="start_date"
+                           class="form-control" 
+                           value="{{ start_date_input }}">
+                </div>
+                <div class="col-auto">
+                    <label for="end_date" class="form-label mb-1">Fecha fin:</label>
+                    <input type="date" 
+                           id="end_date" 
+                           name="end_date"
+                           class="form-control" 
+                           value="{{ end_date_input }}">
+                </div>
+                <div class="col-auto align-self-end">
+                    <button type="submit" class="btn btn-success">Aplicar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 <!-- 1. Primer bloque: KPIs generales -->
 <div style="display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap;">
   <div style="flex: 1; background: #f0f0f0; padding: 1rem; border-radius: 8px; text-align: center;">
@@ -122,6 +148,10 @@
     <h3>Clientes creados no fidelizados </h3>
     <p style="font-size: 1.8rem; font-weight: bold;">{{ client_no_fidelizados }}</p>
   </div>
+  <div style="flex: 1; background: #e0eaff; padding: 1rem; border-radius: 8px; text-align: center;">
+  <h3>Clientes creados por página</h3>
+  <p style="font-size: 1.8rem; font-weight: bold;">{{ icg_con_firma }}</p>
+</div>
 </div>
 <div class="row">
     <div class="col">
@@ -226,6 +256,7 @@
   const fechas   = {{ fechas_json|safe }};
   const creados  = {{ creados_icg_json|safe }};
   const actualiz = {{ actualizados_json|safe }};
+  const creado_pagina = {{ icg_firma_json|safe }};
 
   const ctxLine = document.getElementById('lineChart').getContext('2d');
   new Chart(ctxLine, {
@@ -248,7 +279,15 @@
           backgroundColor: 'rgba(153, 102, 255, 0.2)',
           fill: false,
           tension: 0.1,
-        }
+        },
+        {
+        label: 'Creados por Página', 
+        data: creado_pagina,
+        borderColor: 'rgba(255, 159, 64, 1)',
+        backgroundColor: 'rgba(255, 159, 64, 0.2)',
+        fill: false,
+        tension: 0.1,
+      }
       ]
     },
     options: {
