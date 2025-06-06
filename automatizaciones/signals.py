@@ -109,7 +109,7 @@ def crear_o_actualizar_tarea_periodica_signal(sender, instance, created, **kwarg
 
     except Exception as e:
         # Captura cualquier error durante la creación/actualización de la tarea periódica
-        print(f"❌ ERROR al crear/actualizar PeriodicTask para '{task_name}' (Envio ID {instance.pk}): {e}")
+        print(f"ERROR al crear/actualizar PeriodicTask para '{task_name}' (Envio ID {instance.pk}): {e}")
         # Marcar la configuración con error para revisión manual
         # Es importante evitar el bucle de save aquí también
         try:
@@ -119,7 +119,7 @@ def crear_o_actualizar_tarea_periodica_signal(sender, instance, created, **kwarg
                 periodic_task=None
             )
         except Exception as e_update:
-             print(f"❌ ERROR adicional al intentar marcar EnvioProgramado ID {instance.pk} como ERROR_CONFIG: {e_update}")
+             print(f"ERROR adicional al intentar marcar EnvioProgramado ID {instance.pk} como ERROR_CONFIG: {e_update}")
 
 
 @receiver(post_delete, sender=CorreoEnviado)
@@ -133,7 +133,7 @@ def eliminar_tarea_periodica_signal(sender, instance, **kwargs):
     # Usa el nombre único que debería estar guardado
     task_name = instance.nombre_tarea
     if not task_name:
-        print("⚠️ Advertencia: No se puede eliminar PeriodicTask porque 'nombre_tarea' está vacío.")
+        print("Advertencia: No se puede eliminar PeriodicTask porque 'nombre_tarea' está vacío.")
         return
 
     try:
@@ -146,7 +146,7 @@ def eliminar_tarea_periodica_signal(sender, instance, **kwargs):
         print(f"No se encontró PeriodicTask con nombre '{task_name}' para eliminar (puede que ya no exista).")
     except Exception as e:
         # Captura otros posibles errores durante la eliminación
-        print(f"❌ ERROR al intentar eliminar PeriodicTask '{task_name}': {e}")
+        print(f"ERROR al intentar eliminar PeriodicTask '{task_name}': {e}")
 
 @task_failure.connect
 def on_task_failure(sender=None, task_id=None, exception=None,

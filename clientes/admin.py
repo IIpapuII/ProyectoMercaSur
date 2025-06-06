@@ -1,12 +1,13 @@
 from django.contrib import admin, messages
 
-from service.clientICG import crearClienteICG
+from service.clientICG import crearClienteICG, getClienteICG
 from .models import RegistroCliente, ZonaPermitida, barrio, CodigoTemporal, SecuenciaCodCliente
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 from import_export.fields import Field
 from import_export.widgets import DateWidget
 from import_export.formats.base_formats import XLS, XLSX
+
 
 @admin.register(SecuenciaCodCliente)
 class SecuenciaCodClienteAdmin(admin.ModelAdmin):
@@ -28,7 +29,9 @@ def action_crear_desde_admin(modeladmin, request, queryset):
     for cliente in queryset:
         if cliente.creado_desde_fisico and not cliente.creado_desde_admin:
             try:
-                crearClienteICG(cliente)
+                existe_cliente = getClienteICG(cliente.numero_documento)
+                if existe_cliente:
+                    crearClienteICG(cliente)
                 cliente.refresh_from_db()
 
                 if cliente.codcliente:
@@ -42,7 +45,7 @@ def action_crear_desde_admin(modeladmin, request, queryset):
                 fallidos += 1
         else:
             fallidos += 1
-
+        print(cliente.codcliente + "Creacciòn exitosa")
     if exitosos:
         modeladmin.message_user(
             request,

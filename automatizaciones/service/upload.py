@@ -57,7 +57,7 @@ def update_or_create_articles(df, canal):
             existing_discount_price = float(existing_article.discount_price) if existing_article.discount_price is not None else existing_price
             existing_featured = existing_article.is_featured
 
-            # 🔹 Comparar valores antes de marcar como modificado
+            #  Comparar valores antes de marcar como modificado
             cambios_detectados = (
                 existing_stock != stock or
                 existing_price != price or
@@ -70,7 +70,7 @@ def update_or_create_articles(df, canal):
         else:
             modificado = True  
 
-        # 🔹 Buscar descuento vigente por EAN
+        #  Buscar descuento vigente por EAN
         if canal == 'Parze':
             descuento_aplicado = DescuentoDiario.objects.filter(
                 ean=ean,
@@ -85,7 +85,7 @@ def update_or_create_articles(df, canal):
             ).first()
         else:
             descuento_aplicado = None
-        # 🔹 Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
+        #  Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
         if not descuento_aplicado:
             for descuento in descuentos_dia:
                 aplica_por_departamento = descuento.departamento and descuento.departamento == departamento
@@ -107,7 +107,7 @@ def update_or_create_articles(df, canal):
 
                     descuento_aplicado = descuento
                     break 
-        # 🔹 Aplicar descuento solo si hay cambios
+        #  Aplicar descuento solo si hay cambios
         nuevo_discount_price = discount_price  # Mantener el precio original
 
         if descuento_aplicado:
@@ -120,9 +120,9 @@ def update_or_create_articles(df, canal):
             if nuevo_discount_price != discount_price or is_featured != existing_featured:
                 modificado = True  # Solo marcar como modificado si realmente hay un cambio
             
-            print(f"🔻 Descuento aplicado a {ean}")
+            print(f"Descuento aplicado a {ean}")
 
-        # 🔹 Si el artículo tenía descuento pero ya no aplica, restablecer precio solo si venía de un descuento en DescuentoDiario
+        #  Si el artículo tenía descuento pero ya no aplica, restablecer precio solo si venía de un descuento en DescuentoDiario
         elif existing_article and existing_article.discount_price < existing_article.price:
             # Verificar si el artículo realmente tenía un descuento en DescuentoDiario antes de eliminarlo
             descuento_anterior = DescuentoDiario.objects.filter(ean=ean).exists()
@@ -131,10 +131,10 @@ def update_or_create_articles(df, canal):
                 nuevo_discount_price = 0  # Restablecer precio original
                 is_featured = False
                 if existing_article.discount_price != nuevo_discount_price or existing_article.is_featured != is_featured:
-                    modificado = True  
-                print(f"🔺 Descuento eliminado para {ean}")
+                    modificado = True   
+                    print(f"Descuento eliminado para {ean}")
 
-        # 🔹 Crear o actualizar el artículo solo si hay cambios
+        #  Crear o actualizar el artículo solo si hay cambios
         article, created = Articulos.objects.update_or_create(
             code=code,
             defaults={
@@ -161,9 +161,9 @@ def update_or_create_articles(df, canal):
         )
 
         if created:
-            print(f"✅ Artículo creado: {article.name} (Marcado como modificado)")
+            print(f"Artículo creado: {article.name} (Marcado como modificado)")
         elif modificado:
-            print(f"🔄 Modificaciones en {article.name} ({article.code}):")
+            print(f"Modificaciones en {article.name} ({article.code}):")
             if existing_article:
                 if existing_article.stock != stock:
                     print(f" - stock: {existing_article.stock} -> {stock}")
@@ -205,7 +205,7 @@ def send_modified_articles():
     modified_articles = articulosMoficados()
 
     if not modified_articles.exists():
-        print("✅ No hay artículos modificados para enviar.")
+        print("No hay artículos modificados para enviar.")
         APILogRappi.objects.create(store_id="all", status_code=200, response_text="No hay artículos modificados para enviar.")
         return
 
@@ -228,7 +228,7 @@ def send_modified_articles():
         })
 
     for store_id, records in articles_by_store.items():
-        print(f"📤 Enviando {len(records)} artículos para store_id: {store_id}")
+        print(f"Enviando {len(records)} artículos para store_id: {store_id}")
 
         payload = json.dumps({
             "type": "delta",
@@ -249,19 +249,19 @@ def send_modified_articles():
             response = conn.getresponse()
             result = response.read().decode("utf-8")
 
-            print(f"📤 Respuesta API para store_id {store_id}: {result}")
+            print(f"Respuesta API para store_id {store_id}: {result}")
 
             if response.status in [200, 201]:
                 # Si la respuesta es correcta, marcar los artículos de esta tienda como no modificados
                 Articulos.objects.filter(store_id=store_id, modificado=True).update(modificado=False)
-                print(f"✅ Artículos de store_id {store_id} actualizados y marcados como no modificados.")
+                print(f"Artículos de store_id {store_id} actualizados y marcados como no modificados.")
                 APILogRappi.objects.create(store_id=store_id, status_code=response.status, response_text=result)
             else:
-                print(f"⚠️ Error en la API para store_id {store_id} (status {response.status}): {result}")
+                print(f"Error en la API para store_id {store_id} (status {response.status}): {result}")
                 APILogRappi.objects.create(store_id=store_id, status_code=response.status, response_text=result)
 
         except Exception as e:
-            print(f"🚨 Error al enviar datos a Rappi para store_id {store_id}: {e}")
+            print(f"Error al enviar datos a Rappi para store_id {store_id}: {e}")
             APILogRappi.objects.create(store_id=store_id, status_code=500, response_text=str(e))
 
 def send_modified_articles_total():
@@ -275,7 +275,7 @@ def send_modified_articles_total():
     modified_articles = articulosModificadosTotal()
 
     if not modified_articles.exists():
-        print("✅ No hay artículos modificados para enviar.")
+        print("No hay artículos modificados para enviar.")
         APILogRappi.objects.create(store_id="all", status_code=200, response_text="No hay artículos modificados para enviar.")
         return
 
@@ -298,7 +298,7 @@ def send_modified_articles_total():
         })
 
     for store_id, records in articles_by_store.items():
-        print(f"📤 Enviando {len(records)} artículos para store_id: {store_id}")
+        print(f"Enviando {len(records)} artículos para store_id: {store_id}")
 
         payload = json.dumps({
             "type": "full",
@@ -319,19 +319,19 @@ def send_modified_articles_total():
             response = conn.getresponse()
             result = response.read().decode("utf-8")
 
-            print(f"📤 Respuesta API para store_id {store_id}: {result}")
+            print(f"Respuesta API para store_id {store_id}: {result}")
 
             if response.status in [200, 201]:
                 # Si la respuesta es correcta, marcar los artículos de esta tienda como no modificados
                 Articulos.objects.filter(store_id=store_id, modificado=True).update(modificado=False)
-                print(f"✅ Artículos de store_id {store_id} actualizados y marcados como no modificados.")
+                print(f"Artículos de store_id {store_id} actualizados y marcados como no modificados.")
                 APILogRappi.objects.create(store_id=store_id, status_code=response.status, response_text=result)
             else:
-                print(f"⚠️ Error en la API para store_id {store_id} (status {response.status}): {result}")
+                print(f"Error en la API para store_id {store_id} (status {response.status}): {result}")
                 APILogRappi.objects.create(store_id=store_id, status_code=response.status, response_text=result)
 
         except Exception as e:
-            print(f"🚨 Error al enviar datos a Rappi para store_id {store_id}: {e}")
+            print(f"Error al enviar datos a Rappi para store_id {store_id}: {e}")
             APILogRappi.objects.create(store_id=store_id, status_code=500, response_text=str(e))
 
 def generar_csv_articulos_modificados():
@@ -365,7 +365,7 @@ def generar_csv_articulos_modificados():
         for articulo in articulos:
             descuento = None  # Inicializar variable de descuento como None
 
-            # 🔹 Buscar descuento por EAN, pero solo si está vigente
+            #  Buscar descuento por EAN, pero solo si está vigente
             descuento = DescuentoDiario.objects.filter(
                 ean=articulo.ean,
                 activo=True,
@@ -375,7 +375,7 @@ def generar_csv_articulos_modificados():
                 (Q(fecha_inicio__lte=fecha_hoy) & Q(fecha_fin__gte=fecha_hoy))  
             ).first()
 
-            # 🔹 Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
+            #  Si no hay descuento por EAN, buscar por Departamento, Sección o Familia
             if not descuento:
                 descuentos_dia = DescuentoDiario.objects.filter(
                     dia=hoy,
@@ -391,7 +391,7 @@ def generar_csv_articulos_modificados():
                         descuento = d
                         break  
 
-            # 🔹 Determinar si el descuento está activo
+            #  Determinar si el descuento está activo
             descuento_activo = (
                 descuento and (
                     (descuento.dia == hoy) or 
@@ -399,11 +399,11 @@ def generar_csv_articulos_modificados():
                     (descuento.fecha_inicio <= fecha_hoy and descuento.fecha_fin >= fecha_hoy)
                 )
             )
-            # 🔹 Si el descuento NO está activo, forzar `featured = FALSE` y `max_sale = ""`
+            #  Si el descuento NO está activo, forzar `featured = FALSE` y `max_sale = ""`
             featured = "TRUE" if descuento_activo else "FALSE"
             max_sale = descuento.maximo_venta if descuento_activo and descuento.maximo_venta > 0 else ""
 
-            # 🔹 Calcular porcentaje de descuento y determinar precio de venta
+            #  Calcular porcentaje de descuento y determinar precio de venta
             if articulo.discount_price > 0 and articulo.discount_price < articulo.price:
                 precio_venta = articulo.discount_price
                 descuento_porcentaje = round(100 * (1 - (articulo.discount_price / articulo.price)), 2)
@@ -411,7 +411,7 @@ def generar_csv_articulos_modificados():
                 precio_venta = articulo.price
                 descuento_porcentaje = 0  # No hay descuento
 
-            # 🔹 Escribir datos en el CSV
+            #  Escribir datos en el CSV
             writer.writerow([
                 articulo.ean,        # SKU
                 articulo.stock,      # CANTIDAD

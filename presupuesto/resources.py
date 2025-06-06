@@ -44,8 +44,8 @@ class PorcentajeDiarioConfigResource(resources.ModelResource):
 
     class Meta:
         model = PorcentajeDiarioConfig
-        fields = ('id', 'sede', 'categoria', 'dia_semana', 'porcentaje')
-        import_id_fields = ('sede','categoria', 'dia_semana')
+        fields = ('id', 'sede', 'categoria', 'dia_semana', 'mes' 'porcentaje')
+        import_id_fields = ('sede','categoria', 'dia_semana','mes')
         skip_unchanged = True
         report_skipped = True
         formats = [XLS, XLSX]
@@ -106,10 +106,20 @@ class VentapollosResource(resources.ModelResource):
         formats = [XLS, XLSX]
 
 class VentaDiariaRealResource(resources.ModelResource):
+    sede = fields.Field(
+        column_name='sede',
+        attribute='sede',
+        widget=widgets.ForeignKeyWidget(Sede, field='nombre')
+    )
+    categoria = fields.Field(
+        column_name='categoria',
+        attribute='categoria',
+        widget=widgets.ForeignKeyWidget(CategoriaVenta, field='nombre')
+    )
     class Meta:
         model = VentaDiariaReal
         fields = ('id', 'sede', 'categoria', 'fecha', 'venta_real')
-        import_id_fields = ('sede', 'categoria', 'fecha')
+        import_id_fields = ('sede', 'categoria', 'fecha','venta_real')
         skip_unchanged = True
         report_skipped = True
         formats = [XLS, XLSX]

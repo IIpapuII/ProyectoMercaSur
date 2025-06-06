@@ -16,136 +16,136 @@ from .utils import enviar_correo_renderizado
 def procesar_articulos_task():
     """Tarea programada para actualizar y enviar artículos modificados."""
     try:
-        print("🔄 Iniciando tarea de procesamiento de artículos...")
+        print("Iniciando tarea de procesamiento de artículos...")
         
         conexion = conectar_sql_server()
 
-        # 2️⃣ Obtener la consulta desde el modelo SQLQuery
+        #  Obtener la consulta desde el modelo SQLQuery
         consulta = SQLQuery.objects.filter(pk=2).first()
         if not consulta:
-            print("⚠️ No hay consultas activas.")
+            print("No hay consultas activas.")
             return
 
-        # 3️⃣ Ejecutar la consulta
+        #  Ejecutar la consulta
         df = ejecutar_consulta(conexion, consulta.consulta)
         if df is None:
-            print("⚠️ No se pudo ejecutar la consulta.")
+            print("No se pudo ejecutar la consulta.")
             return
 
         # 5️⃣ Actualizar o crear artículos
         update_or_create_articles(df,'Rappi')
 
-        # 6️⃣ Enviar artículos modificados a Rappi
+        #  Enviar artículos modificados a Rappi
         send_modified_articles()
 
-        print("✅ Proceso de artículos completado.")
+        print("Proceso de artículos completado.")
 
     except Exception as e:
-        print(f"🚨 Error en procesar_articulos_task: {e}")
+        print(f"Error en procesar_articulos_task: {e}")
         raise
 
 @shared_task()
 def procesar_articulos_task_total():
     """Tarea programada para actualizar y enviar artículos modificados."""
     try:
-        print("🔄 Iniciando tarea de procesamiento de artículos...")
+        print("Iniciando tarea de procesamiento de artículos...")
         
         conexion = conectar_sql_server()
 
-        # 2️⃣ Obtener la consulta desde el modelo SQLQuery
+        #  Obtener la consulta desde el modelo SQLQuery
         consulta = SQLQuery.objects.filter(pk=2).first()
         if not consulta:
-            print("⚠️ No hay consultas activas.")
+            print("No hay consultas activas.")
             return
 
-        # 3️⃣ Ejecutar la consulta
+        #  Ejecutar la consulta
         df = ejecutar_consulta(conexion, consulta.consulta)
         if df is None:
-            print("⚠️ No se pudo ejecutar la consulta.")
+            print("No se pudo ejecutar la consulta.")
             return
 
         # 5️⃣ Actualizar o crear artículos
         update_or_create_articles(df,'Rappi')
 
-        # 6️⃣ Enviar artículos modificados a Rappi
+        #  Enviar artículos modificados a Rappi
         send_modified_articles_total()
 
-        print("✅ Proceso de artículos completado.")
+        print("Proceso de artículos completado.")
 
     except Exception as e:
-        print(f"🚨 Error en procesar_articulos_task: {e}")
+        print(f"Error en procesar_articulos_task: {e}")
         raise
 
 @shared_task
 def procesar_articulos_parze_task():
     """Tarea programada para actualizar y enviar artículos modificados."""
     try:
-        print("🔄 Iniciando tarea de procesamiento de artículos...")
+        print("Iniciando tarea de procesamiento de artículos...")
         
         conexion = conectar_sql_server()
 
-        # 2️⃣ Obtener la consulta desde el modelo SQLQuery
+        #  Obtener la consulta desde el modelo SQLQuery
         consulta = SQLQuery.objects.filter(pk=2).first()
         if not consulta:
-            print("⚠️ No hay consultas activas.")
+            print("No hay consultas activas.")
             return
 
-        # 3️⃣ Ejecutar la consulta
+        #  Ejecutar la consulta
         df = ejecutar_consulta(conexion, consulta.consulta)
         if df is None:
-            print("⚠️ No se pudo ejecutar la consulta.")
+            print("No se pudo ejecutar la consulta.")
             return
 
         # 5️⃣ Actualizar o crear artículos
         update_or_create_articles(df, 'Parze')
 
-        # 6️⃣ Enviar artículos modificados a Rappi
+        #  Enviar artículos modificados a Rappi
         generar_csv_articulos_modificados()
         enviar_csv_a_api()
         print("Enviado")
         marcarArticulosComoNoModificados()
-        print("✅ Proceso de artículos completado.")
+        print("Proceso de artículos completado.")
 
     except Exception as e:
-        print(f"🚨 Error en procesar_articulos_task: {e}")
+        print(f"Error en procesar_articulos_task: {e}")
         raise
 
 @shared_task
 def actualizar_descuentos_task():
     """Tarea programada para actualizar los descuentos diarios."""
     try:
-        print("🔄 Iniciando tarea de actualización de descuentos...")
+        print("Iniciando tarea de actualización de descuentos...")
         
         actualizar_descuentos()
-        print("🔄 Iniciando tarea de procesamiento de artículos...")
+        print("Iniciando tarea de procesamiento de artículos...")
         
         conexion = conectar_sql_server()
 
-        # 2️⃣ Obtener la consulta desde el modelo SQLQuery
+        #  Obtener la consulta desde el modelo SQLQuery
         consulta = SQLQuery.objects.filter(pk=2).first()
         if not consulta:
-            print("⚠️ No hay consultas activas.")
+            print("No hay consultas activas.")
             return
 
-        # 3️⃣ Ejecutar la consulta
+        #  Ejecutar la consulta
         df = ejecutar_consulta(conexion, consulta.consulta)
         if df is None:
-            print("⚠️ No se pudo ejecutar la consulta.")
+            print("No se pudo ejecutar la consulta.")
             return
 
 
-        print(f"🔄 Procesando artículos para canal: Parze")
+        print(f"Procesando artículos para canal: Parze")
         update_or_create_articles(df, canal="Parze")
         generar_csv_articulos_modificados()
         enviar_csv_a_api()
         send_modified_articles()
-        print("✅ Proceso completado para ambos canales.")
+        print("Proceso completado para ambos canales.")
         
         procesar_articulos_task_total()
         return "proceso exitoso"
 
     except Exception as e:
-        print(f"🚨 Error en actualizar_descuentos_task: {e}")
+        print(f"Error en actualizar_descuentos_task: {e}")
         raise
 
 

@@ -15,9 +15,9 @@ def import_from_csv(request):
                 try:
                     df = pd.read_csv(request.FILES["csv_file"])
                     update_or_create_articles(df)
-                    messages.success(request, "✅ Importación desde CSV completada.")
+                    messages.success(request, "Importación desde CSV completada.")
                 except Exception as e:
-                    messages.error(request, f"⚠️ Error al importar desde CSV: {e}")
+                    messages.error(request, f"Error al importar desde CSV: {e}")
                 return HttpResponseRedirect("../")
         else:
             form = CSVUploadForm()
@@ -31,8 +31,8 @@ def index(request):
     #generar_csv_articulos_modificados()
     #procesar_articulos_task()
     #send_modified_articles()
-    #actualizar_descuentos_task()
-    generar_enviar_codigo_temporal()
+    actualizar_descuentos_task()
+    #generar_enviar_codigo_temporal()
     
     context = {
         "articulos_modificados": []
