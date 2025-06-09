@@ -89,6 +89,18 @@ class VentaDiariaReal(models.Model):
         default=Decimal('0.00'),
         verbose_name="Venta Real ($)"
     )
+    margen_sin_post_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.0'),
+        verbose_name="% Margen Sin POS"
+    )
+    margen_con_post_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.0'),
+        verbose_name="% Margen Con POS"
+    )
     # Campo opcional para notas o comentarios sobre la venta de ese día
     # notas = models.TextField(blank=True, null=True, verbose_name="Notas Adicionales")
 

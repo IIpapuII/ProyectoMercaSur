@@ -10,14 +10,14 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.utils.safestring import mark_safe
 from django.shortcuts import render
 from django.contrib import messages # Para mostrar mensajes al usuario
-from .forms import FiltroCumplimientoForm, SedeAñoMesForm, PresupuestoCategoriaFormSet
+from .forms import FiltroCumplimientoForm, SedeAñoMesForm, PresupuestoCategoriaFormSet, FiltroRangoFechasForm
 from .models import Sede, CategoriaVenta, PresupuestoMensualCategoria, PresupuestoDiarioCategoria
 from .utils import calcular_presupuesto_con_porcentajes_dinamicos, obtener_clase_semaforo
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from django.db.models import Sum
+from django.db.models import Sum, F
 from appMercaSur.decorators import smart_jwt_login_required
 from django.utils.timezone import now
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from django.views.decorators.csrf import csrf_exempt
 
@@ -426,7 +426,7 @@ def vista_reporte_cumplimiento(request):
                 fecha__year=anio,
                 fecha__month=mes
             )
-            ventas_map = {v.fecha: v.venta_real for v in ventas_diarias_qs}
+            ventas_map = {v.fecha: v for v in ventas_diarias_qs}
 
             total_ppto_mes_detalle = Decimal('0.00')
             total_venta_mes_detalle = Decimal('0.00')
@@ -438,7 +438,15 @@ def vista_reporte_cumplimiento(request):
             }
 
             for ppto_dia in presupuestos_diarios:
-                venta_dia_real = ventas_map.get(ppto_dia.fecha, Decimal('0.00'))
+                venta_obj = ventas_map.get(ppto_dia.fecha)
+                if venta_obj:
+                    venta_dia_real = venta_obj.venta_real
+                    margen_sin_pos   = venta_obj.margen_sin_post_pct
+                    margen_con_pos   = venta_obj.margen_con_post_pct
+                else:
+                    venta_dia_real = Decimal('0.00')
+                    margen_sin_pos = Decimal('0.0')
+                    margen_con_pos = Decimal('0.0')
 
                 nombre_dia = ppto_dia.dia_semana_nombre
                 if nombre_dia in resumen_semanal_detalle:
@@ -457,7 +465,9 @@ def vista_reporte_cumplimiento(request):
                     'venta_diaria': venta_dia_real,
                     'diferencia': diferencia,
                     'cumplimiento_pct': cumplimiento_pct_dia,
-                    'semaforo_clase': obtener_clase_semaforo(cumplimiento_pct_dia)
+                    'semaforo_clase': obtener_clase_semaforo(cumplimiento_pct_dia),
+                    'margen_sin_pos': margen_sin_pos,
+                    'margen_con_pos': margen_con_pos
                 })
 
                 total_ppto_mes_detalle += ppto_dia.presupuesto_calculado
@@ -476,7 +486,9 @@ def vista_reporte_cumplimiento(request):
                 'total_venta': total_venta_mes_detalle,
                 'total_diferencia': total_venta_mes_detalle - total_ppto_mes_detalle,
                 'cumplimiento_pct': cumplimiento_total_mes_detalle,
-                'semaforo_clase': obtener_clase_semaforo(cumplimiento_total_mes_detalle)
+                'semaforo_clase': obtener_clase_semaforo(cumplimiento_total_mes_detalle),
+                'margen_sin_pos': ventas_diarias_qs.aggregate(Sum('margen_sin_post_pct'))['margen_sin_post_pct__sum'] or Decimal('0.0'),
+                'margen_con_pos': ventas_diarias_qs.aggregate(Sum('margen_con_post_pct'))['margen_con_post_pct__sum'] or Decimal('0.0')
             }
 
             if not datos_reporte and presupuestos_diarios.exists():
@@ -496,7 +508,8 @@ def vista_reporte_cumplimiento(request):
         'chart_venta_anual': mark_safe(json.dumps(chart_venta_anual)),
         'chart_cumplimiento_anual': mark_safe(json.dumps([float(v) for v in chart_cumplimiento_anual])),
         'fecha_inicio': fecha_inicio,
-        'fecha_fin': fecha_fin
+        'fecha_fin': fecha_fin,
+        'is_administrativo': request.user.groups.filter(name='administrativos').exists()
     }
     return render(request, 'reporte_cumplimiento.html', context)
 
@@ -534,3 +547,139 @@ def iniciar_sesion_django(request):
         'message': 'Sesión de Django iniciada.',
         'redirect_url': redirect_url
     })
+
+@smart_jwt_login_required
+def dasboard_presupuesto(request):
+    form = FiltroRangoFechasForm(request.GET or None)
+
+    # Lista para la tabla de resumen
+    summary_table = []
+
+    # Datos gráfico 1 (Venta vs Presupuesto)
+    labels1, ppto_data, venta_data, cmp_data = [], [], [], []
+
+    # Datos gráfico 2 (Mes actual vs mismo mes año anterior)
+    labels2, imp_act, imp_ant, dif_pct = [], [], [], []
+
+    if form.is_valid():
+        fi = form.cleaned_data['fecha_inicio']
+        ff = form.cleaned_data['fecha_fin']
+        cat = form.cleaned_data['categoria']
+
+        # Filtros base
+        filtro_venta = {'fecha__range': (fi, ff)}
+        filtro_presu = {'fecha__range': (fi, ff)}
+        if cat:
+            filtro_venta['categoria'] = cat
+            filtro_presu['presupuesto_mensual__categoria'] = cat
+
+        # ————— Tabla Resumen —————
+        qs_ppto = PresupuestoDiarioCategoria.objects.filter(**filtro_presu) \
+            .values(sede_nombre=F('presupuesto_mensual__sede__nombre')) \
+            .annotate(total_ppto=Sum('presupuesto_calculado'))
+
+        qs_venta = VentaDiariaReal.objects.filter(**filtro_venta) \
+            .values(sede_nombre=F('sede__nombre')) \
+            .annotate(total_venta=Sum('venta_real'))
+
+        dict_ppto  = {r['sede_nombre']: r['total_ppto'] for r in qs_ppto}
+        dict_venta = {r['sede_nombre']: r['total_venta'] for r in qs_venta}
+        sedes = sorted(set(dict_ppto) | set(dict_venta))
+
+        total_ppto_all = 0
+        total_venta_all = 0
+
+        for sede in sedes:
+            p = dict_ppto.get(sede, 0) or 0
+            v = dict_venta.get(sede, 0) or 0
+            ejec = round((v / p) * 100) if p else 0
+            diff = v - p
+
+            summary_table.append({
+                'sede': sede,
+                'ppto': float(p),
+                'venta': float(v),
+                'ejec_pct': ejec,
+                'diff': float(diff),
+            })
+
+            total_ppto_all += p
+            total_venta_all += v
+
+        # Fila de totales
+        ejec_tot = round((total_venta_all / total_ppto_all) * 100) if total_ppto_all else 0
+        summary_table.append({
+            'sede': 'Totales',
+            'ppto': float(total_ppto_all),
+            'venta': float(total_venta_all),
+            'ejec_pct': ejec_tot,
+            'diff': float(total_venta_all - total_ppto_all),
+        })
+
+        # ————— Gráfico 1: Venta vs Presupuesto —————
+        for row in summary_table[:-1]:
+            labels1.append(row['sede'])
+            ppto_data.append(row['ppto'])
+            venta_data.append(row['venta'])
+            cmp_data.append(row['ejec_pct'])
+
+        # Totales al final
+        labels1.append('TOTAL')
+        ppto_data.append(summary_table[-1]['ppto'])
+        venta_data.append(summary_table[-1]['venta'])
+        cmp_data.append(summary_table[-1]['ejec_pct'])
+
+        # ————— Gráfico 2: Mes actual vs año anterior —————
+        mes, anio = fi.month, fi.year
+        inicio_mes = date(anio, mes, 1)
+        fin_mes = (inicio_mes.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        inicio_ant = inicio_mes.replace(year=anio - 1)
+        fin_ant    = fin_mes.replace(year=anio - 1)
+
+        filtro_act = {'fecha__range': (inicio_mes, fin_mes)}
+        filtro_ant = {'fecha__range': (inicio_ant, fin_ant)}
+        if cat:
+            filtro_act['categoria'] = cat
+            filtro_ant['categoria'] = cat
+
+        qs_act = VentaDiariaReal.objects.filter(**filtro_act) \
+            .values(sede_nombre=F('sede__nombre')) \
+            .annotate(importe=Sum('venta_real'))
+        qs_ant = VentaDiariaReal.objects.filter(**filtro_ant) \
+            .values(sede_nombre=F('sede__nombre')) \
+            .annotate(importe=Sum('venta_real'))
+
+        dict_act = {r['sede_nombre']: r['importe'] for r in qs_act}
+        dict_ant = {r['sede_nombre']: r['importe'] for r in qs_ant}
+        sedes2   = sorted(set(dict_act) | set(dict_ant))
+
+        for sede in sedes2:
+            ia = dict_act.get(sede, 0) or 0
+            ib = dict_ant.get(sede, 0) or 0
+            labels2.append(sede)
+            imp_act.append(float(ia))
+            imp_ant.append(float(ib))
+            dif_pct.append(float(round((ia / ib) * 100 - 100, 1)) if ib else 0.0)
+
+        # Totales gráfico 2
+        ta = sum(imp_act)
+        tb = sum(imp_ant)
+        labels2.append('Totales')
+        imp_act.append(ta)
+        imp_ant.append(tb)
+        dif_pct.append(float(round((ta / tb) * 100 - 100, 1)) if tb else 0.0)
+
+    context = {
+        'form': form,
+        'summary_table': summary_table,
+        'labels1': labels1,
+        'ppto_data': ppto_data,
+        'venta_data': venta_data,
+        'cmp_data': cmp_data,
+        'labels2': labels2,
+        'imp_act': imp_act,
+        'imp_ant': imp_ant,
+        'dif_pct': dif_pct,
+        'is_administrativo': request.user.groups.filter(name='administrativos').exists(),
+    }
+    return render(request, 'dashboard_presupuesto.html', context)

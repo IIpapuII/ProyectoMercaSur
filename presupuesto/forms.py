@@ -92,3 +92,21 @@ class FiltroCumplimientoForm(forms.Form):
 
             if queryset_sedes.exists():
                 self.fields['sede'].empty_label = None
+
+class FiltroRangoFechasForm(forms.Form):
+    fecha_inicio = forms.DateField(
+        required=True,
+        widget=forms.DateInput(attrs={'type': 'date','class': 'form-control'}),
+        label="Desde"
+    )
+    fecha_fin = forms.DateField(
+        required=True,
+        widget=forms.DateInput(attrs={'type': 'date','class': 'form-control'}),
+        label="Hasta"
+    )
+    categoria = forms.ModelChoiceField(
+        queryset=CategoriaVenta.objects.all().order_by('nombre'),
+        label="Seleccione Categoría",
+        empty_label=None, 
+        widget=forms.Select(attrs={'class': 'form-control'})
+    )
