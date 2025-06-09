@@ -68,6 +68,12 @@
                     <img src="https://notificaciones.mercasur.com.co:9180/assets/logo-DvbfM2Z9.svg" alt="Logo" height="40" class="d-inline-block align-text-top me-2">
                     <span class="h5 mb-0">Reporte de Cumplimiento Presupuestario</span>
                 </a>
+                {% if is_administrativo %}
+                <a href="{% url "dashboard_presupuesto" %}"
+               class="btn btn-success btn-sm">
+                Ver Dashboard Administrativo
+                </a>
+                {% endif %}
                 <div class="d-flex align-items-center">
                     {% if user.is_authenticated %}
                         <span class="navbar-text me-3">
@@ -207,6 +213,8 @@
                             <th scope="col" class="text-left">Día</th>
                             <th scope="col">Ppto. Diario ($)</th>
                             <th scope="col">Venta Diaria ($)</th>
+                            <th scope="col">% Margen Sin POS</th>
+                            <th scope="col">% Margen Con POS</th>
                             <th scope="col">Diferencia ($)</th>
                             <th scope="col">Cumplimiento (%)</th>
                         </tr>
@@ -218,6 +226,20 @@
                                 <td class="text-left">{{ dia.dia_semana }}</td>
                                 <td>{{ dia.presupuesto_diario|floatformat:2|intcomma }}</td>
                                 <td>{{ dia.venta_diaria|floatformat:2|intcomma }}</td>
+                                <td class="text-center">
+                                    {% if dia.margen_sin_pos is not None %}
+                                        {{ dia.margen_sin_pos|floatformat:1 }}%
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if dia.margen_con_pos is not None %}
+                                        {{ dia.margen_con_pos|floatformat:1 }}%
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
                                 <td class="{% if dia.diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
                                     {{ dia.diferencia|floatformat:2|intcomma }}
                                 </td>
@@ -237,6 +259,24 @@
                             <td colspan="2" class="text-left"><strong>TOTALES DEL MES:</strong></td>
                             <td><strong>{{ resumen_mensual.total_presupuesto|floatformat:2|intcomma }}</strong></td>
                             <td><strong>{{ resumen_mensual.total_venta|floatformat:2|intcomma }}</strong></td>
+                            <td class="text-center">
+                                <strong>
+                                {% if resumen_mensual.margen_sin_pos is not None %}
+                                    {{ resumen_mensual.margen_sin_pos|floatformat:1 }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </strong>
+                            </td>
+                            <td class="text-center">
+                                <strong>
+                                {% if resumen_mensual.margen_con_pos is not None %}
+                                    {{ resumen_mensual.margen_con_pos|floatformat:1 }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                                </strong>
+                            </td>
                             <td class="{% if resumen_mensual.total_diferencia < 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
                                 <strong>{{ resumen_mensual.total_diferencia|floatformat:2|intcomma }}</strong>
                             </td>

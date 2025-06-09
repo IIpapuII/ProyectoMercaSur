@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+{% load static %}
+{% load humanize %}
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Reporte de Cumplimiento Presupuestario</title>
+  <link rel="icon" href="{% static 'images/favicon.ico' %}">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <style>
+    body { padding: 20px; }
+    .form-section {
+      border: 1px solid #ddd; padding: 20px;
+      margin-bottom: 20px; border-radius: 5px;
+      background-color: #f9f9f9;
+    }
+    .chart-container {
+        width: 100%; 
+        margin: 30px auto;
+        padding: 30px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        background-color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid">
+
+    <!-- NAVBAR -->
+    <header class="mb-4">
+      <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom shadow-sm">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="#">
+            <img src="https://notificaciones.mercasur.com.co:9180/assets/logo-DvbfM2Z9.svg"
+                 alt="Logo" height="40" class="me-2">
+            <span class="h5 mb-0">Reporte de Cumplimiento Presupuestario General</span>
+          </a>
+          {% if is_administrativo %}
+            <a href="{% url 'vista_reporte_cumplimiento' %}"
+               class="btn btn-success btn-sm me-3">
+              Reporte anterior
+            </a>
+          {% endif %}
+          <div class="d-flex align-items-center">
+            {% if user.is_authenticated %}
+              <span class="navbar-text me-3">
+                Bienvenido, <strong>{{ user.username }}</strong>
+              </span>
+            {% endif %}
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <!-- FORMULARIO DE FILTRO -->
+    <div class="form-section">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-3">
+          {{ form.fecha_inicio.label_tag }} {{ form.fecha_inicio }}
+        </div>
+        <div class="col-md-3">
+          {{ form.fecha_fin.label_tag }} {{ form.fecha_fin }}
+        </div>
+        <div class="col-md-3">
+        {{ form.categoria.label_tag }}
+        {{ form.categoria }}
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-success w-100">Generar</button>
+        </div>
+      </form>
+    </div>
+    <!-- TABLA DE RESUMEN -->
+<div class="table-responsive mb-4">
+  <table class="table table-bordered table-sm text-center">
+    <thead class="table-light">
+      <tr>
+        <th>ESCENARIO</th>
+        <th>PRESUPUESTO</th>
+        <th>VENTA</th>
+        <th>% EJECUCIÓN</th>
+        <th>DIFERENCIA</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in summary_table %}
+        <tr {% if forloop.last %}class="fw-bold"{% endif %}>
+          <td class="text-start">{{ row.sede }}</td>
+          <td>{{ row.ppto|floatformat:0|intcomma }}</td>
+          <td>{{ row.venta|floatformat:0|intcomma }}</td>
+          <td
+            class="{% if row.ejec_pct < 91 %}bg-danger text-white{% elif row.ejec_pct < 100 %}bg-warning{% else %}bg-success text-white{% endif %}"
+          >
+            {{ row.ejec_pct }}%
+          </td>
+          <td class="{% if row.diff < 0 %}text-danger{% else %}text-success{% endif %}">
+            {{ row.diff|floatformat:0|intcomma|add:'$ ' }}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+    <!-- GRÁFICO 1 -->
+    <div class="chart-container mt-4">
+      <h4 class="text-center">Venta mensual vs Presupuesto</h4>
+      <canvas id="chart1"></canvas>
+    </div>
+
+    <!-- GRÁFICO 2 -->
+    <div class="chart-container mt-4">
+      <h4 class="text-center">
+        Comparativo mes actual vs año anterior
+      </h4>
+      <canvas id="chart2"></canvas>
+    </div>
+
+  </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // registrar plugin
+    Chart.register(ChartDataLabels);
+
+    // — Gráfico 1 —
+    if ({{ labels1|length }} > 0) {
+      new Chart(document.getElementById('chart1'), {
+        type: 'bar',
+        data: {
+          labels: {{ labels1|safe }},
+          datasets: [
+            {
+              label: 'Presupuesto',
+              data: {{ ppto_data|safe }},
+              yAxisID: 'y',
+              backgroundColor: 'rgba(255, 106, 106, 0.5)'
+            },
+            {
+              label: 'Venta',
+              data: {{ venta_data|safe }},
+              yAxisID: 'y',
+              backgroundColor: 'rgba(75, 192, 100, 0.5)',
+              datalabels: {
+                anchor: 'end',
+                align: 'start',
+                formatter: (v, ctx) => {{ cmp_data|safe }}[ctx.dataIndex] + '%'
+              }
+            },
+            {
+              type: 'line',
+              label: 'Cumplimiento %',
+              data: {{ cmp_data|safe }},
+              yAxisID: 'y1',
+              tension: 0.3,
+              borderColor: 'gray',
+              pointBackgroundColor: 'red',
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            y: { type: 'linear', position: 'left', beginAtZero: true,
+                 title: { display: true, text: 'Monto ($)' } },
+            y1:{ type: 'linear', position:'right', beginAtZero:true,
+                 ticks:{ callback: v => v + '%' },
+                 grid:{ drawOnChartArea:false },
+                 title:{ display:true, text:'Cumplimiento (%)' } }
+          },
+          plugins: {
+            datalabels: {
+              display: ctx => ctx.dataset.label==='Venta',
+              color: 'black', font:{ weight:'bold' }
+            },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  let lbl=ctx.dataset.label+': ';
+                  return ctx.dataset.label==='Cumplimiento %'
+                    ? lbl+ctx.parsed.y+'%'
+                    : lbl+'$'+ctx.parsed.y.toLocaleString('es-CO');
+                }
+              }
+            },
+            legend:{ position:'bottom' }
+          }
+        }
+      });
+    } else {
+      document.getElementById('chart1').insertAdjacentHTML(
+        'afterend',
+        '<p class="text-center text-muted">No hay datos para Venta vs Presupuesto.</p>'
+      );
+    }
+
+    // — Gráfico 2 —
+    if ({{ labels2|length }} > 0) {
+  new Chart(document.getElementById('chart2'), {
+    type: 'bar',
+    data: {
+      labels: {{ labels2|safe }},
+      datasets: [
+        {
+          label: 'Importe {{ form.fecha_inicio.value|date:"Y" }}',
+          data: {{ imp_act|safe }},
+          yAxisID: 'y',
+          backgroundColor: 'rgba(255, 99, 99, 0.5)',
+          // formateo numérico en las barras
+          datalabels: {
+            anchor: 'end',
+            align: 'start',
+            formatter: value => {
+              // formatea como moneda colombiano
+              return new Intl.NumberFormat('es-CO', {
+                style: 'currency',
+                currency: 'COP',
+                maximumFractionDigits: 0
+              }).format(value);
+            }
+          }
+        },
+        {
+          label: 'Importe {{ form.fecha_inicio.value|date:"Y"|add:"-1 year" }}',
+          data: {{ imp_ant|safe }},
+          yAxisID: 'y',
+          backgroundColor: 'rgba(84, 238, 57, 0.5)',
+          datalabels: {
+            anchor: 'end',
+            align: 'start',
+            formatter: value => {
+              return new Intl.NumberFormat('es-CO', {
+                style: 'currency',
+                currency: 'COP',
+                maximumFractionDigits: 0
+              }).format(value);
+            }
+          }
+        },
+        {
+          type: 'line',
+          label: '% DIF IMPORTE POS',
+          data: {{ dif_pct|safe }},
+          yAxisID: 'y1',
+          tension: 0.3,
+          borderColor: 'gray',
+          pointBackgroundColor: 'green',
+          fill: false,
+          // desactivamos datalabels en la línea
+          datalabels: { display: false }
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        y: {
+          type:'linear', position:'left', beginAtZero:true,
+          title:{ display:true, text:'Monto ($)' },
+          ticks: {
+            callback: val => new Intl.NumberFormat('es-CO', {
+              style: 'currency',
+              currency: 'COP',
+              maximumFractionDigits: 0
+            }).format(val)
+          }
+        },
+        y1: {
+          type:'linear', position:'right', beginAtZero:true,
+          ticks:{ callback: v => v + '%' },
+          grid:{ drawOnChartArea:false },
+          title:{ display:true, text:'% DIF IMPORTE' }
+        }
+      },
+      plugins: {
+        datalabels: {
+          // se usa solo el datalabel configurado en cada dataset
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              let lbl = ctx.dataset.label + ': ';
+              if (ctx.dataset.label.includes('%')) {
+                return lbl + ctx.parsed.y + '%';
+              }
+              // formatea tooltip de barras como moneda
+              return lbl + new Intl.NumberFormat('es-CO', {
+                style: 'currency',
+                currency: 'COP',
+                maximumFractionDigits: 0
+              }).format(ctx.parsed.y);
+            }
+          }
+        },
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 12 }
+        }
+      }
+    },
+    plugins: [ ChartDataLabels ]
+  });
+} else {
+  document.getElementById('chart2').insertAdjacentHTML(
+    'afterend',
+    '<p class="text-center text-muted">No hay datos para Comparativo año anterior.</p>'
+  );
+}
+  });
+  </script>
+</body>
+</html>
