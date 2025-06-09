@@ -30,7 +30,7 @@ def action_crear_desde_admin(modeladmin, request, queryset):
         if cliente.creado_desde_fisico and not cliente.creado_desde_admin:
             try:
                 existe_cliente = getClienteICG(cliente.numero_documento)
-                if existe_cliente:
+                if not existe_cliente:
                     crearClienteICG(cliente)
                 cliente.refresh_from_db()
 
@@ -39,13 +39,15 @@ def action_crear_desde_admin(modeladmin, request, queryset):
                     cliente.creadoICG = True
                     cliente.save(update_fields=["creado_desde_admin", "creadoICG"])
                     exitosos += 1
+                    print(str(cliente.codcliente) + "Creacciòn exitosa")
                 else:
                     fallidos += 1
             except Exception as e:
                 fallidos += 1
+                print(e)
         else:
             fallidos += 1
-        print(cliente.codcliente + "Creacciòn exitosa")
+            
     if exitosos:
         modeladmin.message_user(
             request,
