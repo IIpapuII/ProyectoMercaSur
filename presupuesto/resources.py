@@ -44,8 +44,8 @@ class PorcentajeDiarioConfigResource(resources.ModelResource):
 
     class Meta:
         model = PorcentajeDiarioConfig
-        fields = ('id', 'sede', 'categoria', 'dia_semana', 'mes' 'porcentaje')
-        import_id_fields = ('sede','categoria', 'dia_semana','mes')
+        fields = ('id', 'sede', 'categoria', 'dia_semana', 'porcentaje')
+        import_id_fields = ('sede','categoria', 'dia_semana')
         skip_unchanged = True
         report_skipped = True
         formats = [XLS, XLSX]

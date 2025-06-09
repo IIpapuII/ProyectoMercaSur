@@ -28,9 +28,9 @@ class CategoriaVentaAdmin(ImportExportModelAdmin):
 @admin.register(PorcentajeDiarioConfig)
 class PorcentajeDiarioConfigAdmin(ImportExportModelAdmin):
     resource_class = PorcentajeDiarioConfigResource
-    list_display = ('sede', 'categoria', 'get_dia_semana_display','mes', 'porcentaje')
-    list_filter = ('sede__nombre', 'categoria__nombre','mes')
-    ordering = ('sede__nombre', 'categoria__nombre', 'dia_semana','mes')
+    list_display = ('sede', 'categoria', 'get_dia_semana_display', 'porcentaje')
+    list_filter = ('sede__nombre', 'categoria__nombre',)
+    ordering = ('sede__nombre', 'categoria__nombre', 'dia_semana',)
     list_editable = ('porcentaje',)
     list_per_page = 49
 

@@ -23,7 +23,6 @@ class PorcentajeDiarioConfig(models.Model):
         (3, 'Jueves'), (4, 'Viernes'), (5, 'Sábado'), (6, 'Domingo')
     ]
     dia_semana = models.IntegerField(choices=DIA_SEMANA_CHOICES) # 0=Lunes, 6=Domingo
-    mes = models.IntegerField(null=True, blank=True, verbose_name="Mes")
     porcentaje = models.DecimalField(
         max_digits=5, decimal_places=2,
         validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
@@ -31,7 +30,7 @@ class PorcentajeDiarioConfig(models.Model):
     )
 
     class Meta:
-        unique_together = ('sede','categoria', 'dia_semana','mes') # Solo un porcentaje por día para cada categoría
+        unique_together = ('sede','categoria', 'dia_semana',) # Solo un porcentaje por día para cada categoría
         ordering = ['sede','categoria', 'dia_semana']
         verbose_name = "Configuración de Porcentaje Diario"
         verbose_name_plural = "Configuraciones de Porcentajes Diarios"
