@@ -2,9 +2,14 @@
 import calendar
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from .models import CategoriaVenta, PorcentajeDiarioConfig, PresupuestoDiarioCategoria, PresupuestoMensualCategoria, Sede, VentaDiariaReal # Importar modelos necesarios
-from appMercaSur.conect import conectar_sql_server, ejecutar_consulta
+from .models import CategoriaVenta, PorcentajeDiarioConfig, PresupuestoDiarioCategoria, PresupuestoMensualCategoria # Importar modelos necesarios
+import pandas as pd
+from prophet import Prophet
+from .models import VentaDiariaReal
+from calendar import monthrange
 from django.db import transaction
+
+
 def calcular_presupuesto_con_porcentajes_dinamicos(sede_id, anio, mes, presupuestos_input_por_categoria):
     """
     Calcula presupuestos diarios usando el Método A:
@@ -375,3 +380,68 @@ def cargar_ventas_reales_carne(fecha_inicio, fecha_fin):
                 obj.margen_con_post_pct = Decimal(margen_con)
                 obj.save()
     print(f"Cargadas {len(filas)} filas de ventas reales entre {fecha_inicio} y {fecha_fin}.")
+def calcular_presupuesto_diario_forecast(presupuesto_mensual_obj):
+    """
+    Calcula y actualiza el presupuesto diario para una categoría/sede usando Prophet,
+    usando TODO el histórico desde enero hasta el último día del mes anterior al mes objetivo.
+    """
+    anio_obj = presupuesto_mensual_obj.anio
+    mes_obj = presupuesto_mensual_obj.mes
+    sede = presupuesto_mensual_obj.sede
+    categoria = presupuesto_mensual_obj.categoria
+    valor_mes = float(presupuesto_mensual_obj.presupuesto_total_categoria) 
+
+    fecha_inicio = date(anio_obj, 1, 1)
+    if mes_obj == 1:
+        raise Exception("No hay histórico suficiente para calcular enero.")
+    else:
+        fecha_fin = date(anio_obj, mes_obj - 1, monthrange(anio_obj, mes_obj - 1)[1])
+
+    ventas = VentaDiariaReal.objects.filter(
+        sede=sede,
+        categoria=categoria,
+        fecha__gte=fecha_inicio,
+        fecha__lte=fecha_fin
+    ).values('fecha', 'venta_real')
+    df = pd.DataFrame(list(ventas))
+    if df.empty or len(df) < 30:
+        raise Exception("No hay suficiente historial para hacer forecast diario.")
+
+    df = df.rename(columns={'fecha': 'ds', 'venta_real': 'y'})
+    df['ds'] = pd.to_datetime(df['ds'])
+
+    modelo = Prophet(yearly_seasonality=False, daily_seasonality=False, weekly_seasonality=True)
+    modelo.fit(df)
+
+    primer_dia = date(anio_obj, mes_obj, 1)
+    ultimo_dia = date(anio_obj, mes_obj, monthrange(anio_obj, mes_obj)[1])
+    fechas_mes = pd.date_range(primer_dia, ultimo_dia)
+
+    futuro = pd.DataFrame({'ds': fechas_mes})
+    forecast = modelo.predict(futuro)
+    forecast['yhat'] = forecast['yhat'].clip(lower=0)
+
+    total_mes = forecast['yhat'].sum()
+    if total_mes == 0:
+        raise Exception("La predicción del mes objetivo es cero. Revisa los datos históricos.")
+    forecast['pct_dia'] = forecast['yhat'] / total_mes
+
+    nombres_es = {
+        'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+        'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+    }
+
+    for _, row in forecast.iterrows():
+        pct = Decimal(row['pct_dia'] * 100).quantize(Decimal('0.01'))
+        valor = Decimal(row['pct_dia'] * valor_mes).quantize(Decimal('0.01'))
+        dia_semana = nombres_es[row['ds'].day_name()]
+        PresupuestoDiarioCategoria.objects.update_or_create(
+            presupuesto_mensual=presupuesto_mensual_obj,
+            fecha=row['ds'].date(),
+            defaults={
+                'dia_semana_nombre': dia_semana,
+                'porcentaje_dia_especifico': pct,
+                'presupuesto_calculado': valor
+            }
+        )
+    return f"Presupuesto diario calculado para {sede} / {categoria} en {anio_obj}-{mes_obj}"

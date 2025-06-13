@@ -4,6 +4,7 @@ from decimal import Decimal
 import logging
 from django.db import transaction
 from django.db.models import Q, Sum
+from .actions import calcular_presupuesto_diario_action
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +55,7 @@ class PresupuestoMensualCategoriaAdmin(ImportExportModelAdmin):
     search_fields = ('sede__nombre', 'categoria__nombre')
     ordering = ('sede__nombre', 'anio', 'mes', 'categoria__nombre')
     list_per_page = 31
+    actions = [calcular_presupuesto_diario_action]
 
     @admin.display(description='valor ($)', ordering='presupuesto_total_categoria')
     def presupuesto_total_categoria_format(self, obj):
