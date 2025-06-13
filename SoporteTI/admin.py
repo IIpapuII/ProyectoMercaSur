@@ -51,7 +51,7 @@ class CategoryOfIncidenceAdmin(admin.ModelAdmin):
 class BinnacleAdmin(ImportExportModelAdmin):
     resource_class = BinnacleResource
     list_display =('title','Category','location','employee_service','created_at', 'status','user')
-    list_filter =('status','Category', 'equipment_service', 'employee_service', 'location')
+    list_filter =('status','Category', 'equipment_service_category', 'employee_service', 'location')
     search_fields = ('description','title',)
     ordering = ('-created_at',)
     list_per_page = 40
@@ -62,12 +62,7 @@ class BinnacleAdmin(ImportExportModelAdmin):
             return ('status_changed_at', 'user')
         return super().get_exclude(request, obj)
 
-    def get_queryset(self, request):
-        """Filtra los elementos para mostrar solo los de este usuario"""
-        queryset = super().get_queryset(request)
-        if not request.user.is_superuser:
-            queryset = queryset.filter(user=request.user, status__in=['Pendiente', 'En Proceso'])
-        return queryset
+
 
     def save_model(self, request, obj, form, change):
         """Asocia el usuario al momento de crear o editar"""

@@ -101,9 +101,10 @@ class Binnacle(models.Model):
     ]
     title = models.CharField(max_length = 200, verbose_name= 'Titulo')
     Category = models.ForeignKey(CategoryOfIncidence, on_delete=models.CASCADE, verbose_name='Categoria de Insidencia' )
-    equipment_service = models.ForeignKey(Equipment, on_delete=models.CASCADE, verbose_name ='Equipo', blank = True, null= True)
+    equipment_service_category = models.ForeignKey(EquipmentCategory, on_delete=models.CASCADE, verbose_name ='Equipo Categoria', blank = True, null= True)
     employee_service = models.ForeignKey(Employee, on_delete=models.CASCADE, verbose_name='Empleado de solicitud', blank = True, null= True)
     location = models.ForeignKey(Location, on_delete=models.CASCADE, verbose_name='Ubicación', blank = True, null= True)
+    fechaSolicitud = models.DateTimeField(verbose_name="Fecha de Solicitud", null=True, blank=True)
     description = CKEditor5Field(verbose_name="Descripción", config_name="default")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, verbose_name="Estado" , default = STATUS_CHOICES[0])
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")

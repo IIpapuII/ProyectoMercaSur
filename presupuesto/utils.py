@@ -2,8 +2,9 @@
 import calendar
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from .models import CategoriaVenta, PorcentajeDiarioConfig, PresupuestoDiarioCategoria, PresupuestoMensualCategoria # Importar modelos necesarios
-
+from .models import CategoriaVenta, PorcentajeDiarioConfig, PresupuestoDiarioCategoria, PresupuestoMensualCategoria, Sede, VentaDiariaReal # Importar modelos necesarios
+from appMercaSur.conect import conectar_sql_server, ejecutar_consulta
+from django.db import transaction
 def calcular_presupuesto_con_porcentajes_dinamicos(sede_id, anio, mes, presupuestos_input_por_categoria):
     """
     Calcula presupuestos diarios usando el Método A:
@@ -273,3 +274,104 @@ def recalcular_presupuestos_diarios_para_periodo(sede_id, anio, mes):
         return True, "Cálculo realizado y guardado con éxito."
     
     return False, "No se generaron nuevos registros diarios."
+
+
+
+def cargar_ventas_reales_carne(fecha_inicio, fecha_fin):
+    """
+    Carga o actualiza las ventas reales por sede y categoría
+    entre fecha_inicio y fecha_fin.
+    :param fecha_inicio: fecha inicial (string 'YYYY-MM-DD' o date)
+    :param fecha_fin: fecha final (string 'YYYY-MM-DD' o date)
+    """
+    sql = '''
+    WITH VentasDetalle AS (
+        SELECT
+            AL.CODALMACEN,
+            AR.CODARTICULO,
+            AL.UNID1,
+            ROUND(AL.PRECIO * AL.UNID1, 2) AS ImporteConDescuento,
+            AR.TIPO,
+            AR.TIPOARTICULO,
+            AR.DPTO,
+            AR.MARCA,
+            AC.FECHA AS fechaVenta,
+            (CASE WHEN (AL.DTO = 0 AND AL.PRECIO = 0 AND AL.PRECIODEFECTO > 0 AND AL.UNIDADESTOTAL > 0)
+                THEN (AL.UNIDADESTOTAL * AL.PRECIODEFECTO)
+                ELSE 0
+             END) AS Post
+        FROM ALBVENTALIN AL
+        INNER JOIN ALBVENTACAB AC
+            ON AL.NUMSERIE = AC.NUMSERIE
+            AND AL.NUMALBARAN = AC.NUMALBARAN
+            AND AL.N = AC.N
+        INNER JOIN ARTICULOS AR
+            ON AL.CODARTICULO = AR.CODARTICULO
+        WHERE TRY_CONVERT(DATE, AC.FECHA, 105) BETWEEN ? AND ?
+          AND AC.TIPODOC IN ('13','82','83')
+          AND AR.DPTO <> 103
+          AND AR.DPTO = 50
+    ),
+    VentasAgrupadas AS (
+        SELECT
+            CODALMACEN,
+            SUM(CASE WHEN DPTO = 50 THEN ImporteConDescuento + Post ELSE 0 END) AS CARNE,
+            fechaVenta
+        FROM VentasDetalle
+        GROUP BY CODALMACEN, fechaVenta
+    ),
+    AlmacenesInfo AS (
+        SELECT '1' AS Cod, 'CALDAS' AS Nombre UNION ALL
+        SELECT '2', 'CENTRO' UNION ALL
+        SELECT '3', 'CABECERA'
+    )
+    SELECT
+        AI.Nombre AS sede_nombre,
+        'CONCESION CARNE' AS categoria_nombre,
+        VA.fechaVenta AS fecha,
+        ISNULL(VA.CARNE, 0) AS venta_real,
+        0 AS margen_sin_post_pct,
+        0 AS margen_con_post_pct
+    FROM AlmacenesInfo AI
+    LEFT JOIN VentasAgrupadas VA
+        ON AI.Cod = VA.CODALMACEN
+    ORDER BY
+        CASE AI.Cod
+            WHEN '1' THEN 1
+            WHEN '2' THEN 2
+            WHEN '3' THEN 3
+            ELSE 4
+        END;
+    '''
+    conexion = conectar_sql_server()
+    cursor =conexion.cursor()
+    cursor.execute(sql, [fecha_inicio, fecha_fin])
+    filas = cursor.fetchall()
+
+    # Asumiendo que existe una sola categoría con nombre 'CONCESION CARNE'
+    categoria_obj, _ = CategoriaVenta.objects.get_or_create(
+        nombre='CONCESION CARNE'
+    )
+
+    with transaction.atomic():
+        for sede_nombre, _, fecha_raw, venta_real, margen_sin, margen_con in filas:
+            sede_obj = Sede.objects.get(nombre=sede_nombre)
+            fecha = fecha_raw or fecha_inicio
+            # Intentamos obtener el registro existente
+            obj, created = VentaDiariaReal.objects.update_or_create(
+                sede=sede_obj,
+                categoria=categoria_obj,
+                fecha=fecha,
+                defaults={
+                    'venta_real': Decimal(venta_real),
+                    'margen_sin_post_pct': Decimal(margen_sin),
+                    'margen_con_post_pct': Decimal(margen_con),
+                }
+            )
+            if not created:
+                # Si ya existía, simplemente actualizamos los campos y guardamos
+                obj.venta_real = Decimal(venta_real)
+                obj.margen_sin_post_pct = Decimal(margen_sin)
+                obj.margen_con_post_pct = Decimal(margen_con)
+                obj.save()
+    print(f"Cargadas {len(filas)} filas de ventas reales entre {fecha_inicio} y {fecha_fin}.")
