@@ -122,3 +122,15 @@ class Binnacle(models.Model):
     class Meta:
         verbose_name = 'Bitacora 202'
         verbose_name_plural = 'Bitacoras 202'
+
+class BinnacleDasboardProxy(Binnacle):
+    class Meta:
+        proxy = True
+        verbose_name = 'Bitacora 202 Dashboard'
+        verbose_name_plural = 'Bitacoras 202 Dashboard'
+    
+    def __str__(self):
+        return f"Dashboard: {self.title}"
+    
+    def get_status_display(self):
+        return self.get_status_display()  # Utiliza el método original para obtener la representación del estado
