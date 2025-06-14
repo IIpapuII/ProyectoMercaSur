@@ -1,6 +1,8 @@
 from django.contrib import admin
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Employee, Equipment, Department, EquipmentCategory,CategoryOfIncidence, Binnacle, Location
+from .models import Employee, Equipment, Department, EquipmentCategory,CategoryOfIncidence, Binnacle, Location, BinnacleDasboardProxy
 from .resources import EquipmentResource, BinnacleResource
 from import_export.admin import ImportExportModelAdmin
 
@@ -69,3 +71,18 @@ class BinnacleAdmin(ImportExportModelAdmin):
         if not obj.user:
             obj.user = request.user
         obj.save()
+
+
+@admin.register(BinnacleDasboardProxy)
+class BinnacleDashboardAdmin(admin.ModelAdmin):
+    def changelist_view(self, request, extra_context=None):
+        return HttpResponseRedirect(reverse('binnacle_dashboard'))
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

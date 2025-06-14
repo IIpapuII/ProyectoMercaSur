@@ -1,0 +1,8 @@
+/* Colorea la carpeta activa del menú lateral */
+.sidebar-dark-danger .nav-sidebar .menu-open > a,
+.sidebar-light-danger .nav-sidebar .menu-open > a,
+.sidebar-dark .nav-sidebar .menu-open > a,
+.sidebar-light .nav-sidebar .menu-open > a {
+    background-color: #dc3545 !important; /* Bootstrap red */
+    color: #fff !important;
+}

@@ -1,0 +1,157 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Dashboard Bitácora 202{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+<div class="row m-3">
+    <h1 class="mb-5">Dashboard Bitácora 202</h1>
+    <div class="col">
+        <a class="btn btn-primary " href="{% url 'admin:SoporteTI_binnacle_changelist' %}">
+        Ver todas las Bitácoras
+      </a>
+      <a class="btn btn-success " href="{% url 'admin:SoporteTI_binnacle_add' %}">
+        Crear Nueva Bitácora
+      </a>
+    </div>
+</div>
+
+  <!-- Métricas Globales -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-2">
+      <div class="card bg-primary text-white text-center p-3">
+        <h6>Total</h6>
+        <h3>{{ total }}</h3>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <div class="card bg-success text-white text-center p-3">
+        <h6>Este Mes</h6>
+        <h3>{{ current_month }}</h3>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <div class="card bg-info text-white text-center p-3">
+        <h6>Hoy</h6>
+        <h3>{{ today }}</h3>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <div class="card bg-warning text-dark text-center p-3">
+        <h6>Esta Semana</h6>
+        <h3>{{ this_week }}</h3>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <div class="card bg-secondary text-white text-center p-3">
+        <h6>En Proceso</h6>
+        <h3>{{ en_proceso }}</h3>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <div class="card bg-success text-white text-center p-3">
+        <h6>Resueltos Mes</h6>
+        <h3>{{ resueltos_mes }}</h3>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gráficos: Estado, Categoría, Ubicación -->
+  <div class="row">
+    <div class="col-md-3">
+      <div class="card p-3">
+        <h5>Distribución por Estado</h5>
+        <canvas id="statusChart" height="200px"></canvas>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card p-3">
+        <h5>Distribución por Categoría Equipo</h5>
+        <canvas id="categoryChart" height="200px"></canvas>
+        
+      </div>
+    </div>
+     <div class="col-md-3">
+        <div class="card p-3">
+        <h5>Distribución por Categoria Servicio</h5>
+        <canvas id="categoryserviceChart" height="200px"></canvas>
+      </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3">
+        <h5>Distribución por Ubicación</h5>
+        <canvas id="locationChart" height="200px"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // Estado
+  const statusCtx = document.getElementById('statusChart').getContext('2d');
+  new Chart(statusCtx, {
+    type: 'pie',
+    data: {
+      labels: [{% for item in status_counts %}"{{ item.status }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        data: [{% for item in status_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: ['#007bff', '#ffc107', '#28a745', '#dc3545', '#6c757d']
+      }]
+    }
+  });
+
+  // Categoría
+  const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+  new Chart(categoryCtx, {
+    type: 'bar',
+    data: {
+      labels: [{% for item in category_counts %}"{{ item.equipment_service_category__name|default:"Sin categoría" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Bitácoras por Categoría',
+        data: [{% for item in category_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: '#17a2b8'
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+    }
+  });
+
+  // Ubicación
+  const locationCtx = document.getElementById('locationChart').getContext('2d');
+  new Chart(locationCtx, {
+    type: 'bar',
+    data: {
+      labels: [{% for item in location_counts %}"{{ item.location__name|default:"Sin ubicación" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Bitácoras por Ubicación',
+        data: [{% for item in location_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: '#6f42c1'
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+    }
+  });
+  // ctegoria servicio
+  const categoryserviceCtx = document.getElementById('categoryserviceChart').getContext('2d');
+  new Chart(categoryserviceCtx, {
+    type: 'bar',
+    data: {
+      labels: [{% for item in category_service %}"{{ item.Category__name_category|default:"Sin Categoria" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Bitácoras por Categoria Servicio',
+        data: [{% for item in category_service %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: '#6f42c1'
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+    }
+  });
+</script>
+{% endblock %}
