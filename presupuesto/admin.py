@@ -11,12 +11,18 @@ logger = logging.getLogger(__name__)
 from presupuesto.utils import recalcular_presupuestos_diarios_para_periodo
 
 # Importar modelos y recursos
-from .models import VentaDiariaReal, ventapollos, Sede, CategoriaVenta, PorcentajeDiarioConfig, PresupuestoMensualCategoria, PresupuestoDiarioCategoria
+from .models import VentaDiariaReal, ventapollos, Sede, CategoriaVenta, PorcentajeDiarioConfig, PresupuestoMensualCategoria, PresupuestoDiarioCategoria, Eventos
 from .resources import SedeResource, CategoriaVentaResource, PorcentajeDiarioConfigResource, PresupuestoMensualCategoriaResource, PresupuestoDiarioCategoriaResource, VentapollosResource, VentaDiariaRealResource
 
+@admin.register(Eventos)
+class EventosAdmin(admin.ModelAdmin):
+    list_display = ('nombre',)
+    search_fields = ('nombre',)
+    list_per_page = 20
+
 @admin.register(Sede)
-class SedeAdmin(ImportExportModelAdmin): # Usar ImportExportModelAdmin
-    resource_class = SedeResource       # Vincular el recurso
+class SedeAdmin(ImportExportModelAdmin):
+    resource_class = SedeResource       
     list_display = ('nombre',)
     search_fields = ('nombre',)
 
@@ -134,7 +140,7 @@ class VentapollosAdmin(ImportExportModelAdmin):
 @admin.register(VentaDiariaReal)
 class VentaDiariaRealAdmin(ImportExportModelAdmin):
     resource_class = VentaDiariaRealResource
-    list_display = ('fecha', 'get_sede_nombre', 'get_categoria_nombre', 'venta_real_formatted')
+    list_display = ('fecha', 'get_sede_nombre', 'get_categoria_nombre', 'venta_real_formatted', 'Eventos',)
     list_filter = ('fecha', 'sede__nombre', 'categoria__nombre')
     search_fields = ('sede__nombre', 'categoria__nombre', 'fecha')
     date_hierarchy = 'fecha'

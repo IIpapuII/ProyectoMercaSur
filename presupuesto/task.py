@@ -1,13 +1,19 @@
-from .utils import cargar_ventas_reales_carne
+from .utils import cargar_ventas_reales_carne, cargasr_ventas_reales_ecenarios
 from datetime import date, timedelta
 from celery import shared_task
 import calendar
 
 @shared_task
-def cargar_ventas_hoy():
+def cargar_ventas_hoy_carne():
     hoy = date.today()
     print(hoy)
     cargar_ventas_reales_carne(hoy, hoy)
+
+@shared_task
+def cargar_ventas_hoy_ecenarios():
+    hoy = date.today()
+    print(hoy)
+    cargasr_ventas_reales_ecenarios(hoy, hoy)
     
 
 def cargar_ventas_historicas():
@@ -30,4 +36,5 @@ def cargar_ventas_historicas():
             for dia in range(dia_inicio, dia_fin + 1):
                 fecha_actual = date(año, mes, dia)
                 cargar_ventas_reales_carne(fecha_actual, fecha_actual)
+                cargasr_ventas_reales_ecenarios(fecha_actual, fecha_actual)
     print(f"Ventas cargadas desde {inicio} hasta {fin}.")
