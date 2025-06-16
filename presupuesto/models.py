@@ -11,6 +11,10 @@ class CategoriaVenta(models.Model):
     nombre = models.CharField(max_length=100, unique=True) # Fruver, Carnes, Panadería, "Total Sede"
     def __str__(self): return self.nombre
 
+class Eventos(models.Model):
+    nombre = models.CharField(max_length=100, unique=True)
+    def __str__(self): return self.nombre
+
 class PorcentajeDiarioConfig(models.Model):
     """
     Almacena el conjunto de porcentajes de distribución diaria para una categoría.
@@ -103,6 +107,10 @@ class VentaDiariaReal(models.Model):
     )
     # Campo opcional para notas o comentarios sobre la venta de ese día
     # notas = models.TextField(blank=True, null=True, verbose_name="Notas Adicionales")
+    Eventos = models.ForeignKey(
+        Eventos, on_delete=models.CASCADE, related_name='ventas_diarias', null=True, blank=True,
+        verbose_name="Evento Asociado"
+    )
 
     class Meta:
         unique_together = ('sede', 'categoria', 'fecha') # Evita registros duplicados

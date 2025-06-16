@@ -2,7 +2,9 @@
 import calendar
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from .models import CategoriaVenta, PorcentajeDiarioConfig, PresupuestoDiarioCategoria, PresupuestoMensualCategoria # Importar modelos necesarios
+
+from appMercaSur.conect import conectar_sql_server
+from .models import CategoriaVenta, PorcentajeDiarioConfig, PresupuestoDiarioCategoria, PresupuestoMensualCategoria, Sede # Importar modelos necesarios
 import pandas as pd
 from prophet import Prophet
 from .models import VentaDiariaReal
@@ -336,7 +338,7 @@ def cargar_ventas_reales_carne(fecha_inicio, fecha_fin):
         VA.fechaVenta AS fecha,
         ISNULL(VA.CARNE, 0) AS venta_real,
         0 AS margen_sin_post_pct,
-        0 AS margen_con_post_pct
+        100 AS margen_con_post_pct
     FROM AlmacenesInfo AI
     LEFT JOIN VentasAgrupadas VA
         ON AI.Cod = VA.CODALMACEN
@@ -380,6 +382,134 @@ def cargar_ventas_reales_carne(fecha_inicio, fecha_fin):
                 obj.margen_con_post_pct = Decimal(margen_con)
                 obj.save()
     print(f"Cargadas {len(filas)} filas de ventas reales entre {fecha_inicio} y {fecha_fin}.")
+
+def cargasr_ventas_reales_ecenarios(fecha_inicio, fecha_fin):
+    """
+    Carga o actualiza las ventas reales por sede y categoría
+    entre fecha_inicio y fecha_fin para TODAS las categorías principales.
+    """
+    sql = '''
+    WITH VentasDetalle AS (
+    SELECT
+        AL.CODALMACEN,
+        CAST(AC.FECHA AS DATE) AS fechaVenta,
+        AR.TIPO,
+        AR.DPTO,
+        AR.MARCA,
+        AR.LINEA,
+        -- Cálculos básicos
+        AL.PRECIO * (1 - AL.DTO / 100.0) * AL.UNID1 AS ImporteNeto,
+        AL.COSTE * AL.UNID1 AS CosteLinea,
+        AL.PRECIOIVA * (AL.DTO / 100.0) * AL.UNID1
+          + CASE
+                WHEN AL.PRECIO = 0 AND AL.PRECIODEFECTO > 0
+                THEN AL.PRECIODEFECTO * AL.UNID1
+                ELSE 0
+            END AS POS
+    FROM
+        ALBVENTALIN AL
+    JOIN ALBVENTACAB AC
+        ON AC.NUMSERIE = AL.NUMSERIE AND AC.NUMALBARAN = AL.NUMALBARAN
+    JOIN ARTICULOS AR
+        ON AR.CODARTICULO = AL.CODARTICULO
+    WHERE
+        CAST(AC.FECHA AS DATE) BETWEEN ? AND ?
+        AND AC.TIPODOC IN (13, 82, 83)
+        AND AR.DPTO <> 103
+),
+Categorias AS (
+    -- ECENARIO (todo lo que no sea TIPO=2)
+    SELECT
+        VD.CODALMACEN,
+        VD.fechaVenta,
+        'ECENARIO' AS CATEGORIA,
+        SUM(ImporteNeto) AS VENTA_NETA,
+        SUM(POS) AS VALOR_POS,
+        SUM(CosteLinea) AS COSTE
+    FROM VentasDetalle VD
+    WHERE VD.TIPO <> 2
+    GROUP BY VD.CODALMACEN, VD.fechaVenta
+    UNION ALL
+    -- FRUVER
+    SELECT
+        VD.CODALMACEN,
+        VD.fechaVenta,
+        'FRUVER' AS CATEGORIA,
+        SUM(ImporteNeto) AS VENTA_NETA,
+        SUM(POS) AS VALOR_POS,
+        SUM(CosteLinea) AS COSTE
+    FROM VentasDetalle VD
+    WHERE VD.TIPO <> 2 AND VD.DPTO = 5
+    GROUP BY VD.CODALMACEN, VD.fechaVenta
+    UNION ALL
+    -- PANADERIA
+    SELECT
+        VD.CODALMACEN,
+        VD.fechaVenta,
+        'PANADERIA' AS CATEGORIA,
+        SUM(ImporteNeto) AS VENTA_NETA,
+        SUM(POS) AS VALOR_POS,
+        SUM(CosteLinea) AS COSTE
+    FROM VentasDetalle VD
+    WHERE VD.MARCA = 4
+    GROUP BY VD.CODALMACEN, VD.fechaVenta
+),
+AlmacenesInfo AS (
+    SELECT '1' AS Cod, 'CALDAS' AS Nombre
+    UNION ALL SELECT '2', 'CENTRO'
+    UNION ALL SELECT '3', 'CABECERA'
+    UNION ALL SELECT '50', 'SOTOMAYOR'
+)
+SELECT
+    AI.Nombre AS ALMACEN,
+    C.CATEGORIA,
+    (C.VENTA_NETA + C.VALOR_POS) AS VALOR,
+    CASE WHEN C.VENTA_NETA = 0 THEN 0
+         ELSE 100.0 * (C.VENTA_NETA - C.COSTE) / C.VENTA_NETA
+    END AS PCT_MARGEN_SIN_POS,
+    CASE WHEN (C.VENTA_NETA + C.VALOR_POS) = 0 THEN 0
+         ELSE 100.0 * (C.VENTA_NETA + C.VALOR_POS - C.COSTE) / (C.VENTA_NETA + C.VALOR_POS)
+    END AS PCT_MARGEN_CON_POS,
+    C.fechaVenta
+FROM
+    AlmacenesInfo AI
+LEFT JOIN Categorias C ON AI.Cod = C.CODALMACEN
+WHERE C.fechaVenta IS NOT NULL
+ORDER BY AI.Nombre, C.fechaVenta, C.CATEGORIA
+
+    '''
+    conexion = conectar_sql_server()
+    cursor = conexion.cursor()
+    cursor.execute(sql, [fecha_inicio, fecha_fin])
+    filas = cursor.fetchall()
+
+    with transaction.atomic():
+        for sede_nombre, categoria_nombre, fecha_raw, venta_real, margen_sin, margen_con in filas:
+            # Obtener o crear la sede
+            sede_obj = Sede.objects.get(nombre=sede_nombre)
+            # Obtener o crear la categoría (¡aquí es donde cambia!)
+            categoria_obj, _ = CategoriaVenta.objects.get_or_create(
+                nombre=categoria_nombre
+            )
+            fecha = fecha_raw or fecha_inicio
+            # Actualiza o crea
+            obj, created = VentaDiariaReal.objects.update_or_create(
+                sede=sede_obj,
+                categoria=categoria_obj,
+                fecha=fecha,
+                defaults={
+                    'venta_real': Decimal(venta_real),
+                    'margen_sin_post_pct': Decimal(margen_sin),
+                    'margen_con_post_pct': Decimal(margen_con),
+                }
+            )
+            if not created:
+                obj.venta_real = Decimal(venta_real)
+                obj.margen_sin_post_pct = Decimal(margen_sin)
+                obj.margen_con_post_pct = Decimal(margen_con)
+                obj.save()
+    print(f"Cargadas {len(filas)} filas de ventas reales de todas las categorías entre {fecha_inicio} y {fecha_fin}.")
+
 def calcular_presupuesto_diario_forecast(presupuesto_mensual_obj):
     """
     Calcula y actualiza el presupuesto diario para una categoría/sede usando Prophet,
