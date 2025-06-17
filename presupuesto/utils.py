@@ -422,7 +422,7 @@ Categorias AS (
     SELECT
         VD.CODALMACEN,
         VD.fechaVenta,
-        'ECENARIO' AS CATEGORIA,
+        'ESCENARIOS' AS CATEGORIA,
         SUM(ImporteNeto) AS VENTA_NETA,
         SUM(POS) AS VALOR_POS,
         SUM(CosteLinea) AS COSTE
@@ -453,6 +453,18 @@ Categorias AS (
     FROM VentasDetalle VD
     WHERE VD.MARCA = 4
     GROUP BY VD.CODALMACEN, VD.fechaVenta
+    --marca Mercasur
+    UNION ALL
+        SELECT
+        VD.CODALMACEN,
+        VD.fechaVenta,
+        'MARCA mercasur' AS CATEGORIA,
+        SUM(ImporteNeto) AS VENTA_NETA,
+        SUM(POS) AS VALOR_POS,
+        SUM(CosteLinea) AS COSTE
+    FROM VentasDetalle VD
+    WHERE VD.LINEA = '1' AND VD.TIPO != 9
+    GROUP BY VD.CODALMACEN, VD.fechaVenta
 ),
 AlmacenesInfo AS (
     SELECT '1' AS Cod, 'CALDAS' AS Nombre
@@ -476,7 +488,6 @@ FROM
 LEFT JOIN Categorias C ON AI.Cod = C.CODALMACEN
 WHERE C.fechaVenta IS NOT NULL
 ORDER BY AI.Nombre, C.fechaVenta, C.CATEGORIA
-
     '''
     conexion = conectar_sql_server()
     cursor = conexion.cursor()
@@ -484,7 +495,7 @@ ORDER BY AI.Nombre, C.fechaVenta, C.CATEGORIA
     filas = cursor.fetchall()
 
     with transaction.atomic():
-        for sede_nombre, categoria_nombre, fecha_raw, venta_real, margen_sin, margen_con in filas:
+        for sede_nombre, categoria_nombre, venta_real, margen_sin, margen_con, fecha_raw,  in filas:
             # Obtener o crear la sede
             sede_obj = Sede.objects.get(nombre=sede_nombre)
             # Obtener o crear la categoría (¡aquí es donde cambia!)
