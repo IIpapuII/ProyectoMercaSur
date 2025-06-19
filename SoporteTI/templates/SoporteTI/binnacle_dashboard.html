@@ -5,8 +5,8 @@
 
 {% block content %}
 <div class="container-fluid">
-<div class="row m-3">
-    <h1 class="mb-5">Dashboard Bitácora 202</h1>
+<div class="row ">
+    <h1 class="">Dashboard Bitácora 202</h1>
     <div class="col">
         <a class="btn btn-primary " href="{% url 'admin:SoporteTI_binnacle_changelist' %}">
         Ver todas las Bitácoras
@@ -55,6 +55,30 @@
         <h3>{{ resueltos_mes }}</h3>
       </div>
     </div>
+     <div class="col-md-2">
+      <div class="card bg-danger text-white text-center p-3">
+        <h6>Tiempo promedio</h6>
+        <h3>{{ time_to_resolve }}</h3>
+      </div>
+    </div>
+    <div class="col-md-2">
+    <div class="card bg-primary text-white text-center p-3">
+      <h6>Total Equipos</h6>
+      <h3>{{ total_equipment }}</h3>
+    </div>
+  </div>
+  <div class="col-md-2">
+    <div class="card bg-info text-white text-center p-3">
+      <h6>Edad Promedio Equipos</h6>
+      <h3>
+        {% if avg_age_years %}
+          {{ avg_age_years }} años
+        {% else %}
+          No disponible
+        {% endif %}
+      </h3>
+    </div>
+  </div>
   </div>
 
   <!-- Gráficos: Estado, Categoría, Ubicación -->
@@ -85,24 +109,120 @@
       </div>
     </div>
   </div>
+  <div class="row mb-4">
+  <div class="col-md-6">
+    <div class="card p-3">
+      <h5>Bitácoras por Técnico</h5>
+      <ul class="list-group">
+        {% for item in technician_counts %}
+          <li class="list-group-item d-flex justify-content-between">
+            {{ item.employee_service__name|default:"Sin Técnico" }}
+            <span>{{ item.count }}</span>
+          </li>
+        {% empty %}
+          <li class="list-group-item">No hay registros</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
 
+  <div class="col-md-6">
+    <div class="card p-3">
+      <h5>Top Equipos con Más Tickets</h5>
+      <ul class="list-group">
+        {% for item in top_equipment_issues %}
+          <li class="list-group-item d-flex justify-content-between">
+            {{ item.equipment_service_category__name|default:"Sin Equipo" }}
+            <span>{{ item.count }}</span>
+          </li>
+        {% empty %}
+          <li class="list-group-item">No hay registros</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+<!-- Gráficos de Equipos -->
+<div class="row">
+  <div class="col-md-3">
+    <div class="card p-3">
+      <h5>Equipos por Estado</h5>
+      <canvas id="equipmentStatusChart"></canvas>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <h5>Equipos por Categoría</h5>
+      <canvas id="equipmentCategoryChart"></canvas>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <h5>Equipos por Ubicación</h5>
+      <canvas id="equipmentLocationChart"></canvas>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <h5>Equipos por Asignado</h5>
+      <canvas id="equipmentAssignedChart"></canvas>
+    </div>
+  </div>
+</div>
 </div>
 
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+
 <script>
   // Estado
-  const statusCtx = document.getElementById('statusChart').getContext('2d');
-  new Chart(statusCtx, {
-    type: 'pie',
-    data: {
-      labels: [{% for item in status_counts %}"{{ item.status }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
-      datasets: [{
-        data: [{% for item in status_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-        backgroundColor: ['#007bff', '#ffc107', '#28a745', '#dc3545', '#6c757d']
-      }]
+const statusCtx = document.getElementById('statusChart').getContext('2d');
+
+new Chart(statusCtx, {
+  type: 'pie',
+  data: {
+    labels: [
+      {% for item in status_counts %}
+        "{{ item.status }}"{% if not forloop.last %}, {% endif %}
+      {% endfor %}
+    ],
+    datasets: [{
+      data: [
+        {% for item in status_counts %}
+          {{ item.count }}{% if not forloop.last %}, {% endif %}
+        {% endfor %}
+      ],
+      backgroundColor: ['#007bff', '#ffc107', '#28a745', '#dc3545', '#6c757d']
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top', // ✅ Leyenda arriba
+      },
+      tooltip: {
+        enabled: true // Tooltips opcionales
+      },
+      datalabels: {
+        color: '#fff',
+        formatter: (value, context) => {
+          const data = context.chart.data.datasets[0].data;
+          const total = data.reduce((a, b) => a + b, 0);
+          const percentage = ((value / total) * 100).toFixed(1);
+          return `${percentage}%`;
+        },
+        font: {
+          weight: 'bold',
+          size: 14
+        }
+      }
     }
-  });
+  },
+  plugins: [ChartDataLabels] // ✅ Activa el plugin
+});
+
 
   // Categoría
   const categoryCtx = document.getElementById('categoryChart').getContext('2d');
@@ -152,6 +272,74 @@
     options: {
       indexAxis: 'y',
     }
+  });
+const equipmentStatusCtx = document.getElementById('equipmentStatusChart').getContext('2d');
+  new Chart(equipmentStatusCtx, {
+    type: 'pie',
+    data: {
+      labels: [{% for item in equipment_by_status %}"{{ item.status }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        data: [{% for item in equipment_by_status %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: ['#007bff', '#ffc107', '#28a745', '#dc3545', '#6c757d']
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { position: 'top' },
+        datalabels: {
+          color: '#fff',
+          formatter: (value, ctx) => {
+            const data = ctx.chart.data.datasets[0].data;
+            const total = data.reduce((a, b) => a + b, 0);
+            return ((value / total) * 100).toFixed(1) + '%';
+          },
+          font: { weight: 'bold', size: 14 }
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
+  });
+
+  const equipmentCategoryCtx = document.getElementById('equipmentCategoryChart').getContext('2d');
+  new Chart(equipmentCategoryCtx, {
+    type: 'bar',
+    data: {
+      labels: [{% for item in equipment_by_category %}"{{ item.category__name|default:"Sin Categoría" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Equipos por Categoría',
+        data: [{% for item in equipment_by_category %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: '#17a2b8'
+      }]
+    },
+    options: { indexAxis: 'y' }
+  });
+
+  const equipmentLocationCtx = document.getElementById('equipmentLocationChart').getContext('2d');
+  new Chart(equipmentLocationCtx, {
+    type: 'bar',
+    data: {
+      labels: [{% for item in equipment_by_location %}"{{ item.location_equipment__name|default:"Sin Ubicación" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Equipos por Ubicación',
+        data: [{% for item in equipment_by_location %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: '#6f42c1'
+      }]
+    },
+    options: { indexAxis: 'y' }
+  });
+
+  const equipmentAssignedCtx = document.getElementById('equipmentAssignedChart').getContext('2d');
+  new Chart(equipmentAssignedCtx, {
+    type: 'bar',
+    data: {
+      labels: [{% for item in equipment_by_assigned %}"{{ item.assigned_to__name|default:"Sin Asignado" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Equipos por Asignado',
+        data: [{% for item in equipment_by_assigned %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: '#ffc107'
+      }]
+    },
+    options: { indexAxis: 'y' }
   });
 </script>
 {% endblock %}

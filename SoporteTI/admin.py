@@ -52,7 +52,7 @@ class CategoryOfIncidenceAdmin(admin.ModelAdmin):
 @admin.register(Binnacle)
 class BinnacleAdmin(ImportExportModelAdmin):
     resource_class = BinnacleResource
-    list_display =('title','Category','location','employee_service','created_at', 'status','user')
+    list_display =('title','Category','location','employee_service','created_at', 'status','user','fechaSolicitud')
     list_filter =('status','Category', 'equipment_service_category', 'employee_service', 'location')
     search_fields = ('description','title',)
     ordering = ('-created_at',)
@@ -71,6 +71,9 @@ class BinnacleAdmin(ImportExportModelAdmin):
         if not obj.user:
             obj.user = request.user
         obj.save()
+    
+    class Media:
+        js = ('js/binnacle_sugerencias.js',)
 
 
 @admin.register(BinnacleDasboardProxy)

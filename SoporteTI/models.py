@@ -33,8 +33,8 @@ class Employee(models.Model):
         return f"{self.first_name} {self.last_name}"
     
     class Meta:
-      verbose_name = "Empleados"
-      verbose_name_plural = "Empleados"
+      verbose_name = "Colaborador"
+      verbose_name_plural = "Colaboradores"
 
 class EquipmentCategory(models.Model):
     name = models.CharField(max_length=100, unique=True, verbose_name="Categoría")
@@ -55,6 +55,7 @@ class Equipment(models.Model):
         BUENO = 'Bueno', 'Bueno Estado'
         MAL_ESTADO = 'Mal Estado', 'Mal Estado'
         NUEVO = 'Nuevo', 'Nuevo'
+        BAJA = 'Baja', 'Baja'
 
     serial_number = models.CharField(max_length=100, unique=True, verbose_name="Número de serie")
     name = models.CharField(max_length=100, verbose_name="Nombre del equipo")
