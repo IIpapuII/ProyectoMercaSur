@@ -258,9 +258,6 @@ print(MEDIA_URL, MEDIA_ROOT)
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-STATIC_DIRS = [
-    BASE_DIR / 'static',  # Directorio para archivos estáticos personalizados
-]
 
 
 # Default primary key field type
