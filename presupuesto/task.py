@@ -22,7 +22,7 @@ def cargar_ventas_historicas():
     recorriendo meses y días mediante el módulo calendar
     desde enero de 2024 hasta la fecha actual.
     """
-    inicio = date(2024, 1, 1)
+    inicio = date(2025, 6, 16)
     fin = date.today()
 
     # Iterar años, meses y días con calendar
