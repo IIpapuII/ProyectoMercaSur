@@ -1,4 +1,5 @@
 from datetime import timedelta
+
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.contrib.admin.views.decorators import staff_member_required
@@ -10,7 +11,7 @@ from .models import Binnacle
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.admin.sites import site as admin_site
-from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
+from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField, FloatField
 from django.utils import timezone
 from datetime import timedelta
 
@@ -57,6 +58,14 @@ def binnacle_dashboard(request):
     ).aggregate(
         avg_resolution=Avg('resolution_time')
     )
+
+    # 2️⃣ Convierte a horas en Python
+    avg_resolution_hours = None
+    if time_to_resolve['avg_resolution']:
+        avg_resolution_hours = time_to_resolve['avg_resolution'].total_seconds() / 3600
+
+    # 3️⃣ Pasa al contexto
+
 
     # Totales por categoría de equipo
     category_counts = (
@@ -136,7 +145,7 @@ def binnacle_dashboard(request):
         'this_week': this_week,
         'en_proceso': en_proceso,
         'resueltos_mes': resueltos_mes,
-        'time_to_resolve': time_to_resolve['avg_resolution'],
+        'time_to_resolve': round(avg_resolution_hours,2),
         'category_counts': category_counts,
         'category_service': category_service,
         'location_counts': location_counts,
