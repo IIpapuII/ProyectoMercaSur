@@ -83,33 +83,65 @@
 
   <!-- Gráficos: Estado, Categoría, Ubicación -->
   <div class="row">
-    <div class="col-md-3">
-      <div class="card p-3">
+    <div class="col-4">
+      <div class="card">
         <h5>Distribución por Estado</h5>
-        <canvas id="statusChart" height="200px"></canvas>
+        <canvas id="statusChart"></canvas>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="card p-3">
+    
+    <div class="col">
+      <div class="card">
         <h5>Distribución por Categoría Equipo</h5>
-        <canvas id="categoryChart" height="200px"></canvas>
-        
-      </div>
-    </div>
-     <div class="col-md-3">
-        <div class="card p-3">
-        <h5>Distribución por Categoria Servicio</h5>
-        <canvas id="categoryserviceChart" height="200px"></canvas>
-      </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card p-3">
-        <h5>Distribución por Ubicación</h5>
-        <canvas id="locationChart" height="200px"></canvas>
+        <canvas id="categoryChart"></canvas>
       </div>
     </div>
   </div>
-  <div class="row mb-4">
+  <div class="row">
+         <div class="col">
+        <div class="card">
+        <h5>Distribución por Categoria Servicio</h5>
+        <canvas id="categoryserviceChart" ></canvas>
+      </div>
+    </div>
+    <div class="col">
+        <div class="card">
+        <h5>Distribución por Ubicación</h5>
+        <canvas id="locationChart" ></canvas>
+      </div>
+    </div>
+  </div>
+<!-- Gráficos de Equipos -->
+<div class="row">
+  <div class="col-4">
+    <div class="card">
+      <h5>Equipos por Estado</h5>
+      <canvas id="equipmentStatusChart"></canvas>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card">
+      <h5>Equipos por Categoría</h5>
+      <canvas id="equipmentCategoryChart"></canvas>
+    </div>
+  </div>
+  
+</div>
+<div class="row">
+  <div class="col">
+    <div class="card">
+      <h5>Equipos por Ubicación</h5>
+      <canvas id="equipmentLocationChart"></canvas>
+    </div>
+  </div>
+  <div class="col">
+    <div class="card">
+      <h5>Equipos por Asignado</h5>
+      <canvas id="equipmentAssignedChart"></canvas>
+    </div>
+  </div>
+</div>
+<div class="row mb-4">
   <div class="col-md-6">
     <div class="card p-3">
       <h5>Bitácoras por Técnico</h5>
@@ -139,33 +171,6 @@
           <li class="list-group-item">No hay registros</li>
         {% endfor %}
       </ul>
-    </div>
-  </div>
-</div>
-<!-- Gráficos de Equipos -->
-<div class="row">
-  <div class="col-md-3">
-    <div class="card p-3">
-      <h5>Equipos por Estado</h5>
-      <canvas id="equipmentStatusChart"></canvas>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <h5>Equipos por Categoría</h5>
-      <canvas id="equipmentCategoryChart"></canvas>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <h5>Equipos por Ubicación</h5>
-      <canvas id="equipmentLocationChart"></canvas>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <h5>Equipos por Asignado</h5>
-      <canvas id="equipmentAssignedChart"></canvas>
     </div>
   </div>
 </div>

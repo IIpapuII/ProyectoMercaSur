@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import RegistroFormularioAPIView, ZonaPermitidaListView, barrioListView, validar_codigo_acceso, dashboard_clientes
-
+from  SoporteTI.views import sugerencias_binnacle
 urlpatterns = [
     path('clientes/', RegistroFormularioAPIView.as_view(), name='registro-formulario'),
     path('clientes/', RegistroFormularioAPIView.as_view(), name='registro-formulario-detalle'),
@@ -9,4 +9,5 @@ urlpatterns = [
     path('barrios/', barrioListView.as_view(), name='barrios'),
     path('validar-codigo-acceso/',validar_codigo_acceso,name='CodigoAcceso'),
     path('dashboard-clientes/', dashboard_clientes, name='dashboard-clientes'),
+    path('sugerencias-binnacle/', sugerencias_binnacle, name='sugerencias_binnacle'),
 ]
