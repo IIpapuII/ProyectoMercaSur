@@ -86,7 +86,7 @@ class DescuentoDiarioAdmin(ImportExportModelAdmin):
     fields = values  
     list_display = values  
     search_fields = ['departamento', 'secciones', 'familia', 'ean']  
-    list_filter = ['dia', 'fecha_inicio', 'fecha_fin'] 
+    list_filter = ['dia', 'departamento', 'secciones', 'familia', 'fecha_inicio', 'fecha_fin'] 
     ordering = ['fecha_inicio', 'fecha_fin']  
     date_hierarchy = 'fecha_inicio'  
 

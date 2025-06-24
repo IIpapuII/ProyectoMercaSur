@@ -15,14 +15,15 @@ def cargar_ventas_hoy_ecenarios():
     print(hoy)
     cargasr_ventas_reales_ecenarios(hoy, hoy)
     
-
+@shared_task
 def cargar_ventas_historicas():
     """
     Tarea Celery: ejecuta cargar_ventas_reales dia a dia,
     recorriendo meses y días mediante el módulo calendar
     desde enero de 2024 hasta la fecha actual.
     """
-    inicio = date(2025, 6, 16)
+    mes = date.today().month
+    inicio = date(2025, mes, 1)
     fin = date.today()
 
     # Iterar años, meses y días con calendar
