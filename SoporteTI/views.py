@@ -14,6 +14,8 @@ from django.contrib.admin.sites import site as admin_site
 from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField, FloatField
 from django.utils import timezone
 from datetime import timedelta
+from django.utils.dateparse import parse_date
+
 
 from .models import Binnacle, Equipment
 
@@ -21,32 +23,48 @@ from .models import Binnacle, Equipment
 def binnacle_dashboard(request):
     now = timezone.now()
 
+    # 📌 Filtro de fechas GET
+    fecha_inicio = request.GET.get('fecha_inicio')
+    fecha_fin = request.GET.get('fecha_fin')
+
+    if fecha_inicio:
+        fecha_inicio = parse_date(fecha_inicio)
+    if fecha_fin:
+        fecha_fin = parse_date(fecha_fin)
+
+    # Base queryset filtrado
+    binnacle_qs = Binnacle.objects.all()
+    if fecha_inicio:
+        binnacle_qs = binnacle_qs.filter(created_at__date__gte=fecha_inicio)
+    if fecha_fin:
+        binnacle_qs = binnacle_qs.filter(created_at__date__lte=fecha_fin)
+
     # Totales por estado
     status_counts = (
-        Binnacle.objects.values('status')
+        binnacle_qs.values('status')
         .annotate(count=Count('id'))
         .order_by('status')
     )
 
     # Totales globales
-    total = Binnacle.objects.count()
-    current_month = Binnacle.objects.filter(
+    total = binnacle_qs.count()
+    current_month = binnacle_qs.filter(
         created_at__year=now.year,
         created_at__month=now.month
     ).count()
-    today = Binnacle.objects.filter(created_at__date=now.date()).count()
-    this_week = Binnacle.objects.filter(
+    today = binnacle_qs.filter(created_at__date=now.date()).count()
+    this_week = binnacle_qs.filter(
         created_at__gte=now - timedelta(days=7)
     ).count()
-    en_proceso = Binnacle.objects.filter(status="En Proceso").count()
-    resueltos_mes = Binnacle.objects.filter(
+    en_proceso = binnacle_qs.filter(status="En Proceso").count()
+    resueltos_mes = binnacle_qs.filter(
         status="Resuelto",
         created_at__year=now.year,
         created_at__month=now.month
     ).count()
 
-    # Tiempo promedio de resolución (solo resueltos y cancelados)
-    time_to_resolve = Binnacle.objects.filter(
+    # Tiempo promedio de resolución filtrado
+    time_to_resolve = binnacle_qs.filter(
         status__in=["Resuelto", "Cancelado"],
         status_changed_at__isnull=False,
         fechaSolicitud__isnull=False
@@ -59,43 +77,46 @@ def binnacle_dashboard(request):
         avg_resolution=Avg('resolution_time')
     )
 
-    # 2️⃣ Convierte a horas en Python
     avg_resolution_hours = None
     if time_to_resolve['avg_resolution']:
         avg_resolution_hours = time_to_resolve['avg_resolution'].total_seconds() / 3600
 
-    # 3️⃣ Pasa al contexto
-
-
     # Totales por categoría de equipo
     category_counts = (
-        Binnacle.objects.values('equipment_service_category__name')
+        binnacle_qs.values('equipment_service_category__name')
         .annotate(count=Count('id'))
         .order_by('equipment_service_category__name')
     )
 
     # Totales por categoría de incidencia
     category_service = (
-        Binnacle.objects.values('Category__name_category')
+        binnacle_qs.values('Category__name_category')
         .annotate(count=Count('id'))
         .order_by('Category__name_category')
     )
 
     # Totales por ubicación
     location_counts = (
-        Binnacle.objects.values('location__name')
+        binnacle_qs.values('location__name')
         .annotate(count=Count('id'))
         .order_by('location__name')
     )
 
     # Tickets por técnico
     technician_counts = (
-        Binnacle.objects.values('employee_service__first_name')
+        binnacle_qs.values('employee_service__first_name')
         .annotate(count=Count('id'))
         .order_by('employee_service__first_name')
     )
 
-    # === Métricas de equipos ===
+    # Top equipos con más tickets
+    top_equipment_issues = (
+        binnacle_qs.values('equipment_service_category__name')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:5]
+    )
+
+    # === Métricas de equipos (sin filtrar por fechas)
     total_equipment = Equipment.objects.count()
     equipment_by_status = (
         Equipment.objects.values('status')
@@ -117,7 +138,6 @@ def binnacle_dashboard(request):
         .annotate(count=Count('id'))
         .order_by('assigned_to__first_name')
     )
-    # Edad promedio de equipos (años)
     equipment_avg_age = Equipment.objects.annotate(
         age=ExpressionWrapper(
             timezone.now().date() - F('purchase_date'),
@@ -127,13 +147,6 @@ def binnacle_dashboard(request):
         avg_age_days=Avg('age')
     )
     avg_age_years = equipment_avg_age['avg_age_days'].days / 365 if equipment_avg_age['avg_age_days'] else None
-
-    # Top equipos con más tickets
-    top_equipment_issues = (
-        Binnacle.objects.values('equipment_service_category__name')
-        .annotate(count=Count('id'))
-        .order_by('-count')[:5]
-    )
 
     context = admin_site.each_context(request)
     context.update({
@@ -145,7 +158,7 @@ def binnacle_dashboard(request):
         'this_week': this_week,
         'en_proceso': en_proceso,
         'resueltos_mes': resueltos_mes,
-        'time_to_resolve': round(avg_resolution_hours,2),
+        'time_to_resolve': round(avg_resolution_hours, 2) if avg_resolution_hours else None,
         'category_counts': category_counts,
         'category_service': category_service,
         'location_counts': location_counts,
@@ -159,6 +172,10 @@ def binnacle_dashboard(request):
         'equipment_by_location': equipment_by_location,
         'equipment_by_assigned': equipment_by_assigned,
         'avg_age_years': round(avg_age_years, 2) if avg_age_years else None,
+
+        # Filtros
+        'fecha_inicio': fecha_inicio,
+        'fecha_fin': fecha_fin,
     })
 
     return render(request, 'SoporteTI/binnacle_dashboard.html', context)

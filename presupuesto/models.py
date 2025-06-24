@@ -94,13 +94,13 @@ class VentaDiariaReal(models.Model):
         verbose_name="Venta Real ($)"
     )
     margen_sin_post_pct = models.DecimalField(
-        max_digits=5,
+        max_digits=10,
         decimal_places=2,
         default=Decimal('0.0'),
         verbose_name="% Margen Sin POS"
     )
     margen_con_post_pct = models.DecimalField(
-        max_digits=5,
+        max_digits=10,
         decimal_places=2,
         default=Decimal('0.0'),
         verbose_name="% Margen Con POS"
