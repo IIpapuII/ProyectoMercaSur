@@ -25,11 +25,15 @@ class CodigoTemporalAdmin(admin.ModelAdmin):
 def action_crear_desde_admin(modeladmin, request, queryset):
     exitosos = 0
     fallidos = 0
-
+    cliente_actulizados = []
+    clientes_validar = []
+    clientes_creados = []
+    print("Iniciando proceso de creación de clientes en ICG desde admin")
     for cliente in queryset:
         if cliente.creado_desde_fisico and not cliente.creado_desde_admin:
             try:
                 existe_cliente = getClienteICG(cliente.numero_documento)
+                print(existe_cliente)
                 if not existe_cliente:
                     crearClienteICG(cliente)
                 cliente.refresh_from_db()
@@ -46,7 +50,25 @@ def action_crear_desde_admin(modeladmin, request, queryset):
                 fallidos += 1
                 print(e)
         else:
-            fallidos += 1
+            if cliente.creadoICG == True and cliente.codcliente is None:
+                        print("Cliente ya creado en ICG pero sin codcliente, actualizando...")
+                        existe_cliente = getClienteICG(cliente.numero_documento)
+                        if existe_cliente:
+                            print(existe_cliente[0][0])
+                            cliente.codcliente = existe_cliente[0][0]
+                        else:
+                            cliente.codcliente = None
+                        cliente.save(update_fields=["creado_desde_admin", "codcliente"])
+                        exitosos += 1
+                        print(str(cliente.codcliente) + "Creacciòn exitosa pero sin codcliente")
+                        cliente_actulizados.append(cliente.numero_documento)
+                        continue
+            existe_cliente = getClienteICG(cliente.numero_documento)
+            if existe_cliente:
+                clientes_creados.append(existe_cliente[0][0])
+            else:
+                fallidos += 1
+                clientes_validar.append(cliente.numero_documento)
             
     if exitosos:
         modeladmin.message_user(
@@ -57,7 +79,7 @@ def action_crear_desde_admin(modeladmin, request, queryset):
     if fallidos:
         modeladmin.message_user(
             request,
-            f"No se pudieron procesar {fallidos} cliente(s) (ya creados o error).",
+            f"No se pudieron procesar {fallidos} cliente(s) (ya creados o error{clientes_validar}. se actualizan los clientes: {cliente_actulizados} ",
             level=messages.WARNING,
         )
 
