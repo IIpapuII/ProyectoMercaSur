@@ -229,3 +229,8 @@ class LogComportamientoCliente(models.Model): # Renombrado a español
         verbose_name = 'Registro de Comportamiento del Cliente'
         verbose_name_plural = 'Registros de Comportamiento del Cliente'
 
+from auditlog.registry import auditlog
+auditlog.register(RegistroCliente)
+auditlog.register(barrio)
+auditlog.register(SecuenciaCodCliente)
+auditlog.register(CodigoTemporal)

@@ -77,6 +77,8 @@ INSTALLED_APPS = [
     'whitenoise.runserver_nostatic',
     'django_celery_beat',
     'django_ckeditor_5',
+    'auditlog',
+    'simple_history',
     'automatizaciones.apps.AutomatizacionesConfig',
     'import_export',
     'clientes',
@@ -125,6 +127,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'auditlog.middleware.AuditlogMiddleware',
 ]
 
 ROOT_URLCONF = 'appMercaSur.urls'

@@ -268,3 +268,8 @@ class CorreoEnviado(models.Model):
             raise ValidationError("Un envío activo debe tener un horario Crontab o de Intervalo seleccionado.")
         if CorreoEnviado.objects.filter(nombre_tarea=self.nombre_tarea).exclude(pk=self.pk).exists():
             raise ValidationError({'nombre_tarea': 'Ya existe una tarea programada con este nombre.'})
+        
+from auditlog.registry import auditlog
+
+auditlog.register(DescuentoDiario)
+auditlog.register(SQLQuery)

@@ -156,3 +156,14 @@ class ventapollos(models.Model):
 
     def __str__(self):
         return f'{self.fecha} - {self.ubicacion} - {self.ValorVenta}'
+
+
+from auditlog.registry import auditlog
+auditlog.register(Sede)
+auditlog.register(PorcentajeDiarioConfig)
+auditlog.register(CategoriaVenta)
+auditlog.register(Eventos)
+auditlog.register(PresupuestoMensualCategoria)
+auditlog.register(PresupuestoDiarioCategoria)
+auditlog.register(VentaDiariaReal)
+auditlog.register(ventapollos)  
