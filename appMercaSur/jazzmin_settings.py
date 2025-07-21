@@ -11,21 +11,64 @@ JAZZMIN_SETTINGS = {
     "topmenu_links": [
         {"name": "Inicio", "url": "/admin/", "icon": "fas fa-home", "new_window": False},
     ],
-    "user_menu": [
-        {"name": "Perfil", "url": "/admin/auth/user/", "icon": "fas fa-user"},
-        {"name": "Cerrar sesión", "url": "/admin/logout/", "icon": "fas fa-sign-out-alt"},
+    "usermenu_links": [
+        {"name": "Documentación", "url": "https://docs.mercasur.com", "icon": "fas fa-book", "new_window": True},
     ],
+    
     "icons": {
         "auth.User": "fas fa-users",
         "auth.Group": "fas fa-users-cog",
-        "clientes.Cliente": "fas fa-user-tie",
-        "clientes.CodigoTemporal": "fas fa-key",
-        "automatizaciones.Automatizacion": "fas fa-cogs",
-        "SoporteTI.TicketSoporte": "fas fa-life-ring",
         "presupuesto.PresupuestoMensual": "fas fa-calendar-day",
         "presupuesto.PresupuestoDiarioCategoria": "fas fa-calendar-day",
         "presupuesto.VentaDiariaReal": "fas fa-money-bill-trend-up",
         "SoporteTI.Binnacle": "fas fa-book",
+        "automatizaciones.ApiLogRappi": "fas fa-file-alt",
+        "automatizaciones.Articulos": "fas fa-box",
+        "automatizaciones.CorreoEnviado": "fas fa-cogs",
+        "automatizaciones.DescuentoDiario": "fas fa-percent",
+        "automatizaciones.EnvioLog": "fas fa-clipboard-list",
+        "automatizaciones.ProductSku": "fas fa-barcode",
+        "automatizaciones.Product": "fas fa-boxes",
+        "automatizaciones.SQLQuery": "fas fa-database",
+        "clientes.barrio": "fas fa-map-marked-alt",                     
+        "clientes.CodigoTemporal": "fas fa-key",                       
+        "clientes.RegistroCliente": "fas fa-address-book",            
+        "clientes.SecuenciaCodCliente": "fas fa-list-ol",         
+        "clientes.ZonaPermitida": "fas fa-map-pin",
+        "presupuesto.Sede": "fas fa-building",
+        "presupuesto.PorcentajeDiarioConfig": "fas fa-percentage",
+        "presupuesto.CategoriaVenta": "fas fa-tags",
+        "presupuesto.Eventos": "fas fa-calendar-alt",
+        "presupuesto.PresupuestoMensualCategoria": "fas fa-calendar-week",
+        "presupuesto.PresupuestoDiarioCategoria": "fas fa-calendar-day",
+        "presupuesto.ventapollos": "fas fa-drumstick-bite",
+        "SoporteTI.TicketSoporte": "fas fa-life-ring",
+        "SoporteTI.Department": "fas fa-building",
+        "SoporteTI.EquipmentCategory": "fas fa-desktop",
+        "SoporteTI.Employee": "fas fa-user-tie",
+        "SoporteTI.Location": "fas fa-map-marker-alt",
+        "SoporteTI.Equipment": "fas fa-laptop",
+        "SoporteTI.CategoryOfIncidence": "fas fa-exclamation-triangle",
+        "SoporteTI.Binnacle": "fas fa-book",
+        "SoporteTI.BinnacleDasboardProxy": "fas fa-tachometer-alt",
+        "celery.PeriodicTask": "fas fa-clock",
+        "celery.IntervalSchedule": "fas fa-stopwatch",
+        "celery.CrontabSchedule": "fas fa-calendar-alt",
+        "celery.ClockedSchedule": "fas fa-clock",
+        "django_celery_beat.PeriodicTask": "fas fa-clock",
+        "django_celery_beat.IntervalSchedule": "fas fa-stopwatch",
+        "django_celery_beat.CrontabSchedule": "fas fa-calendar-alt",
+        "django_celery_beat.ClockedSchedule": "fas fa-clock",
+        "auditlog.logentry": "fas fa-history",
+        # Íconos de las apps (carpetas principales del menú)
+        "admin": "fas fa-th-large",               # Panel de control
+        "auditlog": "fas fa-clipboard-check",     # Audit log
+        "auth": "fas fa-user-shield",             # Autenticación y autorización
+        "automatizaciones": "fas fa-robot",       # Automatizaciones
+        "clientes": "fas fa-users",               # Clientes
+        "presupuesto": "fas fa-chart-line",            # Presupuesto y Ventas
+        "SoporteTi": "fas fa-tools",                # Soporte TI
+        "django_celery_beat": "fas fa-sync-alt",              # Tareas Periódica
     },
     "related_modal_active": True,
     "default_icon_parents": "fas fa-folder",

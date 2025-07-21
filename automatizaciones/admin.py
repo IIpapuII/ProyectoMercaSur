@@ -79,6 +79,18 @@ class DescuentoDiarioResource(resources.ModelResource):
     def before_save_instance(self, instance, row, **kwargs):  # CORREGIDO
         instance.activo = True
 
+def activar_rappi(modeladmin, request, queryset):
+    for obj in queryset:
+        obj.aplica_en_rappi = True
+        obj.save()
+activar_rappi.short_description = "Activar para Rappi"
+
+def desactivar_rappi(modeladmin, request, queryset):
+    for obj in queryset:
+        obj.aplica_en_rappi = False
+        obj.save()
+desactivar_rappi.short_description = "Desactivar para Rappi"
+
 @admin.register(DescuentoDiario)
 class DescuentoDiarioAdmin(ImportExportModelAdmin):
     resource_class = DescuentoDiarioResource
@@ -88,7 +100,8 @@ class DescuentoDiarioAdmin(ImportExportModelAdmin):
     search_fields = ['departamento', 'secciones', 'familia', 'ean']  
     list_filter = ['dia', 'departamento', 'secciones', 'familia', 'fecha_inicio', 'fecha_fin'] 
     ordering = ['fecha_inicio', 'fecha_fin']  
-    date_hierarchy = 'fecha_inicio'  
+    date_hierarchy = 'fecha_inicio' 
+    actions = [activar_rappi, desactivar_rappi]  
 
 @admin.register(APILogRappi)
 class APILogRappiAdmin(admin.ModelAdmin):
