@@ -1,7 +1,9 @@
-from .utils import cargar_ventas_reales_carne, cargasr_ventas_reales_ecenarios
+from presupuesto.models import CategoriaVenta, PresupuestoMensualCategoria
+from .utils import calcular_presupuesto_diario_forecast, cargar_ventas_reales_carne, cargasr_ventas_reales_ecenarios
 from datetime import date, timedelta
 from celery import shared_task
 import calendar
+from django.utils.timezone import now
 
 @shared_task
 def cargar_ventas_hoy_carne():
@@ -39,3 +41,34 @@ def cargar_ventas_historicas():
                 cargar_ventas_reales_carne(fecha_actual, fecha_actual)
                 cargasr_ventas_reales_ecenarios(fecha_actual, fecha_actual)
     print(f"Ventas cargadas desde {inicio} hasta {fin}.")
+
+
+@shared_task
+def calcular_presupuesto_diario_mes_actual():
+    """
+    Task para calcular el presupuesto diario de todos los registros del mes actual.
+    """
+    exitos = 0
+    errores = 0
+    hoy = now().date()
+    anio_actual = hoy.year
+    mes_actual = hoy.month
+
+    categoria = CategoriaVenta.objects.filter(nombre='MARCA mercasur').first()
+
+    presupuestos = PresupuestoMensualCategoria.objects.filter(anio=anio_actual, mes=mes_actual, categoria= categoria )
+
+    for presupuesto in presupuestos:
+        try:
+            resultado = calcular_presupuesto_diario_forecast(presupuesto)
+            print(f"[✔] {presupuesto}: {resultado}")
+            exitos += 1
+        except Exception as e:
+            print(f"[✖] Error en {presupuesto}: {e}")
+            errores += 1
+
+    return {
+        "total": presupuestos.count(),
+        "exitosos": exitos,
+        "errores": errores
+    }

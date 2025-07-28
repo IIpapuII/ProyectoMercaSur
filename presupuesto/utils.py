@@ -524,8 +524,9 @@ ORDER BY AI.Nombre, C.fechaVenta, C.CATEGORIA
 def calcular_presupuesto_diario_forecast(presupuesto_mensual_obj):
     """
     Calcula y actualiza el presupuesto diario para una categoría/sede usando Prophet,
-    usando TODO el histórico desde enero hasta el último día del mes anterior al mes objetivo.
+    incorporando el efecto de eventos históricos si existen.
     """
+
     anio_obj = presupuesto_mensual_obj.anio
     mes_obj = presupuesto_mensual_obj.mes
     sede = presupuesto_mensual_obj.sede
@@ -538,27 +539,39 @@ def calcular_presupuesto_diario_forecast(presupuesto_mensual_obj):
     else:
         fecha_fin = date(anio_obj, mes_obj - 1, monthrange(anio_obj, mes_obj - 1)[1])
 
-    ventas = VentaDiariaReal.objects.filter(
+    # Obtener ventas históricas y eventos asociados
+    ventas = list(VentaDiariaReal.objects.filter(
         sede=sede,
         categoria=categoria,
         fecha__gte=fecha_inicio,
         fecha__lte=fecha_fin
-    ).values('fecha', 'venta_real')
-    df = pd.DataFrame(list(ventas))
-    if df.empty or len(df) < 30:
+    ).values('fecha', 'venta_real', 'Eventos'))
+
+    if not ventas or len(ventas) < 30:
         raise Exception("No hay suficiente historial para hacer forecast diario.")
 
+    df = pd.DataFrame(ventas)
     df = df.rename(columns={'fecha': 'ds', 'venta_real': 'y'})
     df['ds'] = pd.to_datetime(df['ds'])
 
+    # Crear columna binaria 'evento' para Prophet
+    df['evento'] = df['Eventos'].notnull().astype(int)
+    df = df.drop(columns=['Eventos'])
+
+    # Configurar modelo Prophet con regresor de evento
     modelo = Prophet(yearly_seasonality=False, daily_seasonality=False, weekly_seasonality=True)
+    modelo.add_regressor('evento')
     modelo.fit(df)
 
+    # Generar fechas del mes objetivo
     primer_dia = date(anio_obj, mes_obj, 1)
     ultimo_dia = date(anio_obj, mes_obj, monthrange(anio_obj, mes_obj)[1])
     fechas_mes = pd.date_range(primer_dia, ultimo_dia)
 
+    # Preparar input de predicción con columna evento=0 (si no se conocen eventos futuros)
     futuro = pd.DataFrame({'ds': fechas_mes})
+    futuro['evento'] = 0  # Asume que no hay eventos conocidos en el futuro
+
     forecast = modelo.predict(futuro)
     forecast['yhat'] = forecast['yhat'].clip(lower=0)
 
@@ -567,22 +580,33 @@ def calcular_presupuesto_diario_forecast(presupuesto_mensual_obj):
         raise Exception("La predicción del mes objetivo es cero. Revisa los datos históricos.")
     forecast['pct_dia'] = forecast['yhat'] / total_mes
 
+    # Mapeo de eventos históricos por fecha
+    eventos_por_fecha = {
+        v['fecha']: v.get('Eventos') for v in ventas if v.get('Eventos')
+    }
+
+    # Nombres de días en español
     nombres_es = {
         'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
         'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
     }
 
+    # Guardar presupuestos diarios
     for _, row in forecast.iterrows():
+        fecha_dia = row['ds'].date()
         pct = Decimal(row['pct_dia'] * 100).quantize(Decimal('0.01'))
         valor = Decimal(row['pct_dia'] * valor_mes).quantize(Decimal('0.01'))
         dia_semana = nombres_es[row['ds'].day_name()]
+        evento_asociado = eventos_por_fecha.get(fecha_dia)
+
         PresupuestoDiarioCategoria.objects.update_or_create(
             presupuesto_mensual=presupuesto_mensual_obj,
-            fecha=row['ds'].date(),
+            fecha=fecha_dia,
             defaults={
                 'dia_semana_nombre': dia_semana,
                 'porcentaje_dia_especifico': pct,
                 'presupuesto_calculado': valor
             }
         )
+
     return f"Presupuesto diario calculado para {sede} / {categoria} en {anio_obj}-{mes_obj}"

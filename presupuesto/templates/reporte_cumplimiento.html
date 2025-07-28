@@ -212,7 +212,8 @@
                             <th scope="col" class="text-left">Fecha</th>
                             <th scope="col" class="text-left">Día</th>
                             <th scope="col">Ppto. Diario ($)</th>
-                            <th scope="col">Venta Diaria ($)</th>
+                            <th scope="col">Venta Diaria Actual ($)</th>
+                            <th scope="col">Venta Año Anterior ($)</th>
                             <th scope="col">% Margen Sin POS</th>
                             <th scope="col">% Margen Con POS</th>
                             <th scope="col">Diferencia ($)</th>
@@ -226,6 +227,7 @@
                                 <td class="text-left">{{ dia.dia_semana }}</td>
                                 <td>{{ dia.presupuesto_diario|floatformat:2|intcomma }}</td>
                                 <td>{{ dia.venta_diaria|floatformat:2|intcomma }}</td>
+                                <td>{{ dia.venta_anio_pasado|floatformat:2|intcomma }}</td>
                                 <td class="text-center">
                                     {% if dia.margen_sin_pos is not None %}
                                         {{ dia.margen_sin_pos|floatformat:1 }}%
