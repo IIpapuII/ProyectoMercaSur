@@ -3,6 +3,30 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+class ReglaClasificacion(models.Model):
+    CLASE_CHOICES = [
+        ('A', 'Clase A'),
+        ('B', 'Clase B'),
+        ('C', 'Clase C'),
+        ('D', 'Clase D'),
+        ('E', 'Clase E'),
+    ]
+
+    clase = models.CharField(max_length=1, choices=CLASE_CHOICES)
+    umbral_minimo = models.DecimalField(max_digits=5, decimal_places=2)
+    umbral_maximo = models.DecimalField(max_digits=5, decimal_places=2)
+    activa = models.BooleanField(default=True)
+    orden = models.PositiveIntegerField(default=0, help_text="Prioridad de la regla")
+
+    def __str__(self):
+        return f"{self.clase}: {self.umbral_minimo} - {self.umbral_maximo} ({'Activa' if self.activa else 'Inactiva'})"
+
+    class Meta:
+        verbose_name = "Regla de Clasificación"
+        verbose_name_plural = "Reglas de Clasificación"
+        unique_together = ('clase', 'umbral_minimo', 'umbral_maximo')
+        ordering = ['orden', 'umbral_minimo']
+
 class ProcesoClasificacion(models.Model):
     fecha_inicio = models.DateTimeField(auto_now_add=True)
     usuario = models.ForeignKey(
@@ -38,12 +62,12 @@ class ArticuloClasificacionTemporal(models.Model):
         blank=True, null=True
     )
     codigo = models.CharField(max_length=100)
-    departamento = models.CharField(max_length=200)
+    departamento = models.CharField(max_length=200, blank=True, null=True)
     seccion = models.CharField(max_length=200, blank=True, null=True)
     familia = models.CharField(max_length=200, blank=True, null=True)
     subfamilia = models.CharField(max_length=200, blank=True, null=True)
     marca = models.CharField(max_length=200, blank=True, null=True)
-    descripcion = models.CharField(max_length=200)
+    descripcion = models.CharField(max_length=200,blank=True, null=True)
     descat = models.CharField(max_length=100, blank=True, null=True)
     tipo = models.CharField(max_length=100, blank=True, null=True)
     referencia = models.CharField(max_length=50, blank=True, null=True)
@@ -60,6 +84,7 @@ class ArticuloClasificacionTemporal(models.Model):
     porcentaje_sv = models.CharField(max_length=100, blank=True, null=True)
     stock_actual = models.FloatField(blank=True, null=True)
     valoracion_stock_actual = models.CharField(max_length=200, blank=True, null=True)
+    almacen = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return f"{self.codigo} - {self.descripcion}"
@@ -68,7 +93,7 @@ class ArticuloClasificacionTemporal(models.Model):
         verbose_name = "Artículo Clasificación Temporal"
         verbose_name_plural = "Artículos Clasificación Temporal"
 
-# 2. Tabla de artículos en proceso, editables y con campos para el wizard
+# 2. Tabla de artículos en proceso, editables 
 class ArticuloClasificacionProcesado(models.Model):
     proceso = models.ForeignKey(
         ProcesoClasificacion,
@@ -86,6 +111,7 @@ class ArticuloClasificacionProcesado(models.Model):
     porcentaje_acumulado = models.DecimalField(max_digits=7, decimal_places=3, blank=True, null=True)
     nueva_clasificacion = models.CharField(max_length=5, blank=True, null=True)  # editable
     confirmado = models.BooleanField(default=False)  # Wizard step: confirmación
+    almacen = models.CharField(max_length=100, blank=True, null=True)  # Almacén asociado
 
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)
@@ -110,6 +136,7 @@ class ArticuloClasificacionFinal(models.Model):
     clasificacion_actual = models.CharField(max_length=5, blank=True, null=True)
     nueva_clasificacion = models.CharField(max_length=5, blank=True, null=True)
     resultado_validacion = models.BooleanField()  # VERDADERO/FALSO
+    almacen = models.CharField(max_length=100, blank=True, null=True) 
 
     estado_accion = models.CharField(
         max_length=30,

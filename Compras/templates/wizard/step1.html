@@ -1,8 +1,0 @@
-{% extends "admin/base_site.html" %}
-{% load static %}
-{% block title %}Clasificación de Artículos{% endblock %}
-{% block content %}
-<h2>Paso 1: Extracción automática</h2>
-<p>Se ha iniciado automáticamente el proceso de extracción y procesamiento de artículos. Haz clic en "Siguiente" para revisar la clasificación sugerida.</p>
-<form method="post">{% csrf_token %}{{ wizard.management_form }}<button type="submit">Siguiente</button></form>
-{% endblock %}

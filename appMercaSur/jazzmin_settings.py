@@ -60,6 +60,7 @@ JAZZMIN_SETTINGS = {
         "django_celery_beat.CrontabSchedule": "fas fa-calendar-alt",
         "django_celery_beat.ClockedSchedule": "fas fa-clock",
         "auditlog.logentry": "fas fa-history",
+        "Compras.ProcesoClasificacion": "fas fa-tasks",
         # Íconos de las apps (carpetas principales del menú)
         "admin": "fas fa-th-large",               # Panel de control
         "auditlog": "fas fa-clipboard-check",     # Audit log
@@ -69,6 +70,7 @@ JAZZMIN_SETTINGS = {
         "presupuesto": "fas fa-chart-line",            # Presupuesto y Ventas
         "SoporteTi": "fas fa-tools",                # Soporte TI
         "django_celery_beat": "fas fa-sync-alt",              # Tareas Periódica
+        "Compras": "fas fa-shopping-cart",        # Compras
     },
     "related_modal_active": True,
     "default_icon_parents": "fas fa-folder",
