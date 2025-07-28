@@ -1,0 +1,46 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+  <h1>{{ title }}</h1>
+  <form method="post">{% csrf_token %}
+    {{ formset.management_form }}
+    <table class="adminlist">
+      <thead>
+        <tr>
+          <th>Sección</th>
+          <th>Código</th>
+          <th>Descripción</th>
+          <th>Referencia</th>
+          <th>Marca</th>
+          <th>Clasificación Actual</th>
+          <th>Suma Importe</th>
+          <th>Suma Unidades</th>
+          <th>% Acumulado</th>
+          <th>Nueva clasificación</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for form in formset.forms %}
+          {% with obj=form.instance %}
+          <tr class="{% cycle 'row1' 'row2' %}">
+            <td>{{ obj.seccion }}</td>
+            <td>{{ obj.codigo }}</td>
+            <td>{{ obj.descripcion }}</td>
+            <td>{{ obj.referencia }}</td>
+            <td>{{ obj.marca }}</td>
+            <td>{{ obj.clasificacion }}</td>
+            <td>{{ obj.importe }}</td>
+            <td>{{ obj.unidades }}</td>
+            <td>{{ obj.porcentaje_sv }}</td>
+            <td>{{ form.clasificacion }}</td>
+          </tr>
+          {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="submit-row">
+      <input type="submit" value="{% trans 'Guardar clasificación' %}" class="button default">
+    </div>
+  </form>
+{% endblock %}

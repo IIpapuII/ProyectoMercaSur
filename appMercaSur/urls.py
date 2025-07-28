@@ -22,6 +22,7 @@ from SoporteTI.views import binnacle_dashboard
 urlpatterns = [
     path('ckeditor/', include('django_ckeditor_5.urls')),
     path('admin/binnacle_dashboard/', binnacle_dashboard, name='binnacle_dashboard'),
+    path('admin/', include('Compras.urls') ),
     path('admin/', admin.site.urls),
     path('automatizaciones/', include('automatizaciones.urls')),
     path('api/', include('clientes.urls')),

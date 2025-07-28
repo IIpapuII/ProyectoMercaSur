@@ -1,0 +1,102 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <style>
+        .modal-bg {
+            position: fixed;
+            z-index: 9999;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.3);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-confirm {
+            background: #fff;
+            padding: 2em 2.5em;
+            border-radius: 10px;
+            box-shadow: 0 8px 40px #0002;
+            min-width: 350px;
+            max-width: 90vw;
+            text-align: center;
+        }
+        .modal-confirm h3 {
+            color: #b30000;
+            margin-top: 0;
+            font-size: 1.2em;
+        }
+        .modal-confirm p {
+            color: #222;
+            margin-bottom: 1.2em;
+        }
+        .modal-confirm .btn {
+            display: inline-block;
+            margin: 0 10px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background: #2ca646;
+            color: #fff;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .modal-confirm .btn.cancel {
+            background: #999;
+        }
+    </style>
+{% endblock %}
+
+{% block object-tools %}
+    {% if request.GET.proceso__id__exact and proceso_estado != "actualizado"%}
+    <div>
+    <a href="{% url 'admin:ejecutar_actualizacion_icg' %}?proceso__id__exact={{ request.GET.proceso__id__exact }}"
+       class="button" style="background:#2ca646;color:white;padding:6px 10px;border-radius:5px;text-decoration:none;">
+       ⚙ Aplicar Clasificación en ICG
+    </a>
+    </div>
+
+    <!-- Modal personalizado -->
+    <div class="modal-bg" id="modal-bg">
+      <div class="modal-confirm">
+        <h3>¿Estás seguro?</h3>
+        <p>
+            <strong>⚠️ Esta acción enviará los cambios a ICG y <span style="color:#b30000">no se podrá revertir</span>.</strong>
+            <br><br>
+            ¿Quieres continuar?
+        </p>
+        <button class="btn confirm" id="confirm-btn">Sí, continuar</button>
+        <button class="btn cancel" id="cancel-btn">Cancelar</button>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const btn = document.getElementById('subir-a-icg-btn');
+        const modal = document.getElementById('modal-bg');
+        const confirmBtn = document.getElementById('confirm-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        if(btn && modal){
+            btn.addEventListener('click', function(e){
+                e.preventDefault();
+                modal.style.display = 'flex';
+            });
+            confirmBtn.addEventListener('click', function(){
+                modal.style.display = 'none';
+                // Redirige manualmente
+                window.location.href = btn.href;
+            });
+            cancelBtn.addEventListener('click', function(){
+                modal.style.display = 'none';
+            });
+            // También ocultar modal si da click fuera
+            modal.addEventListener('click', function(e){
+                if(e.target === modal){ modal.style.display = 'none'; }
+            });
+        }
+      });
+    </script>
+    {% endif %}
+    {{ block.super }}
+{% endblock %}

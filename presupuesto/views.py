@@ -457,12 +457,19 @@ def vista_reporte_cumplimiento(request):
                 cumplimiento_pct_dia = None
                 if ppto_dia.presupuesto_calculado > 0:
                     cumplimiento_pct_dia = (venta_dia_real / ppto_dia.presupuesto_calculado * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
-
+                fecha_aa = ppto_dia.fecha.replace(year=ppto_dia.fecha.year - 1)
+                venta_aa_obj = VentaDiariaReal.objects.filter(
+                    sede=sede,
+                    categoria=categoria_seleccionada,
+                    fecha=fecha_aa
+                ).first()
+                venta_anio_pasado = venta_aa_obj.venta_real if venta_aa_obj else Decimal('0.00')
                 datos_reporte.append({
                     'fecha': ppto_dia.fecha,
                     'dia_semana': ppto_dia.dia_semana_nombre,
                     'presupuesto_diario': ppto_dia.presupuesto_calculado,
                     'venta_diaria': venta_dia_real,
+                    'venta_anio_pasado': venta_anio_pasado,
                     'diferencia': diferencia,
                     'cumplimiento_pct': cumplimiento_pct_dia,
                     'semaforo_clase': obtener_clase_semaforo(cumplimiento_pct_dia),

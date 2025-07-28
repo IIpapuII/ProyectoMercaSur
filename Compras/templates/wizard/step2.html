@@ -1,0 +1,21 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h2>Paso 2: Revisar/Editar Nueva Clasificación</h2>
+<form method="post">{% csrf_token %}{{ wizard.management_form }}
+  {{ form.management_form }}
+  <table>
+    <tr>
+      <th>Código</th><th>Descripción</th><th>Clasificación actual</th><th>Nueva clasificación</th>
+    </tr>
+    {% for f in form %}
+      <tr>
+        <td>{{ f.codigo }}</td>
+        <td>{{ f.descripcion }}</td>
+        <td>{{ f.clasificacion }}</td>
+        <td>{{ f.nueva_clasificacion }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+  <button type="submit">Siguiente</button>
+</form>
+{% endblock %}

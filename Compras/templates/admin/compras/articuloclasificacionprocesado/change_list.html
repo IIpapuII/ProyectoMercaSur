@@ -1,0 +1,13 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block object-tools %}
+    {% if request.GET.proceso__id__exact %}
+    <div>
+        <a class="button" href="{% url 'admin:generar_clasificacion_final' %}?proceso__id__exact={{ request.GET.proceso__id__exact }}" style="background:#2ca646;color:#fff;padding:6px 10px;border-radius:5px;text-decoration:none;">
+            ▶ Generar Clasificación Final
+        </a>
+    </div>
+    {% endif %}
+    {{ block.super }}
+{% endblock %}
