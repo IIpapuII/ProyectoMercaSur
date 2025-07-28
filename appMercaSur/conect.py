@@ -79,3 +79,37 @@ def ejecutar_consulta_data_auto(conexion, consulta_sql):
         # Es importante cerrar el cursor si no usas 'with'
         if 'cursor' in locals() and cursor:
             cursor.close()
+
+def ejecutar_consulta_simple(conexion, sql: str, params: tuple | list | None = None) -> int | None:
+    """
+    Ejecuta una sentencia SQL (DDL/DML) y, si corresponde, devuelve el número de filas afectadas.
+
+    :param conexion: Objeto de conexión DB-API (p.ej. pyodbc.Connection, psycopg2.Connection).
+    :param sql: Cadena con la consulta SQL (ALTER, UPDATE, DELETE, INSERT...).
+    :param params: Secuencia de parámetros para la consulta (tupla o lista), o None.
+    :return: Número de filas afectadas (rowcount) para DML, o None para DDL.
+    """
+    cursor = conexion.cursor()
+    try:
+        if params:
+            cursor.execute(sql, params)
+        else:
+            cursor.execute(sql)
+
+        # Si la conexión no está en autocommit, confirmamos cambios
+        try:
+            conexion.commit()
+        except AttributeError:
+            # Algunos drivers (p.ej. sqlite en autocommit) no exponen commit()
+            pass
+
+        # Para DML devuelve rowcount; para DDL típicamente -1 o 0
+        return cursor.rowcount if cursor.rowcount >= 0 else None
+
+    except Exception as e:
+        # Puedes personalizar el manejo de errores o relanzar uno más explícito
+        raise RuntimeError(f"Error al ejecutar la consulta: {e}") from e
+
+    finally:
+        cursor.close()
+

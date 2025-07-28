@@ -5,9 +5,13 @@ from django import forms
 class NuevaClasificacionForm(forms.ModelForm):
     class Meta:
         model = ArticuloClasificacionProcesado
-        fields = ['id', 'codigo', 'descripcion', 'clasificacion_actual', 'nueva_clasificacion']
+        fields = ['nueva_clasificacion']
         widgets = {
-            'codigo': forms.TextInput(attrs={'readonly': 'readonly'}),
-            'descripcion': forms.TextInput(attrs={'readonly': 'readonly'}),
-            'clasificacion_actual': forms.TextInput(attrs={'readonly': 'readonly'}),
+            'nueva_clasificacion': forms.TextInput(attrs={
+                'class': 'vTextField',
+                'style': 'width:4em;text-align:center;'
+            }),
+        }
+        labels = {
+            'nueva_clasificacion': 'Nueva clasificación'
         }

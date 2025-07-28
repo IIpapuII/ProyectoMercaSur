@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.humanize',
+    'django.contrib.sites',
     'whitenoise.runserver_nostatic',
     'django_celery_beat',
     'django_ckeditor_5',
@@ -89,6 +90,7 @@ INSTALLED_APPS = [
     'SoporteTI',
     'Compras',
 ]
+SITE_ID = 1
 SESSION_COOKIE_AGE = 2800
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 CORS_ALLOWED_ORIGINS = [
