@@ -1,3 +1,4 @@
+import calendar
 import json
 from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -309,7 +310,8 @@ def vista_reporte_cumplimiento(request):
         mes = filtro_form.cleaned_data['mes']
 
         hoy = now().date()
-        limite_fecha = hoy if hoy.month == mes and hoy.year == anio else date(anio, mes, 31)
+        ultimo_dia = calendar.monthrange(anio, mes)[1]
+        limite_fecha = hoy if hoy.month == mes and hoy.year == anio else date(anio, mes, ultimo_dia)
 
         contexto_filtro = {
             'sede_nombre': sede.nombre,
@@ -491,6 +493,12 @@ def vista_reporte_cumplimiento(request):
             resumen_mensual = {
                 'total_presupuesto': total_ppto_mes_detalle,
                 'total_venta': total_venta_mes_detalle,
+                'total_venta_anio_pasado': VentaDiariaReal.objects.filter(
+                    sede=sede,
+                    categoria=categoria_seleccionada,
+                    fecha__year=anio - 1,
+                    fecha__month=mes
+                ).aggregate(total_venta=Sum('venta_real'))['total_venta'] or Decimal('0.00'),
                 'total_diferencia': total_venta_mes_detalle - total_ppto_mes_detalle,
                 'cumplimiento_pct': cumplimiento_total_mes_detalle,
                 'semaforo_clase': obtener_clase_semaforo(cumplimiento_total_mes_detalle),
@@ -579,6 +587,14 @@ def dasboard_presupuesto(request):
         if cat:
             filtro_venta['categoria'] = cat
             filtro_presu['presupuesto_mensual__categoria'] = cat
+        
+        fi_anterior = fi.replace(year=fi.year - 1) if fi else None
+        ultimo_dia_mes = calendar.monthrange(fi.year-1, fi.month)[1] if fi else 31
+        ff_anterior = fi_anterior.replace(day=ultimo_dia_mes) if fi_anterior else None
+
+        filtro_venta_anterior = {'fecha__range': (fi_anterior, ff_anterior)} if fi_anterior and ff_anterior else {}
+        if cat:
+            filtro_venta_anterior['categoria'] = cat
 
         # ————— Tabla Resumen —————
         qs_ppto = PresupuestoDiarioCategoria.objects.filter(**filtro_presu) \
@@ -588,9 +604,16 @@ def dasboard_presupuesto(request):
         qs_venta = VentaDiariaReal.objects.filter(**filtro_venta) \
             .values(sede_nombre=F('sede__nombre')) \
             .annotate(total_venta=Sum('venta_real'))
+        
+        qs_venta_anterior = VentaDiariaReal.objects.filter(**filtro_venta_anterior) \
+            .values(sede_nombre=F('sede__nombre')) \
+            .annotate(total_venta=Sum('venta_real')) 
+        
+        print(qs_venta_anterior)
 
         dict_ppto  = {r['sede_nombre']: r['total_ppto'] for r in qs_ppto}
         dict_venta = {r['sede_nombre']: r['total_venta'] for r in qs_venta}
+        dict_venta_anterior = {r['sede_nombre']: r['total_venta'] for r in qs_venta_anterior}
         sedes = sorted(set(dict_ppto) | set(dict_venta))
 
         total_ppto_all = 0
@@ -606,6 +629,7 @@ def dasboard_presupuesto(request):
                 'sede': sede,
                 'ppto': float(p),
                 'venta': float(v),
+                'venta_anterior': float(dict_venta_anterior.get(sede, 0) or 0),
                 'ejec_pct': ejec,
                 'diff': float(diff),
             })
@@ -619,6 +643,7 @@ def dasboard_presupuesto(request):
             'sede': 'Totales',
             'ppto': float(total_ppto_all),
             'venta': float(total_venta_all),
+            'venta_anterior': float(sum(dict_venta_anterior.values())),
             'ejec_pct': ejec_tot,
             'diff': float(total_venta_all - total_ppto_all),
         })

@@ -3,7 +3,7 @@ JAZZMIN_SETTINGS = {
     "site_header": "mercasur",
     "site_logo": "images/logo.png",  # Ruta dentro de STATIC
     "login_logo": "images/logo.png",
-    "site_icon": "images/favicon.ico",  # Favicon
+    "site_icon": "images/mercasur-icon.png",  # Favicon
     "welcome_sign": "Bienvenido al Panel de Administración",
     "user_avatar":None,
     "show_ui_builder": True,
