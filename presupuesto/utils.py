@@ -297,7 +297,7 @@ def cargar_ventas_reales_carne(fecha_inicio, fecha_fin):
             AL.CODALMACEN,
             AR.CODARTICULO,
             AL.UNID1,
-            ROUND(AL.PRECIO * AL.UNID1, 2) AS ImporteConDescuento,
+            ROUND(AL.PRECIO * (1 - AL.DTO / 100.0) * AL.UNID1, 2) AS ImporteConDescuento,
             AR.TIPO,
             AR.TIPOARTICULO,
             AR.DPTO,
