@@ -9,10 +9,14 @@ logger = logging.getLogger(__name__)
 
 
 from presupuesto.utils import recalcular_presupuestos_diarios_para_periodo
+from .utils import ajustar_presupuesto_diario
 
 # Importar modelos y recursos
 from .models import VentaDiariaReal, ventapollos, Sede, CategoriaVenta, PorcentajeDiarioConfig, PresupuestoMensualCategoria, PresupuestoDiarioCategoria, Eventos
 from .resources import SedeResource, CategoriaVentaResource, PorcentajeDiarioConfigResource, PresupuestoMensualCategoriaResource, PresupuestoDiarioCategoriaResource, VentapollosResource, VentaDiariaRealResource
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth import get_user_model
+from .models import PerfilUsuario
 
 @admin.register(Eventos)
 class EventosAdmin(admin.ModelAdmin):
@@ -31,6 +35,7 @@ class CategoriaVentaAdmin(ImportExportModelAdmin):
     resource_class = CategoriaVentaResource
     list_display = ('nombre',)
     search_fields = ('nombre',)
+    filter_horizontal = ('usuarios_permitidos',)  # Permite seleccionar usuarios en el admin
 
 @admin.register(PorcentajeDiarioConfig)
 class PorcentajeDiarioConfigAdmin(ImportExportModelAdmin):
@@ -127,6 +132,20 @@ class PresupuestoDiarioCategoriaAdmin(ImportExportModelAdmin):
     def presupuesto_calculado_format(self, obj):
         return f"${obj.presupuesto_calculado:,.2f}"
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        # Solo ajustar si es edición (change=True)
+        print(change)
+        if change:
+            print(f"Ajustando presupuesto diario para {obj.fecha} - {obj.presupuesto_mensual.sede.nombre} - {obj.presupuesto_mensual.categoria.nombre}")
+            success, msg = ajustar_presupuesto_diario(
+                obj.presupuesto_mensual, obj.fecha, obj.porcentaje_dia_especifico
+            )
+            if not success:
+                self.message_user(request, msg, level=messages.ERROR)
+            else:
+                self.message_user(request, msg, level=messages.SUCCESS)
+
 @admin.register(ventapollos)
 class VentapollosAdmin(ImportExportModelAdmin):
     resource_class = VentapollosResource
@@ -146,6 +165,7 @@ class VentaDiariaRealAdmin(ImportExportModelAdmin):
     date_hierarchy = 'fecha'
     ordering = ('-fecha', 'sede__nombre', 'categoria__nombre')
     list_per_page = 25
+    list_editable = ('Eventos',)
 
     @admin.display(description='Sede', ordering='sede__nombre')
     def get_sede_nombre(self, obj):
@@ -158,3 +178,15 @@ class VentaDiariaRealAdmin(ImportExportModelAdmin):
     @admin.display(description='Venta Real ($)', ordering='venta_real')
     def venta_real_formatted(self, obj):
         return f"${obj.venta_real:,.2f}"
+
+class PerfilUsuarioInline(admin.StackedInline):
+    model = PerfilUsuario
+    can_delete = False
+    verbose_name_plural = 'Permisos Categorías'
+    filter_horizontal = ('categorias_permitidas',)
+
+class CustomUserAdmin(UserAdmin):
+    inlines = [PerfilUsuarioInline]
+
+admin.site.unregister(get_user_model())
+admin.site.register(get_user_model(), CustomUserAdmin)

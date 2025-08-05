@@ -320,7 +320,12 @@ def vista_reporte_cumplimiento(request):
             'mes': mes
         }
 
-        todas_las_categorias = CategoriaVenta.objects.all()
+        # Filtrar solo las categorías permitidas al usuario
+        perfil = getattr(request.user, 'perfil', None)
+        if perfil:
+            todas_las_categorias = perfil.categorias_permitidas.all()
+        else:
+            todas_las_categorias = CategoriaVenta.objects.none()
 
         for cat_obj in todas_las_categorias:
             filtro_presupuesto = {
@@ -565,7 +570,7 @@ def iniciar_sesion_django(request):
 
 @smart_jwt_login_required
 def dasboard_presupuesto(request):
-    form = FiltroRangoFechasForm(request.GET or None)
+    form = FiltroRangoFechasForm(request.GET or None, user=request.user)
 
     # Lista para la tabla de resumen
     summary_table = []
@@ -701,9 +706,27 @@ def dasboard_presupuesto(request):
         imp_ant.append(tb)
         dif_pct.append(float(round((ta / tb) * 100 - 100, 1)) if tb else 0.0)
 
+    # Obtener categorías permitidas para el usuario
+    perfil = getattr(request.user, 'perfil', None)
+    if perfil:
+        categorias_permitidas = set(perfil.categorias_permitidas.values_list('nombre', flat=True))
+    else:
+        categorias_permitidas = set()
+
+    # Filtrar summary_table para mostrar solo las categorías permitidas (excepto la fila de totales)
+    filtered_summary_table = [
+        row for row in summary_table[:-1]
+        if row['sede'] in categorias_permitidas
+    ]
+    # Agregar la fila de totales si hay al menos una categoría permitida
+    if filtered_summary_table:
+        filtered_summary_table.append(summary_table[-1])
+    else:
+        filtered_summary_table = []
+
     context = {
         'form': form,
-        'summary_table': summary_table,
+        'summary_table': filtered_summary_table,
         'labels1': labels1,
         'ppto_data': ppto_data,
         'venta_data': venta_data,

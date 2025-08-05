@@ -219,6 +219,7 @@ def obtener_clase_semaforo(cumplimiento_pct):
     return 'heatmap-5' 
 
 def recalcular_presupuestos_diarios_para_periodo(sede_id, anio, mes):
+    print('Ingreso ha este proceso')
     """
     Función central que recalcula y guarda los presupuestos diarios para una sede/periodo.
     Esta función será llamada desde la señal y desde la vista.
@@ -610,3 +611,64 @@ def calcular_presupuesto_diario_forecast(presupuesto_mensual_obj):
         )
 
     return f"Presupuesto diario calculado para {sede} / {categoria} en {anio_obj}-{mes_obj}"
+
+from decimal import Decimal, ROUND_HALF_UP
+
+def ajustar_presupuesto_diario(presupuesto_mensual_obj, dia_modificado, nuevo_porcentaje):
+    """
+    Ajusta los porcentajes de los días del mes para que sumen 100%,
+    recalcula los valores diarios y los guarda.
+    El ajuste se hace distribuyendo la diferencia proporcionalmente entre los demás días.
+    """
+    print(f"Ajustando presupuesto diario para {presupuesto_mensual_obj} en el día {dia_modificado} con nuevo porcentaje {nuevo_porcentaje}")
+    presupuesto_mensual_obj.refresh_from_db()
+
+    dias = list(presupuesto_mensual_obj.dias_calculados.order_by('fecha'))
+    total_dias = len(dias)
+    if total_dias == 0:
+        return False, "No hay días para ajustar."
+
+    # Identificar el día modificado y los otros días
+    dia_mod = next((d for d in dias if d.fecha == dia_modificado), None)
+    otros_dias = [d for d in dias if d.fecha != dia_modificado]
+    if not dia_mod:
+        return False, "No se encontró el día modificado."
+
+    # Calcular el porcentaje restante a repartir
+    nuevo_porcentaje = Decimal(nuevo_porcentaje).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    restante = Decimal('100.00') - nuevo_porcentaje
+
+    if restante < 0:
+        return False, "El porcentaje asignado excede el 100%."
+
+    suma_otros_actual = sum(d.porcentaje_dia_especifico for d in otros_dias)
+    if suma_otros_actual == 0:
+        # Si todos los demás días estaban en 0, repartir equitativamente
+        for d in otros_dias:
+            d.porcentaje_dia_especifico = (restante / len(otros_dias)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    else:
+        # Ajustar proporcionalmente los porcentajes de los otros días
+        for d in otros_dias:
+            proporcion = d.porcentaje_dia_especifico / suma_otros_actual if suma_otros_actual else Decimal('0')
+            d.porcentaje_dia_especifico = (restante * proporcion).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    # Asignar el nuevo porcentaje al día modificado
+    dia_mod.porcentaje_dia_especifico = nuevo_porcentaje
+
+    # Ajuste final para asegurar que la suma sea exactamente 100.00 (por redondeos)
+    suma_final = sum(d.porcentaje_dia_especifico for d in dias)
+    diferencia = Decimal('100.00') - suma_final
+    if abs(diferencia) >= Decimal('0.01'):
+        # Ajustar el primer día distinto al modificado (o el modificado si es el único)
+        for d in dias:
+            if d != dia_mod or len(dias) == 1:
+                d.porcentaje_dia_especifico += diferencia
+                break
+
+    # Recalcular los valores diarios para que sumen el presupuesto mensual
+    presupuesto_mensual = presupuesto_mensual_obj.presupuesto_total_categoria
+    for d in dias:
+        d.presupuesto_calculado = (presupuesto_mensual * d.porcentaje_dia_especifico / Decimal('100.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        d.save()
+
+    return True, "Presupuesto diario ajustado correctamente."

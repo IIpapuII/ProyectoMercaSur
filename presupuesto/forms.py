@@ -51,15 +51,13 @@ class FiltroCumplimientoForm(forms.Form):
     sede = forms.ModelChoiceField(
         queryset=Sede.objects.none(),
         label="Seleccione Sede",
-        empty_label="--Ninguna sede permitida--", # Forzar selección
+        empty_label="--Ninguna sede permitida--",
         widget=forms.Select(attrs={'class': 'form-control'})
     )
-    # Hacer la categoría opcional, si no se selecciona, se podrían mostrar todas o un resumen.
-    # Por ahora, la haremos obligatoria para simplificar la tabla de resultados a una categoría.
     categoria = forms.ModelChoiceField(
-        queryset=CategoriaVenta.objects.all().order_by('nombre'),
+        queryset=CategoriaVenta.objects.none(),
         label="Seleccione Categoría",
-        empty_label=None, # Forzar selección. Puedes cambiarlo si quieres un "Todas las Categorías".
+        empty_label=None,
         widget=forms.Select(attrs={'class': 'form-control'})
     )
     anio = forms.IntegerField(
@@ -93,6 +91,14 @@ class FiltroCumplimientoForm(forms.Form):
             if queryset_sedes.exists():
                 self.fields['sede'].empty_label = None
 
+            # Filtrar categorías según el perfil del usuario
+            perfil = getattr(user, 'perfil', None)
+            if perfil:
+                categorias_permitidas = perfil.categorias_permitidas.all().order_by('nombre')
+            else:
+                categorias_permitidas = CategoriaVenta.objects.none()
+            self.fields['categoria'].queryset = categorias_permitidas
+
 class FiltroRangoFechasForm(forms.Form):
     fecha_inicio = forms.DateField(
         required=True,
@@ -105,8 +111,19 @@ class FiltroRangoFechasForm(forms.Form):
         label="Hasta"
     )
     categoria = forms.ModelChoiceField(
-        queryset=CategoriaVenta.objects.all().order_by('nombre'),
+        queryset=CategoriaVenta.objects.none(),
         label="Seleccione Categoría",
         empty_label=None, 
         widget=forms.Select(attrs={'class': 'form-control'})
     )
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+        if user:
+            perfil = getattr(user, 'perfil', None)
+            if perfil:
+                categorias_permitidas = perfil.categorias_permitidas.all().order_by('nombre')
+            else:
+                categorias_permitidas = CategoriaVenta.objects.none()
+            self.fields['categoria'].queryset = categorias_permitidas

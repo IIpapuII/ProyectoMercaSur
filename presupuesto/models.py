@@ -1,6 +1,8 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
+from django.conf import settings
+from django.contrib.auth import get_user_model
 
 # Sede y CategoriaVenta permanecen igual que en la respuesta anterior
 class Sede(models.Model):
@@ -83,6 +85,14 @@ class PresupuestoDiarioCategoria(models.Model):
     def __str__(self):
         return f"{self.presupuesto_mensual.sede.nombre} - {self.presupuesto_mensual.categoria.nombre} - {self.fecha} ({self.dia_semana_nombre}) - Pct:{self.porcentaje_dia_especifico} - Val:${self.presupuesto_calculado:,.2f}"
     
+    def save(self, *args, **kwargs):
+        # Calcular automáticamente el presupuesto_calculado al guardar
+        if self.presupuesto_mensual and self.porcentaje_dia_especifico is not None:
+            self.presupuesto_calculado = (
+                self.presupuesto_mensual.presupuesto_total_categoria * self.porcentaje_dia_especifico / Decimal('100.00')
+            ).quantize(Decimal('0.01'))
+        super().save(*args, **kwargs)
+
 class VentaDiariaReal(models.Model):
     """Almacena la venta real para una categoría específica, en una sede, en una fecha."""
     sede = models.ForeignKey(Sede, on_delete=models.CASCADE, verbose_name="Sede")
@@ -157,6 +167,21 @@ class ventapollos(models.Model):
     def __str__(self):
         return f'{self.fecha} - {self.ubicacion} - {self.ValorVenta}'
 
+class PerfilUsuario(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='perfil')
+    categorias_permitidas = models.ManyToManyField('CategoriaVenta', blank=True, related_name='usuarios_permitidos')
+
+    def __str__(self):
+        return f"Perfil de {self.user.username}"
+
+# Señal para crear perfil automáticamente
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+@receiver(post_save, sender=get_user_model())
+def crear_perfil_usuario(sender, instance, created, **kwargs):
+    if created:
+        PerfilUsuario.objects.create(user=instance)
 
 from auditlog.registry import auditlog
 auditlog.register(Sede)
@@ -166,4 +191,5 @@ auditlog.register(Eventos)
 auditlog.register(PresupuestoMensualCategoria)
 auditlog.register(PresupuestoDiarioCategoria)
 auditlog.register(VentaDiariaReal)
-auditlog.register(ventapollos)  
+auditlog.register(ventapollos)
+auditlog.register(PerfilUsuario)
