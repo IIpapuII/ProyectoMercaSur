@@ -10,7 +10,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-@receiver(post_save, sender=Binnacle)
+#@receiver(post_save, sender=Binnacle)
 def notify_employee_on_resolution(sender, instance, created, **kwargs):
     """
     Envía un correo (con imágenes adjuntas) al empleado cuando la bitácora
