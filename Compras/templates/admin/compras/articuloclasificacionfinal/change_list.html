@@ -52,7 +52,8 @@
 {% block object-tools %}
     {% if request.GET.proceso__id__exact and proceso_estado != "actualizado"%}
     <div>
-    <a href="{% url 'admin:ejecutar_actualizacion_icg' %}?proceso__id__exact={{ request.GET.proceso__id__exact }}"
+    <a id="subir-a-icg-btn"
+       href="{% url 'admin:ejecutar_actualizacion_icg' %}?proceso__id__exact={{ request.GET.proceso__id__exact }}"
        class="button" style="background:#2ca646;color:white;padding:6px 10px;border-radius:5px;text-decoration:none;">
        ⚙ Aplicar Clasificación en ICG
     </a>
@@ -84,13 +85,11 @@
             });
             confirmBtn.addEventListener('click', function(){
                 modal.style.display = 'none';
-                // Redirige manualmente
                 window.location.href = btn.href;
             });
             cancelBtn.addEventListener('click', function(){
                 modal.style.display = 'none';
             });
-            // También ocultar modal si da click fuera
             modal.addEventListener('click', function(e){
                 if(e.target === modal){ modal.style.display = 'none'; }
             });

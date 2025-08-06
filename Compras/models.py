@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from auditlog.registry import auditlog
 
 User = get_user_model()
 
@@ -26,6 +27,7 @@ class ReglaClasificacion(models.Model):
         verbose_name_plural = "Reglas de Clasificación"
         unique_together = ('clase', 'umbral_minimo', 'umbral_maximo')
         ordering = ['orden', 'umbral_minimo']
+auditlog.register(ReglaClasificacion)
 
 class ProcesoClasificacion(models.Model):
     fecha_inicio = models.DateTimeField(auto_now_add=True)
@@ -51,7 +53,7 @@ class ProcesoClasificacion(models.Model):
         verbose_name = "Proceso de Clasificación"
         verbose_name_plural = "Procesos de Clasificación"
         ordering = ['-fecha_inicio']
-
+auditlog.register(ProcesoClasificacion)
 
 # 1. Tabla de artículos extraídos, sin edición
 class ArticuloClasificacionTemporal(models.Model):
@@ -92,9 +94,15 @@ class ArticuloClasificacionTemporal(models.Model):
     class Meta:
         verbose_name = "Artículo Clasificación Temporal"
         verbose_name_plural = "Artículos Clasificación Temporal"
-
+auditlog.register(ArticuloClasificacionTemporal)
 # 2. Tabla de artículos en proceso, editables 
 class ArticuloClasificacionProcesado(models.Model):
+    """Tabla para artículos que han pasado por el proceso de clasificación y están en edición."""
+    choises_clasificacion = (
+        ('A', 'A'),
+        ('B', 'B'),
+        ('C', 'C'),
+        ('E', 'E'),)
     proceso = models.ForeignKey(
         ProcesoClasificacion,
         on_delete=models.CASCADE,
@@ -109,9 +117,14 @@ class ArticuloClasificacionProcesado(models.Model):
     suma_importe = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
     suma_unidades = models.IntegerField(blank=True, null=True)
     porcentaje_acumulado = models.DecimalField(max_digits=7, decimal_places=3, blank=True, null=True)
-    nueva_clasificacion = models.CharField(max_length=5, blank=True, null=True)  # editable
+    nueva_clasificacion = models.CharField(max_length=5, blank=True, null=True, choices=choises_clasificacion)  # editable
     confirmado = models.BooleanField(default=False)  # Wizard step: confirmación
     almacen = models.CharField(max_length=100, blank=True, null=True)  # Almacén asociado
+    importe_num = models.DecimalField(
+        max_digits=25, decimal_places=2, blank=True, null=True,
+        help_text="Valor de venta del artículo, si aplica",
+        verbose_name="Importe Post"
+    )
 
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)
@@ -122,7 +135,7 @@ class ArticuloClasificacionProcesado(models.Model):
 
     def __str__(self):
         return f"{self.seccion} - {self.codigo} - {self.descripcion}"
-
+auditlog.register(ArticuloClasificacionProcesado)
 # 3. Tabla final, con estado de acción y validación
 class ArticuloClasificacionFinal(models.Model):
     proceso = models.ForeignKey(
@@ -156,3 +169,4 @@ class ArticuloClasificacionFinal(models.Model):
 
     def __str__(self):
         return f"{self.seccion} - {self.codigo} - {self.descripcion}"
+auditlog.register(ArticuloClasificacionFinal)

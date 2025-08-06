@@ -713,17 +713,21 @@ def dasboard_presupuesto(request):
     else:
         categorias_permitidas = set()
 
-    # Filtrar summary_table para mostrar solo las categorías permitidas (excepto la fila de totales)
-    filtered_summary_table = [
-        row for row in summary_table[:-1]
-        if row['sede'] in categorias_permitidas
-    ]
-    # Agregar la fila de totales si hay al menos una categoría permitida
-    if filtered_summary_table:
-        filtered_summary_table.append(summary_table[-1])
+    # Mostrar todos los datos si es administrativo
+    if request.user.groups.filter(name='administrativos').exists():
+        filtered_summary_table = summary_table
     else:
-        filtered_summary_table = []
+        filtered_summary_table = [
+            row for row in summary_table[:-1]
+            if row['sede'] in categorias_permitidas
+        ]
+        if filtered_summary_table:
+            filtered_summary_table.append(summary_table[-1])
+        else:
+            filtered_summary_table = []
 
+    print('summary_table:', summary_table)
+    print('filtered_summary_table:', filtered_summary_table)
     context = {
         'form': form,
         'summary_table': filtered_summary_table,
