@@ -85,26 +85,31 @@
         <th>VENTA ANTERIOR</th>
         <th>% EJECUCIÓN</th>
         <th>DIFERENCIA</th>
-        
       </tr>
     </thead>
     <tbody>
-      {% for row in summary_table %}
-        <tr {% if forloop.last %}class="fw-bold"{% endif %}>
-          <td class="text-start">{{ row.sede }}</td>
-          <td>{{ row.ppto|floatformat:0|intcomma }}</td>
-          <td>{{ row.venta|floatformat:0|intcomma }}</td>
-          <td>{{ row.venta_anterior|floatformat:0|intcomma }}</td>
-          <td
-            class="{% if row.ejec_pct < 91 %}bg-danger text-white{% elif row.ejec_pct < 100 %}bg-warning{% else %}bg-success text-white{% endif %}"
-          >
-            {{ row.ejec_pct }}%
-          </td>
-          <td class="{% if row.diff < 0 %}text-danger{% else %}text-success{% endif %}">
-            {{ row.diff|floatformat:0|intcomma|add:'$ ' }}
-          </td>
+      {% if summary_table %}
+        {% for row in summary_table %}
+          <tr {% if forloop.last %}class="fw-bold"{% endif %}>
+            <td class="text-start">{{ row.sede }}</td>
+            <td>{{ row.ppto|floatformat:0|intcomma }}</td>
+            <td>{{ row.venta|floatformat:0|intcomma }}</td>
+            <td>{{ row.venta_anterior|floatformat:0|intcomma }}</td>
+            <td
+              class="{% if row.ejec_pct < 91 %}bg-danger text-white{% elif row.ejec_pct < 100 %}bg-warning{% else %}bg-success text-white{% endif %}"
+            >
+              {{ row.ejec_pct }}%
+            </td>
+            <td class="{% if row.diff < 0 %}text-danger{% else %}text-success{% endif %}">
+              $ {{ row.diff|floatformat:0|intcomma }}
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-muted">No hay datos para mostrar.</td>
         </tr>
-      {% endfor %}
+      {% endif %}
     </tbody>
   </table>
 </div>

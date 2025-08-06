@@ -672,3 +672,13 @@ def ajustar_presupuesto_diario(presupuesto_mensual_obj, dia_modificado, nuevo_po
         d.save()
 
     return True, "Presupuesto diario ajustado correctamente."
+
+def formato_dinero_colombiano(valor):
+    """
+    Formatea un número como dinero colombiano: $ 1.234.567,89
+    """
+    try:
+        valor = float(valor)
+        return "${:,.2f}".format(valor).replace(',', 'X').replace('.', ',').replace('X', '.')
+    except (TypeError, ValueError):
+        return "-"

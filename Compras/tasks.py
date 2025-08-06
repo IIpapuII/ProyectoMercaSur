@@ -6,6 +6,7 @@ from .utils import get_campo_clasificacion_por_almacen
 from Compras.models import ProcesoClasificacion, ArticuloClasificacionTemporal, ArticuloClasificacionFinal
 from celery import shared_task
 from .utils import notificar_proceso_finalizado, notificar_proceso_con_excel
+from datetime import date, timedelta
 
 @shared_task()
 def cargar_proceso_clasificacion_task( user_id: int | None = None):
@@ -38,8 +39,21 @@ def cargar_proceso_clasificacion_task( user_id: int | None = None):
         proceso.save(update_fields=['estado'])
         return f"Fallo de conexión a ICG en Proceso #{proceso.pk}"
 
+    # Calcular fechas: últimos 4 meses desde hoy
+    hoy = date.today()
+    primer_dia_mes_actual = hoy.replace(day=1)
+    # Restar 4 meses
+    mes_inicio = primer_dia_mes_actual.month - 4
+    anio_inicio = primer_dia_mes_actual.year
+    while mes_inicio <= 0:
+        mes_inicio += 12
+        anio_inicio -= 1
+    fecha_inicio = date(anio_inicio, mes_inicio, 1)
+    # Último día del mes anterior al actual
+    fecha_fin = primer_dia_mes_actual - timedelta(days=1)
+
     # Consulta SQL para extraer datos
-    consulta = """
+    consulta = f"""
 WITH VentasFiltradas AS (
     SELECT
         AL.CODALMACEN,
@@ -56,14 +70,14 @@ WITH VentasFiltradas AS (
             AND AL.N = AC.N
         INNER JOIN ARTICULOS AR
             ON AL.CODARTICULO = AR.CODARTICULO
-        WHERE TRY_CONVERT(DATE, AC.FECHA, 105) BETWEEN '2025-03-01' AND '2025-05-31'
+        WHERE TRY_CONVERT(DATE, AC.FECHA, 105) BETWEEN '{fecha_inicio}' AND '{fecha_fin}'
           AND AC.TIPODOC IN ('13','82','83')
 ), VentasDetalle AS (
     SELECT
         CODALMACEN,
         CODARTICULO,
         SUM(UNID1) AS Unidad,
-        SUM(ROUND(PRECIO * UNID1, 2)) +
+        SUM(ROUND(PRECIO * (1 - DTO / 100.0) * UNID1, 2)) +
         SUM(CASE 
             WHEN (DTO = 0 AND PRECIO = 0 AND PRECIODEFECTO > 0 AND UNIDADESTOTAL > 0)
             THEN (UNIDADESTOTAL * PRECIODEFECTO)
@@ -106,7 +120,7 @@ LEFT JOIN MARCA MC ON AR.MARCA = MC.CODMARCA
 LEFT JOIN VentasDetalle VPA ON AR.CODARTICULO  = VPA.CODARTICULO
 LEFT JOIN ALMACEN A ON A.CODALMACEN = VPA.CODALMACEN
 LEFT JOIN STOCKS S ON AR.CODARTICULO = S.CODARTICULO  AND A.CODALMACEN  = S.CODALMACEN
-WHERE SC.DESCRIPCION = 'ACCESORIOS DE BELLEZA'
+
 """
 
     # Ejecutar y cargar datos
@@ -146,13 +160,22 @@ WHERE SC.DESCRIPCION = 'ACCESORIOS DE BELLEZA'
     ArticuloClasificacionTemporal.objects.bulk_create(articulos)
     notificar_proceso_finalizado(proceso, len(articulos))
     
+    # Cambia el estado a 'procesado' al finalizar correctamente
+    proceso.estado = 'extraccion'
+    proceso.save(update_fields=['estado'])
 
     return f"Proceso #{proceso.pk} completado: {len(articulos)} artículos cargados"
 
-
-def actualizar_clasificaciones_en_icg(proceso):
+@shared_task()
+def actualizar_clasificaciones_en_icg(proceso_id):
     from appMercaSur.conect import conectar_sql_server, ejecutar_consulta_simple
-    from .models import ArticuloClasificacionFinal
+    from .models import ArticuloClasificacionFinal, ProcesoClasificacion
+
+    # Recuperar el objeto proceso por ID
+    try:
+        proceso = ProcesoClasificacion.objects.get(pk=proceso_id)
+    except ProcesoClasificacion.DoesNotExist:
+        raise Exception(f"ProcesoClasificacion con id={proceso_id} no existe.")
 
     conexion = conectar_sql_server()
     if not conexion:

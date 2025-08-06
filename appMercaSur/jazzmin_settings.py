@@ -61,6 +61,7 @@ JAZZMIN_SETTINGS = {
         "django_celery_beat.ClockedSchedule": "fas fa-clock",
         "auditlog.logentry": "fas fa-history",
         "Compras.ProcesoClasificacion": "fas fa-tasks",
+        "Compras.ReglaClasificacion": "fas fa-cogs",
         # Íconos de las apps (carpetas principales del menú)
         "admin": "fas fa-th-large",               # Panel de control
         "auditlog": "fas fa-clipboard-check",     # Audit log
@@ -85,6 +86,7 @@ JAZZMIN_SETTINGS = {
         "SoporteTI.Binnacle": "collapsible",
     },
     "custom_css": "images/custom.css",  # Ruta dentro de STATIC
+    "custom_js": "images/custom.js",  # Ruta dentro de STATIC
     "related_modal_active": False,
     "custom_links": {
         "SoporteTI.Binnacle": [

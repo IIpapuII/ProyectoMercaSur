@@ -139,6 +139,7 @@ def procesar_clasificacion(proceso: ProcesoClasificacion):
                     'clasificacion_actual':temp.clasificacion_actual,
                     # % del artículo sobre el total de la sesión
                     'suma_importe':        pct,
+                    'importe_num':         importe_val,
                     'suma_unidades':       temp.unidades,
                     # acumulado de porcentajes ronda 100 al final
                     'porcentaje_acumulado':acumulado,
@@ -169,7 +170,7 @@ def notificar_proceso_finalizado(proceso: ProcesoClasificacion, total: int):
             <img src="https://notificaciones.mercasur.com.co:9180/assets/logo.png" alt="Mercasur" style="height: 70px;" />
         </div>
 
-        <h2 style="color: #2ca646;">Proceso #{proceso.pk} trimestral Iniciado</h2>
+        <h2 style="color: #2ca646;">Proceso #{proceso.pk}  Iniciado</h2>
 
         <p>Hola,</p>
 

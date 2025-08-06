@@ -6,3 +6,7 @@
     background-color: #dc3545 !important; /* Bootstrap red */
     color: #fff !important;
 }
+#spinner-overlay i {
+    font-size: 2em;
+    margin-right: 10px;
+}
