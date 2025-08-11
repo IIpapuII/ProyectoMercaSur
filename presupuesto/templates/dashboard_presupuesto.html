@@ -82,9 +82,10 @@
         <th>ESCENARIO</th>
         <th>PRESUPUESTO</th>
         <th>VENTA ACTUAL</th>
-        <th>VENTA ANTERIOR</th>
         <th>% EJECUCIÓN</th>
         <th>DIFERENCIA</th>
+        <th>VENTA ANTERIOR</th>
+        <th>CUMPLIMIENTO % VS AÑO ANTERIOR</th>
       </tr>
     </thead>
     <tbody>
@@ -94,7 +95,6 @@
             <td class="text-start">{{ row.sede }}</td>
             <td>{{ row.ppto|floatformat:0|intcomma }}</td>
             <td>{{ row.venta|floatformat:0|intcomma }}</td>
-            <td>{{ row.venta_anterior|floatformat:0|intcomma }}</td>
             <td
               class="{% if row.ejec_pct < 91 %}bg-danger text-white{% elif row.ejec_pct < 100 %}bg-warning{% else %}bg-success text-white{% endif %}"
             >
@@ -103,11 +103,15 @@
             <td class="{% if row.diff < 0 %}text-danger{% else %}text-success{% endif %}">
               $ {{ row.diff|floatformat:0|intcomma }}
             </td>
+            <td>{{ row.venta_anterior|floatformat:0|intcomma }}</td>
+            <td class="{% if row.cmp_ant < 91 %}bg-danger text-white{% elif row.cmp_ant < 100 %}bg-warning{% else %}bg-success text-white{% endif %}">
+              {{ row.cmp_ant|floatformat:1 }}%
+            </td>
           </tr>
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="6" class="text-center text-muted">No hay datos para mostrar.</td>
+          <td colspan="7" class="text-center text-muted">No hay datos para mostrar.</td>
         </tr>
       {% endif %}
     </tbody>
