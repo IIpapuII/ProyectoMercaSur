@@ -359,19 +359,49 @@ def vista_reporte_cumplimiento(request):
             venta_total_cat = VentaDiariaReal.objects.filter(**filtro_venta).aggregate(
                 total_venta=Sum('venta_real')
             )['total_venta'] or Decimal('0.00')
+            # Venta del año anterior para el mismo rango
+            filtro_venta_anio_anterior = {
+                'sede': sede,
+                'categoria': cat_obj,
+            }
+            if fecha_inicio:
+                try:
+                    filtro_venta_anio_anterior['fecha__gte'] = fecha_inicio.replace(year=fecha_inicio.year - 1)
+                except ValueError:
+                    filtro_venta_anio_anterior['fecha__gte'] = fecha_inicio - timedelta(days=365)
+            if fecha_fin:
+                try:
+                    filtro_venta_anio_anterior['fecha__lte'] = fecha_fin.replace(year=fecha_fin.year - 1)
+                except ValueError:
+                    filtro_venta_anio_anterior['fecha__lte'] = fecha_fin - timedelta(days=365)
+            if not fecha_inicio and not fecha_fin:
+                filtro_venta_anio_anterior['fecha__year'] = anio - 1
+                filtro_venta_anio_anterior['fecha__month'] = mes
+                ultimo_dia_anio_anterior = calendar.monthrange(anio - 1, mes)[1]
+                limite_fecha_anio_anterior = date(anio - 1, mes, min(limite_fecha.day, ultimo_dia_anio_anterior))
+                filtro_venta_anio_anterior['fecha__lte'] = limite_fecha_anio_anterior
+
+            venta_anio_anterior = VentaDiariaReal.objects.filter(**filtro_venta_anio_anterior).aggregate(
+                total_venta=Sum('venta_real')
+            )['total_venta'] or Decimal('0.00')
 
             diferencia_cat = venta_total_cat - presupuesto_total_cat
             cumplimiento_cat_pct = None
             if presupuesto_total_cat > 0:
                 cumplimiento_cat_pct = (venta_total_cat / presupuesto_total_cat * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+            cumplimiento_vs_anio_anterior_pct = None
+            if venta_anio_anterior > 0:
+                cumplimiento_vs_anio_anterior_pct = (venta_total_cat / venta_anio_anterior * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
 
             if presupuesto_total_cat > 0:
                 resumen_por_categoria.append({
                     'nombre_indicador': cat_obj.nombre,
                     'presupuesto_mes': presupuesto_total_cat,
                     'venta_mes': venta_total_cat,
+                    'venta_anio_anterior': venta_anio_anterior,
                     'diferencia': diferencia_cat,
                     'cumplimiento_pct': cumplimiento_cat_pct,
+                    'cumplimiento_vs_anio_anterior_pct': cumplimiento_vs_anio_anterior_pct,
                     'semaforo_clase': obtener_clase_semaforo(cumplimiento_cat_pct)
                 })
 
@@ -397,12 +427,7 @@ def vista_reporte_cumplimiento(request):
                 'fecha__month': m
             }
 
-            if fecha_inicio:
-                filtro_ppto_mensual['fecha__gte'] = fecha_inicio
-                filtro_venta_mensual['fecha__gte'] = fecha_inicio
-            if fecha_fin:
-                filtro_ppto_mensual['fecha__lte'] = fecha_fin
-                filtro_venta_mensual['fecha__lte'] = fecha_fin
+
 
             ppto_qs = PresupuestoDiarioCategoria.objects.filter(**filtro_ppto_mensual).aggregate(total_ppto=Sum('presupuesto_calculado'))
             total_ppto = ppto_qs['total_ppto'] or Decimal('0.00')
@@ -513,7 +538,7 @@ def vista_reporte_cumplimiento(request):
 
             if not datos_reporte and presupuestos_diarios.exists():
                 messages.info(request, f"Se encontraron presupuestos para {categoria_seleccionada.nombre}, pero no ventas para mostrar detalle diario.")
-
+    mostrar_margenes = not request.user.groups.filter(name='sin_margenes').exists()
     context = {
         'filtro_form': filtro_form,
         'resumen_por_categoria': resumen_por_categoria,
@@ -529,7 +554,8 @@ def vista_reporte_cumplimiento(request):
         'chart_cumplimiento_anual': mark_safe(json.dumps([float(v) for v in chart_cumplimiento_anual])),
         'fecha_inicio': fecha_inicio,
         'fecha_fin': fecha_fin,
-        'is_administrativo': request.user.groups.filter(name='administrativos').exists()
+        'is_administrativo': request.user.groups.filter(name='administrativos').exists(),
+        'mostrar_margenes': mostrar_margenes,
     }
     return render(request, 'reporte_cumplimiento.html', context)
 
