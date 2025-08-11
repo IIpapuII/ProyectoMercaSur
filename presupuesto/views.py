@@ -359,19 +359,49 @@ def vista_reporte_cumplimiento(request):
             venta_total_cat = VentaDiariaReal.objects.filter(**filtro_venta).aggregate(
                 total_venta=Sum('venta_real')
             )['total_venta'] or Decimal('0.00')
+            # Venta del año anterior para el mismo rango
+            filtro_venta_anio_anterior = {
+                'sede': sede,
+                'categoria': cat_obj,
+            }
+            if fecha_inicio:
+                try:
+                    filtro_venta_anio_anterior['fecha__gte'] = fecha_inicio.replace(year=fecha_inicio.year - 1)
+                except ValueError:
+                    filtro_venta_anio_anterior['fecha__gte'] = fecha_inicio - timedelta(days=365)
+            if fecha_fin:
+                try:
+                    filtro_venta_anio_anterior['fecha__lte'] = fecha_fin.replace(year=fecha_fin.year - 1)
+                except ValueError:
+                    filtro_venta_anio_anterior['fecha__lte'] = fecha_fin - timedelta(days=365)
+            if not fecha_inicio and not fecha_fin:
+                filtro_venta_anio_anterior['fecha__year'] = anio - 1
+                filtro_venta_anio_anterior['fecha__month'] = mes
+                ultimo_dia_anio_anterior = calendar.monthrange(anio - 1, mes)[1]
+                limite_fecha_anio_anterior = date(anio - 1, mes, min(limite_fecha.day, ultimo_dia_anio_anterior))
+                filtro_venta_anio_anterior['fecha__lte'] = limite_fecha_anio_anterior
+
+            venta_anio_anterior = VentaDiariaReal.objects.filter(**filtro_venta_anio_anterior).aggregate(
+                total_venta=Sum('venta_real')
+            )['total_venta'] or Decimal('0.00')
 
             diferencia_cat = venta_total_cat - presupuesto_total_cat
             cumplimiento_cat_pct = None
             if presupuesto_total_cat > 0:
                 cumplimiento_cat_pct = (venta_total_cat / presupuesto_total_cat * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+            cumplimiento_vs_anio_anterior_pct = None
+            if venta_anio_anterior > 0:
+                cumplimiento_vs_anio_anterior_pct = (venta_total_cat / venta_anio_anterior * Decimal('100')).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
 
             if presupuesto_total_cat > 0:
                 resumen_por_categoria.append({
                     'nombre_indicador': cat_obj.nombre,
                     'presupuesto_mes': presupuesto_total_cat,
                     'venta_mes': venta_total_cat,
+                    'venta_anio_anterior': venta_anio_anterior,
                     'diferencia': diferencia_cat,
                     'cumplimiento_pct': cumplimiento_cat_pct,
+                    'cumplimiento_vs_anio_anterior_pct': cumplimiento_vs_anio_anterior_pct,
                     'semaforo_clase': obtener_clase_semaforo(cumplimiento_cat_pct)
                 })
 
@@ -397,12 +427,7 @@ def vista_reporte_cumplimiento(request):
                 'fecha__month': m
             }
 
-            if fecha_inicio:
-                filtro_ppto_mensual['fecha__gte'] = fecha_inicio
-                filtro_venta_mensual['fecha__gte'] = fecha_inicio
-            if fecha_fin:
-                filtro_ppto_mensual['fecha__lte'] = fecha_fin
-                filtro_venta_mensual['fecha__lte'] = fecha_fin
+
 
             ppto_qs = PresupuestoDiarioCategoria.objects.filter(**filtro_ppto_mensual).aggregate(total_ppto=Sum('presupuesto_calculado'))
             total_ppto = ppto_qs['total_ppto'] or Decimal('0.00')
@@ -513,7 +538,7 @@ def vista_reporte_cumplimiento(request):
 
             if not datos_reporte and presupuestos_diarios.exists():
                 messages.info(request, f"Se encontraron presupuestos para {categoria_seleccionada.nombre}, pero no ventas para mostrar detalle diario.")
-
+    mostrar_margenes = not request.user.groups.filter(name='sin_margenes').exists()
     context = {
         'filtro_form': filtro_form,
         'resumen_por_categoria': resumen_por_categoria,
@@ -529,7 +554,8 @@ def vista_reporte_cumplimiento(request):
         'chart_cumplimiento_anual': mark_safe(json.dumps([float(v) for v in chart_cumplimiento_anual])),
         'fecha_inicio': fecha_inicio,
         'fecha_fin': fecha_fin,
-        'is_administrativo': request.user.groups.filter(name='administrativos').exists()
+        'is_administrativo': request.user.groups.filter(name='administrativos').exists(),
+        'mostrar_margenes': mostrar_margenes,
     }
     return render(request, 'reporte_cumplimiento.html', context)
 
@@ -572,36 +598,30 @@ def iniciar_sesion_django(request):
 def dasboard_presupuesto(request):
     form = FiltroRangoFechasForm(request.GET or None, user=request.user)
 
-    # Lista para la tabla de resumen
     summary_table = []
-
-    # Datos gráfico 1 (Venta vs Presupuesto)
     labels1, ppto_data, venta_data, cmp_data = [], [], [], []
-
-    # Datos gráfico 2 (Mes actual vs mismo mes año anterior)
-    labels2, imp_act, imp_ant, dif_pct = [], [], [], []
+    labels2, imp_act, imp_ant, dif_pct, cmp_ant_data = [], [], [], [], []
 
     if form.is_valid():
         fi = form.cleaned_data['fecha_inicio']
         ff = form.cleaned_data['fecha_fin']
         cat = form.cleaned_data['categoria']
 
-        # Filtros base
+        # Filtros base para el rango de fechas
         filtro_venta = {'fecha__range': (fi, ff)}
         filtro_presu = {'fecha__range': (fi, ff)}
         if cat:
             filtro_venta['categoria'] = cat
             filtro_presu['presupuesto_mensual__categoria'] = cat
-        
-        fi_anterior = fi.replace(year=fi.year - 1) if fi else None
-        ultimo_dia_mes = calendar.monthrange(fi.year-1, fi.month)[1] if fi else 31
-        ff_anterior = fi_anterior.replace(day=ultimo_dia_mes) if fi_anterior else None
 
+        # Filtros para año anterior (mismo rango de días pero año anterior)
+        fi_anterior = fi.replace(year=fi.year - 1) if fi else None
+        ff_anterior = ff.replace(year=ff.year - 1) if ff else None
         filtro_venta_anterior = {'fecha__range': (fi_anterior, ff_anterior)} if fi_anterior and ff_anterior else {}
         if cat:
             filtro_venta_anterior['categoria'] = cat
 
-        # ————— Tabla Resumen —————
+        # Tabla resumen
         qs_ppto = PresupuestoDiarioCategoria.objects.filter(**filtro_presu) \
             .values(sede_nombre=F('presupuesto_mensual__sede__nombre')) \
             .annotate(total_ppto=Sum('presupuesto_calculado'))
@@ -609,12 +629,10 @@ def dasboard_presupuesto(request):
         qs_venta = VentaDiariaReal.objects.filter(**filtro_venta) \
             .values(sede_nombre=F('sede__nombre')) \
             .annotate(total_venta=Sum('venta_real'))
-        
+
         qs_venta_anterior = VentaDiariaReal.objects.filter(**filtro_venta_anterior) \
             .values(sede_nombre=F('sede__nombre')) \
-            .annotate(total_venta=Sum('venta_real')) 
-        
-        print(qs_venta_anterior)
+            .annotate(total_venta=Sum('venta_real'))
 
         dict_ppto  = {r['sede_nombre']: r['total_ppto'] for r in qs_ppto}
         dict_venta = {r['sede_nombre']: r['total_venta'] for r in qs_venta}
@@ -623,82 +641,66 @@ def dasboard_presupuesto(request):
 
         total_ppto_all = 0
         total_venta_all = 0
+        total_venta_ant_all = 0
 
         for sede in sedes:
             p = dict_ppto.get(sede, 0) or 0
             v = dict_venta.get(sede, 0) or 0
+            va = dict_venta_anterior.get(sede, 0) or 0
             ejec = round((v / p) * 100) if p else 0
             diff = v - p
+            cmp_ant = round((v / va) * 100, 1) if va else 0.0
 
             summary_table.append({
                 'sede': sede,
                 'ppto': float(p),
                 'venta': float(v),
-                'venta_anterior': float(dict_venta_anterior.get(sede, 0) or 0),
                 'ejec_pct': ejec,
                 'diff': float(diff),
+                'cmp_ant': cmp_ant,
+                'venta_anterior': float(va),
             })
 
             total_ppto_all += p
             total_venta_all += v
+            total_venta_ant_all += va
 
         # Fila de totales
         ejec_tot = round((total_venta_all / total_ppto_all) * 100) if total_ppto_all else 0
+        cmp_ant_tot = round((total_venta_all / total_venta_ant_all) * 100, 1) if total_venta_ant_all else 0.0
         summary_table.append({
             'sede': 'Totales',
             'ppto': float(total_ppto_all),
             'venta': float(total_venta_all),
-            'venta_anterior': float(sum(dict_venta_anterior.values())),
             'ejec_pct': ejec_tot,
             'diff': float(total_venta_all - total_ppto_all),
+            'cmp_ant': cmp_ant_tot,
+            'venta_anterior': float(total_venta_ant_all),
         })
 
-        # ————— Gráfico 1: Venta vs Presupuesto —————
+        # Gráfico 1: Venta vs Presupuesto
         for row in summary_table[:-1]:
             labels1.append(row['sede'])
             ppto_data.append(row['ppto'])
             venta_data.append(row['venta'])
             cmp_data.append(row['ejec_pct'])
+            cmp_ant_data.append(row['cmp_ant'])
 
-        # Totales al final
         labels1.append('TOTAL')
         ppto_data.append(summary_table[-1]['ppto'])
         venta_data.append(summary_table[-1]['venta'])
         cmp_data.append(summary_table[-1]['ejec_pct'])
+        cmp_ant_data.append(summary_table[-1]['cmp_ant'])
 
-        # ————— Gráfico 2: Mes actual vs año anterior —————
-        mes, anio = fi.month, fi.year
-        inicio_mes = date(anio, mes, 1)
-        fin_mes = (inicio_mes.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-        inicio_ant = inicio_mes.replace(year=anio - 1)
-        fin_ant    = fin_mes.replace(year=anio - 1)
-
-        filtro_act = {'fecha__range': (inicio_mes, fin_mes)}
-        filtro_ant = {'fecha__range': (inicio_ant, fin_ant)}
-        if cat:
-            filtro_act['categoria'] = cat
-            filtro_ant['categoria'] = cat
-
-        qs_act = VentaDiariaReal.objects.filter(**filtro_act) \
-            .values(sede_nombre=F('sede__nombre')) \
-            .annotate(importe=Sum('venta_real'))
-        qs_ant = VentaDiariaReal.objects.filter(**filtro_ant) \
-            .values(sede_nombre=F('sede__nombre')) \
-            .annotate(importe=Sum('venta_real'))
-
-        dict_act = {r['sede_nombre']: r['importe'] for r in qs_act}
-        dict_ant = {r['sede_nombre']: r['importe'] for r in qs_ant}
-        sedes2   = sorted(set(dict_act) | set(dict_ant))
-
-        for sede in sedes2:
-            ia = dict_act.get(sede, 0) or 0
-            ib = dict_ant.get(sede, 0) or 0
+        # Gráfico 2: Mes actual vs año anterior (solo rango de fechas)
+        for sede in sedes:
+            ia = dict_venta.get(sede, 0) or 0
+            ib = dict_venta_anterior.get(sede, 0) or 0
             labels2.append(sede)
             imp_act.append(float(ia))
             imp_ant.append(float(ib))
             dif_pct.append(float(round((ia / ib) * 100 - 100, 1)) if ib else 0.0)
 
-        # Totales gráfico 2
         ta = sum(imp_act)
         tb = sum(imp_ant)
         labels2.append('Totales')
@@ -706,14 +708,12 @@ def dasboard_presupuesto(request):
         imp_ant.append(tb)
         dif_pct.append(float(round((ta / tb) * 100 - 100, 1)) if tb else 0.0)
 
-    # Obtener categorías permitidas para el usuario
     perfil = getattr(request.user, 'perfil', None)
     if perfil:
         categorias_permitidas = set(perfil.categorias_permitidas.values_list('nombre', flat=True))
     else:
         categorias_permitidas = set()
 
-    # Mostrar todos los datos si es administrativo
     if request.user.groups.filter(name='administrativos').exists():
         filtered_summary_table = summary_table
     else:
@@ -726,8 +726,6 @@ def dasboard_presupuesto(request):
         else:
             filtered_summary_table = []
 
-    print('summary_table:', summary_table)
-    print('filtered_summary_table:', filtered_summary_table)
     context = {
         'form': form,
         'summary_table': filtered_summary_table,
@@ -735,6 +733,7 @@ def dasboard_presupuesto(request):
         'ppto_data': ppto_data,
         'venta_data': venta_data,
         'cmp_data': cmp_data,
+        'cmp_ant_data': cmp_ant_data,
         'labels2': labels2,
         'imp_act': imp_act,
         'imp_ant': imp_ant,
