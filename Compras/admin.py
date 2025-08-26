@@ -103,7 +103,7 @@ class ArticuloClasificacionFinalAdmin(admin.ModelAdmin):
             # Cambia esto:
             # count, errores = actualizar_clasificaciones_en_icg.delay(proceso)
             # Por esto:
-            result = actualizar_clasificaciones_en_icg.delay(proceso.pk)
+            actualizar_clasificaciones_en_icg.delay(proceso.pk)
             # No puedes obtener count y errores directamente, porque Celery ejecuta la tarea en segundo plano.
             # Si quieres mostrar un mensaje inmediato, solo notifica que la tarea fue encolada:
             self.message_user(request, "Tarea encolada para actualizar artículos en ICG. Recargue para ver el resultado.", messages.INFO)
