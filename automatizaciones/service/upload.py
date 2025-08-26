@@ -203,6 +203,7 @@ def send_modified_articles():
     print(API_URL)
     # Obtener artículos con cambios
     modified_articles = articulosMoficados()
+    print(modified_articles)
 
     if not modified_articles.exists():
         print("No hay artículos modificados para enviar.")

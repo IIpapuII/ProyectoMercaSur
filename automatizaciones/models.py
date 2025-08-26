@@ -268,8 +268,54 @@ class CorreoEnviado(models.Model):
             raise ValidationError("Un envío activo debe tener un horario Crontab o de Intervalo seleccionado.")
         if CorreoEnviado.objects.filter(nombre_tarea=self.nombre_tarea).exclude(pk=self.pk).exists():
             raise ValidationError({'nombre_tarea': 'Ya existe una tarea programada con este nombre.'})
+
+class MissingRappiProduct(models.Model):
+    # Claves de identificación
+    ean = models.CharField(max_length=50, db_index=True)
+    code = models.CharField(max_length=100, null=True, blank=True)  # tu SKU/local code si aplica
+
+    # Tienda (local y Rappi)
+    store_local_id = models.CharField(max_length=32, db_index=True)      # ej. 900175315
+    store_name = models.CharField(max_length=255, null=True, blank=True) # ej. "Mercasur, Caldas"
+    rappi_store_id = models.IntegerField(null=True, blank=True)          # ej. 21128
+
+    # Metadata del artículo local
+    name = models.CharField(max_length=255, null=True, blank=True)
+    price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    stock = models.IntegerField(default=0)
+
+    # Trazabilidad del fallo
+    attempts = models.IntegerField(default=0)
+    last_error = models.TextField(null=True, blank=True)
+    lookups_debug = models.JSONField(null=True, blank=True)  # guarda endpoints/query usados
+
+    # Gestión
+    flagged_for_creation = models.BooleanField(default=True) # pendiente de creación en Rappi
+    resolved = models.BooleanField(default=False)            # se resolvió (ya existe/creado)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ean", "store_local_id"],
+                name="uniq_missing_by_ean_store"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["resolved", "flagged_for_creation"]),
+            models.Index(fields=["store_local_id", "ean"]),
+        ]
+        verbose_name = "Producto Faltante en Rappi"
+        verbose_name_plural = "Productos Faltantes en Rappi"
+
+    def __str__(self):
+        return f"{self.ean} @ {self.store_local_id} (resolved={self.resolved})"
         
 from auditlog.registry import auditlog
 
+
+auditlog.register(MissingRappiProduct)
 auditlog.register(DescuentoDiario)
 auditlog.register(SQLQuery)

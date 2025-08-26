@@ -46,6 +46,9 @@ API_URLRAPPI = os.getenv('API_URL_RAPPI')
 API_ENDPOINTRAPPI = os.getenv('API_ENDPOINT_RAPPI')
 API_KEY_PARZE = os.getenv('API_KEYPARZE')
 URL_PARZE = os.getenv('URl_PARZE')
+RAPPI_CLIENT_ID = os.getenv("RAPPI_CLIENT_ID")
+RAPPI_CLIENT_SECRET = os.getenv("RAPPI_CLIENT_SECRET")
+RAPPI_URL_BASE = os.getenv("RAPPI_API_BASE_URL")
 
 ADMINS = [
     ('Nemesio Serrano', 'desarrollador@mercasur.com.co'),  # <- aquí los que quieren ver el error
