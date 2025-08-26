@@ -3,6 +3,9 @@ from celery.exceptions import Ignore
 from django.db import transaction
 from django.template import TemplateSyntaxError
 from django.utils import timezone
+
+from automatizaciones.service.rappi_missing import log_missing_product
+from automatizaciones.service.rappi_update_state import RappiError, update_inventory_one_by_one
 from .service.upload import *
 from appMercaSur.conect import conectar_sql_server, ejecutar_consulta, ejecutar_consulta_data_auto
 from .models import SQLQuery
@@ -11,6 +14,7 @@ import pyodbc
 from django.conf import settings
 from .models import CorreoEnviado
 from .utils import enviar_correo_renderizado
+from .service.rappi_auth import get_rappi_token
 
 @shared_task
 def procesar_articulos_task():
@@ -313,3 +317,53 @@ def procesar_y_enviar_correo_task(self, envio_id):
             except Exception as e_close:
                 print(f"Tarea {task_id}: Error al cerrar conexión en finally: {e_close}")
 
+
+@shared_task
+def rappi_active_product():
+    """Tarea programada para actualizar y enviar artículos modificados."""
+    LOCAL_TO_NAME = {
+        "900175315": "Mercasur, Caldas",
+        "900175197": "Mercasur, Soto Mayor",
+        "900175196": "Mercasur, Cabecera",
+        "900174620": "Mercasur, Centro",
+    }
+
+    # nombre -> id interno de Rappi (del JSON que pasaste)
+    NAME_TO_RAPPI = {
+        "Mercasur, Centro": 21128,
+        "Mercasur, Cabecera": 21243,
+        "Mercasur, Soto Mayor": 21244,
+        "Mercasur, Caldas": 21261,
+    }
+
+    server = settings.RAPPI_URL_BASE
+    token = get_rappi_token()
+
+    qs = Articulos.objects.all().order_by("store_id")
+
+    results = []
+    for art in qs:
+        print("Actualizando artículo:", art.ean, "en tienda local", art.store_id)
+        try:
+            res = update_inventory_one_by_one(
+                server=server,
+                token=token,
+                articulo=art,
+                local_to_name=LOCAL_TO_NAME,
+                name_to_rappi=NAME_TO_RAPPI,
+            )
+            results.append({"ean": art.ean, "store_id": art.store_id, "ok": True, "detail": res})
+        except RappiError as e:
+            err = str(e)
+            if "No encontré IDs" in err or "no devolvió ni productId ni listingId" in err:
+                store_name = LOCAL_TO_NAME.get(str(art.store_id).strip())
+                rappi_store_id = NAME_TO_RAPPI.get(store_name)
+                # si tu update_inventory_one_by_one devuelve 'lookups' en el dict de error, pásalo aquí
+                log_missing_product(
+                    articulo=art,
+                    store_name=store_name,
+                    rappi_store_id=rappi_store_id,
+                    error=err,
+                    lookups_debug=None,  # pon aquí el detalle si lo tienes
+                )
+            results.append({"ean": art.ean, "store_id": art.store_id, "ok": False, "error": str(e)})

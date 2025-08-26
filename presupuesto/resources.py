@@ -88,13 +88,31 @@ class PresupuestoMensualCategoriaResource(resources.ModelResource):
         formats = [XLS, XLSX]
         
 class PresupuestoDiarioCategoriaResource(resources.ModelResource):
+    # Campo calculado para mostrar el nombre de la sede
+    sede_nombre = fields.Field(
+        column_name='sede',
+        attribute='presupuesto_mensual',
+    )
+
     class Meta:
         model = PresupuestoDiarioCategoria
-        fields = ('id', 'presupuesto_mensual', 'fecha', 'dia_semana_nombre', 'porcentaje_dia_especifico', 'presupuesto_calculado')
+        fields = (
+            'id',
+            'presupuesto_mensual',
+            'sede_nombre',   # ahora sí se incluye el campo custom
+            'fecha',
+            'dia_semana_nombre',
+            'porcentaje_dia_especifico',
+            'presupuesto_calculado',
+        )
         import_id_fields = ('presupuesto_mensual', 'fecha')
         skip_unchanged = True
         report_skipped = True
         formats = [XLS, XLSX]
+
+    def dehydrate_sede_nombre(self, obj):
+        """Devuelve el nombre de la sede asociada."""
+        return obj.presupuesto_mensual.sede.nombre if obj.presupuesto_mensual and obj.presupuesto_mensual.sede else None
 
 class VentapollosResource(resources.ModelResource):
     class Meta:

@@ -34,7 +34,7 @@ class ArticulosResource(resources.ModelResource):
     class Meta:
         model = Articulos
         formats = [XLS, XLSX]
-        import_id_fields = ['ean']  
+        import_id_fields = ['code']  
         fields = ['store_id','ean', 'name', 'trademark', 'price', 'stock', 'sale_type', 'discount_price', 'is_available','tarifa','departamento','secciones','familia','subfamilia','code']
         export_order = ['store_id','ean', 'name', 'trademark', 'price', 'stock', 'sale_type', 'discount_price', 'is_available','tarifa','departamento','secciones','familia','subfamilia','code']
         skip_unchanged = True  
@@ -149,6 +149,25 @@ class ProductSKUAdmin(admin.ModelAdmin):
 @admin.register(EnvioLog)
 class EnvioLogAdmin(admin.ModelAdmin):
     pass
+
+
+class MissingRappiProductAdmin(admin.ModelAdmin):
+    list_display = ("ean", "store_local_id", "store_name", "rappi_store_id",
+                    "price", "stock", "attempts", "flagged_for_creation", "resolved", "last_seen")
+    list_filter = ("flagged_for_creation", "resolved", "store_local_id")
+    search_fields = ("ean", "code", "store_local_id", "store_name", "last_error")
+    readonly_fields = ("first_seen", "last_seen")
+    actions = ["marcar_resuelto", "marcar_pendiente"]
+
+    @admin.action(description="Marcar como resuelto")
+    def marcar_resuelto(self, request, queryset):
+        queryset.update(resolved=True, flagged_for_creation=False)
+
+    @admin.action(description="Marcar como pendiente de creación")
+    def marcar_pendiente(self, request, queryset):
+        queryset.update(resolved=False, flagged_for_creation=True)
+
+admin.site.register(MissingRappiProduct, MissingRappiProductAdmin)
 
 admin.site.site_header = "mercasur"
 admin.site.site_title = "mercasur"
