@@ -96,7 +96,7 @@
             <td>{{ row.ppto|floatformat:0|intcomma }}</td>
             <td>{{ row.venta|floatformat:0|intcomma }}</td>
             <td
-              class="{% if row.ejec_pct < 91 %}bg-danger text-white{% elif row.ejec_pct < 100 %}bg-warning{% else %}bg-success text-white{% endif %}"
+              class="{% if row.ejec_pct < 90 %}bg-danger text-white{% elif row.ejec_pct < 100 %}bg-warning{% else %}bg-success text-white{% endif %}"
             >
               {{ row.ejec_pct }}%
             </td>
@@ -104,7 +104,7 @@
               $ {{ row.diff|floatformat:0|intcomma }}
             </td>
             <td>{{ row.venta_anterior|floatformat:0|intcomma }}</td>
-            <td class="{% if row.cmp_ant < 91 %}bg-danger text-white{% elif row.cmp_ant < 100 %}bg-warning{% else %}bg-success text-white{% endif %}">
+            <td class="{% if row.cmp_ant < 90 %}bg-danger text-white{% elif row.cmp_ant < 100 %}bg-warning{% else %}bg-success text-white{% endif %}">
               {{ row.cmp_ant|floatformat:1 }}%
             </td>
           </tr>

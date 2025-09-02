@@ -45,7 +45,7 @@ def create_fidelizacion(cliente):
             if tarjeta:
                 return "El cliente ya tiene tarjeta."
             else:
-                if cliente.tipocliente == 'Cliente' or cliente.tipocliente == 'Colaborador':
+                if cliente.tipocliente == 'Cliente':
                         
                     # Obtener consulta base
                     consulta = SQLQuery.objects.filter(pk=7).first().consulta

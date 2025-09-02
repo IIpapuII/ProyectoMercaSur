@@ -57,7 +57,7 @@ def index(request):
     #articulo = Articulos.objects.get(ean="7707205550097")  # ejemplo
     #print("Actualizando artículo:", articulo)
 
-    qs = Articulos.objects.filter(ean="7708108271515").order_by("store_id")
+    qs = Articulos.objects.all().order_by("store_id")
 
     results = []
     for art in qs:
