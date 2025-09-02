@@ -194,7 +194,7 @@
                             {% endif %}
                         </td>
                         <td>{{ item.venta_anio_anterior|floatformat:0|intcomma }}</td>
-                        <td class =" heatmap-cell {% if item.cumplimiento_vs_anio_anterior_pct < 91 %}bg-danger text-white{% elif item.cumplimiento_vs_anio_anterior_pct < 100 %}bg-warning{% else %}bg-success text-white{% endif %}">
+                        <td class =" heatmap-cell {% if item.cumplimiento_vs_anio_anterior_pct < 90 %}bg-danger text-white{% elif item.cumplimiento_vs_anio_anterior_pct < 100 %}bg-warning{% else %}bg-success text-white{% endif %}">
                             {% if item.cumplimiento_vs_anio_anterior_pct is not None %}
                                 {{ item.cumplimiento_vs_anio_anterior_pct|floatformat:1 }}%
                             {% else %}
