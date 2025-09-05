@@ -34,7 +34,7 @@
       </form>
 </div>
 
-  <!-- Métricas Globales -->
+<!-- === TARJETAS DE MÉTRICAS (igual que antes) === -->
   <div class="row g-4 mb-4">
     <div class="col-md-2">
       <div class="card bg-primary text-white text-center p-3">
@@ -98,25 +98,25 @@
   </div>
   </div>
 
-  <!-- Gráficos: Estado, Categoría, Ubicación -->
-  <div class="row">
-    <div class="col-3">
-      <div class="card p-2">
-        <h5>Distribución por Estado</h5>
-        <canvas id="statusChart"></canvas>
-      </div>
-    </div>
-    
-    <div class="col">
-      <div class="card p-2">
-        <h5>Distribución por Categoría Equipo</h5>
-        <canvas id="categoryChart"></canvas>
-      </div>
+<!-- === GRÁFICOS === -->
+<div class="row">
+  <div class="col-3">
+    <div class="card p-2">
+      <h5>Distribución por Estado</h5>
+      <canvas id="statusChart"></canvas>
     </div>
   </div>
-  <div class="row">
-         <div class="col">
-        <div class="card p-2">
+  
+  <div class="col">
+    <div class="card p-2">
+      <h5>Distribución por Categoría Equipo</h5>
+      <canvas id="categoryChart"></canvas>
+    </div>
+  </div>
+</div>
+<div class="row">
+   <div class="col">
+      <div class="card p-2">
         <h5>Distribución por Categoria Servicio</h5>
         <canvas id="categoryserviceChart" ></canvas>
       </div>
@@ -127,7 +127,8 @@
         <canvas id="locationChart" ></canvas>
       </div>
     </div>
-  </div>
+</div>
+
 <!-- Gráficos de Equipos -->
 <div class="row">
   <div class="col-3">
@@ -142,7 +143,6 @@
       <canvas id="equipmentCategoryChart"></canvas>
     </div>
   </div>
-  
 </div>
 <div class="row">
   <div class="col">
@@ -158,6 +158,8 @@
     </div>
   </div>
 </div>
+
+<!-- === LISTAS === -->
 <div class="row mb-4">
   <div class="col-md-6">
     <div class="card p-3">
@@ -198,111 +200,50 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
 
 <script>
-  // Estado
-const statusCtx = document.getElementById('statusChart').getContext('2d');
-
-new Chart(statusCtx, {
-  type: 'pie',
-  data: {
-    labels: [
-      {% for item in status_counts %}
-        "{{ item.status }}"{% if not forloop.last %}, {% endif %}
-      {% endfor %}
-    ],
-    datasets: [{
-      data: [
-        {% for item in status_counts %}
-          {{ item.count }}{% if not forloop.last %}, {% endif %}
-        {% endfor %}
-      ],
-      backgroundColor: ['#007bff', '#ffc107', '#28a745', '#dc3545', '#6c757d']
-    }]
-  },
-  options: {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top', // ✅ Leyenda arriba
-      },
-      tooltip: {
-        enabled: true // Tooltips opcionales
-      },
-      datalabels: {
-        color: '#fff',
-        formatter: (value, context) => {
-          const data = context.chart.data.datasets[0].data;
-          const total = data.reduce((a, b) => a + b, 0);
-          const percentage = ((value / total) * 100).toFixed(1);
-          return `${percentage}%`;
-        },
-        font: {
-          weight: 'bold',
-          size: 14
-        }
+  // === Gradiente Verde -> Amarillo -> Rojo ===
+  function gradientColors(n) {
+    const start = [40, 167, 69];    // verde
+    const mid   = [255, 193, 7];    // amarillo
+    const end   = [220, 53, 69];    // rojo
+    const colors = [];
+    for (let i = 0; i < n; i++) {
+      const t = (n <= 1) ? 0 : i / (n - 1);
+      let r, g, b;
+      if (t < 0.5) {
+        const t2 = t / 0.5;
+        r = Math.round(start[0] + t2 * (mid[0] - start[0]));
+        g = Math.round(start[1] + t2 * (mid[1] - start[1]));
+        b = Math.round(start[2] + t2 * (mid[2] - start[2]));
+      } else {
+        const t2 = (t - 0.5) / 0.5;
+        r = Math.round(mid[0] + t2 * (end[0] - mid[0]));
+        g = Math.round(mid[1] + t2 * (end[1] - mid[1]));
+        b = Math.round(mid[2] + t2 * (end[2] - mid[2]));
       }
+      colors.push(`rgb(${r}, ${g}, ${b})`);
     }
-  },
-  plugins: [ChartDataLabels] // ✅ Activa el plugin
-});
+    return colors;
+  }
 
+  // === Estado (Pie con colores fijos) ===
+  const statusLabels = [{% for item in status_counts %}"{{ item.status }}"{% if not forloop.last %}, {% endif %}{% endfor %}];
+  const statusData = [{% for item in status_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}];
 
-  // Categoría
-  const categoryCtx = document.getElementById('categoryChart').getContext('2d');
-  new Chart(categoryCtx, {
-    type: 'bar',
-    data: {
-      labels: [{% for item in category_counts %}"{{ item.equipment_service_category__name|default:"Sin categoría" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
-      datasets: [{
-        label: 'Bitácoras por Categoría',
-        data: [{% for item in category_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-        backgroundColor: '#17a2b8'
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-    }
+  // Colores fijos según label
+  const statusColors = statusLabels.map(label => {
+    if (label.toLowerCase().includes("resuelto")) return "rgb(40,167,69)";   // verde
+    if (label.toLowerCase().includes("proceso")) return "rgb(255,193,7)";   // amarillo
+    if (label.toLowerCase().includes("pendiente")) return "rgb(220,53,69)"; // rojo
+    return "#6c757d"; // gris por defecto
   });
 
-  // Ubicación
-  const locationCtx = document.getElementById('locationChart').getContext('2d');
-  new Chart(locationCtx, {
-    type: 'bar',
-    data: {
-      labels: [{% for item in location_counts %}"{{ item.location__name|default:"Sin ubicación" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
-      datasets: [{
-        label: 'Bitácoras por Ubicación',
-        data: [{% for item in location_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-        backgroundColor: '#6f42c1'
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-    }
-  });
-  // ctegoria servicio
-  const categoryserviceCtx = document.getElementById('categoryserviceChart').getContext('2d');
-  new Chart(categoryserviceCtx, {
-    type: 'bar',
-    data: {
-      labels: [{% for item in category_service %}"{{ item.Category__name_category|default:"Sin Categoria" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
-      datasets: [{
-        label: 'Bitácoras por Categoria Servicio',
-        data: [{% for item in category_service %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-        backgroundColor: '#6f42c1'
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-    }
-  });
-const equipmentStatusCtx = document.getElementById('equipmentStatusChart').getContext('2d');
-  new Chart(equipmentStatusCtx, {
+  new Chart(document.getElementById('statusChart').getContext('2d'), {
     type: 'pie',
     data: {
-      labels: [{% for item in equipment_by_status %}"{{ item.status }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+      labels: statusLabels,
       datasets: [{
-        data: [{% for item in equipment_by_status %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-        backgroundColor: ['#007bff', '#ffc107', '#28a745', '#dc3545', '#6c757d']
+        data: statusData,
+        backgroundColor: statusColors
       }]
     },
     options: {
@@ -311,8 +252,7 @@ const equipmentStatusCtx = document.getElementById('equipmentStatusChart').getCo
         datalabels: {
           color: '#fff',
           formatter: (value, ctx) => {
-            const data = ctx.chart.data.datasets[0].data;
-            const total = data.reduce((a, b) => a + b, 0);
+            const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
             return ((value / total) * 100).toFixed(1) + '%';
           },
           font: { weight: 'bold', size: 14 }
@@ -322,46 +262,72 @@ const equipmentStatusCtx = document.getElementById('equipmentStatusChart').getCo
     plugins: [ChartDataLabels]
   });
 
-  const equipmentCategoryCtx = document.getElementById('equipmentCategoryChart').getContext('2d');
-  new Chart(equipmentCategoryCtx, {
-    type: 'bar',
-    data: {
-      labels: [{% for item in equipment_by_category %}"{{ item.category__name|default:"Sin Categoría" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
-      datasets: [{
-        label: 'Equipos por Categoría',
-        data: [{% for item in equipment_by_category %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-        backgroundColor: '#17a2b8'
-      }]
-    },
-    options: { indexAxis: 'y' }
-  });
+  // === Función helper para el resto ===
+  function createChart(ctxId, type, labels, data, axis='y', showLegend=false) {
+    new Chart(document.getElementById(ctxId).getContext('2d'), {
+      type: type,
+      data: {
+        labels: labels,
+        datasets: [{
+          label: ctxId,
+          data: data,
+          backgroundColor: gradientColors(data.length)
+        }]
+      },
+      options: {
+        indexAxis: type === 'bar' ? axis : undefined,
+        plugins: {
+          legend: { display: showLegend },
+          datalabels: type === 'pie' ? {
+            color: '#fff',
+            formatter: (value, ctx) => {
+              const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+              return ((value / total) * 100).toFixed(1) + '%';
+            },
+            font: { weight: 'bold', size: 14 }
+          } : undefined
+        }
+      },
+      plugins: type === 'pie' ? [ChartDataLabels] : []
+    });
+  }
 
-  const equipmentLocationCtx = document.getElementById('equipmentLocationChart').getContext('2d');
-  new Chart(equipmentLocationCtx, {
-    type: 'bar',
-    data: {
-      labels: [{% for item in equipment_by_location %}"{{ item.location_equipment__name|default:"Sin Ubicación" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
-      datasets: [{
-        label: 'Equipos por Ubicación',
-        data: [{% for item in equipment_by_location %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-        backgroundColor: '#6f42c1'
-      }]
-    },
-    options: { indexAxis: 'y' }
-  });
+  // === Resto de gráficos ===
+  createChart("categoryChart", "bar",
+    [{% for item in category_counts %}"{{ item.equipment_service_category__name|default:"Sin categoría" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+    [{% for item in category_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+    'x'
+  );
 
-  const equipmentAssignedCtx = document.getElementById('equipmentAssignedChart').getContext('2d');
-  new Chart(equipmentAssignedCtx, {
-    type: 'bar',
-    data: {
-      labels: [{% for item in equipment_by_assigned %}"{{ item.assigned_to__first_name|default:"Sin Asignado" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
-      datasets: [{
-        label: 'Equipos por Asignado',
-        data: [{% for item in equipment_by_assigned %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
-        backgroundColor: '#ffc107'
-      }]
-    },
-    options: { indexAxis: 'y' }
-  });
+  createChart("locationChart", "bar",
+    [{% for item in location_counts %}"{{ item.location__name|default:"Sin ubicación" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+    [{% for item in location_counts %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}]
+  );
+
+  createChart("categoryserviceChart", "bar",
+    [{% for item in category_service %}"{{ item.Category__name_category|default:"Sin Categoria" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+    [{% for item in category_service %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}]
+  );
+
+  createChart("equipmentStatusChart", "pie",
+    [{% for item in equipment_by_status %}"{{ item.status }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+    [{% for item in equipment_by_status %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+    'x', true
+  );
+
+  createChart("equipmentCategoryChart", "bar",
+    [{% for item in equipment_by_category %}"{{ item.category__name|default:"Sin Categoría" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+    [{% for item in equipment_by_category %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}]
+  );
+
+  createChart("equipmentLocationChart", "bar",
+    [{% for item in equipment_by_location %}"{{ item.location_equipment__name|default:"Sin Ubicación" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+    [{% for item in equipment_by_location %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}]
+  );
+
+  createChart("equipmentAssignedChart", "bar",
+    [{% for item in equipment_by_assigned %}"{{ item.assigned_to__first_name|default:"Sin Asignado" }}"{% if not forloop.last %}, {% endif %}{% endfor %}],
+    [{% for item in equipment_by_assigned %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}]
+  );
 </script>
 {% endblock %}
