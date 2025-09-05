@@ -1,19 +1,39 @@
 from django.db import transaction
 from .models import SecuenciaCodCliente
 from django.utils import timezone
+from django.db.models import F
+
 
 
 def generar_nuevo_codcliente():
     with transaction.atomic():
-        secuencia, _ = SecuenciaCodCliente.objects.select_for_update().get_or_create(pk=1)
-        
-        nuevo_codigo = secuencia.ultimo_codigo + 1
-        if nuevo_codigo > secuencia.rango_maximo:
+        # Crea el registro si no existe (y luego lo bloquea)
+        obj, created = SecuenciaCodCliente.objects.get_or_create(
+            pk=1,
+            defaults={"ultimo_codigo": 0, "rango_maximo": 999999}
+        )
+
+        # Asegura el bloqueo de fila (si el engine lo soporta)
+        obj = (
+            SecuenciaCodCliente.objects
+            .select_for_update()
+            .get(pk=obj.pk)
+        )
+
+        # Incremento atómico con validación de rango (un solo statement)
+        updated = (
+            SecuenciaCodCliente.objects
+            .filter(pk=obj.pk, ultimo_codigo__lt=F("rango_maximo"))
+            .update(ultimo_codigo=F("ultimo_codigo") + 1)
+        )
+        if updated == 0:
+            # No se actualizó: ya estabas en el máximo
             raise ValueError("Se ha alcanzado el límite de códigos disponibles.")
 
-        secuencia.ultimo_codigo = nuevo_codigo
-        secuencia.save()
-        return nuevo_codigo
+        # Leer el valor ya incrementado (sin carreras)
+        obj.refresh_from_db(fields=["ultimo_codigo"])
+        return obj.ultimo_codigo
+
 
 def calcular_edad(fecha_nacimiento):
     """

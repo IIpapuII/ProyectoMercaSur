@@ -335,7 +335,7 @@ def send_modified_articles_total():
             print(f"Error al enviar datos a Rappi para store_id {store_id}: {e}")
             APILogRappi.objects.create(store_id=store_id, status_code=500, response_text=str(e))
 
-def generar_csv_articulos_modificados():
+def generar_csv_articulos_modificados(tipo):
     """
     Genera un archivo CSV con los artículos modificados y lo guarda en el proyecto.
     """
@@ -345,7 +345,10 @@ def generar_csv_articulos_modificados():
     ruta_csv = os.path.join(directorio, "articulos_modificados.csv")
 
     # Filtrar solo artículos modificados con ciertas condiciones
-    articulos = Articulos.objects.filter(modificado=True, store_id=900175315, tarifa=4, price__gt=0)
+    if tipo == True:
+        articulos = Articulos.objects.filter(modificado=True, store_id=900175315, tarifa=4, price__gt=0)
+    else:
+        articulos = Articulos.objects.filter(store_id=900175315, tarifa=4, price__gt=0)
     ahora = datetime.now()
     hora_actual = ahora.time()
     # Obtener el día actual (0 = Lunes, 6 = Domingo)

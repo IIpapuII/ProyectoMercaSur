@@ -7,6 +7,8 @@ from import_export import resources
 from import_export.fields import Field
 from import_export.widgets import DateWidget
 from import_export.formats.base_formats import XLS, XLSX
+from django.db import transaction
+
 
 
 @admin.register(SecuenciaCodCliente)
@@ -21,67 +23,133 @@ class SecuenciaCodClienteAdmin(admin.ModelAdmin):
 class CodigoTemporalAdmin(admin.ModelAdmin):
     pass
 
+def _extraer_codcliente(resultado):
+    try:
+        return resultado[0][0] if resultado and resultado[0] else None
+    except Exception:
+        return None
+
+def _cod_valido(cod):
+    if cod is None:
+        return False
+    s = str(cod).strip().lower()
+    return s not in {"", "0", "none", "null"}
+
+def _flash_chunked(modeladmin, request, lines, level=messages.INFO, chunk=10, prefix=""):
+    """
+    Evita saturar la UI: envía mensajes en grupos de N líneas.
+    """
+    if not lines:
+        return
+    for i in range(0, len(lines), chunk):
+        bloque = lines[i:i+chunk]
+        texto = prefix + " " + " | ".join(bloque)
+        modeladmin.message_user(request, texto, level=level)
+
 @admin.action(description="Enviar a ICG y marcar como creado desde admin")
 def action_crear_desde_admin(modeladmin, request, queryset):
     exitosos = 0
     fallidos = 0
-    cliente_actulizados = []
-    clientes_validar = []
-    clientes_creados = []
-    print("Iniciando proceso de creación de clientes en ICG desde admin")
-    for cliente in queryset:
-        if cliente.creado_desde_fisico and not cliente.creado_desde_admin:
-            try:
-                existe_cliente = getClienteICG(cliente.numero_documento)
-                print(existe_cliente)
-                if not existe_cliente:
-                    crearClienteICG(cliente)
-                cliente.refresh_from_db()
 
-                if cliente.codcliente:
-                    cliente.creado_desde_admin = True
-                    cliente.creadoICG = True
-                    cliente.save(update_fields=["creado_desde_admin", "creadoICG"])
+    # Detalles para mostrar al final
+    detalles_ok = []       # ["doc → codcliente 12345", ...]
+    detalles_err = []      # ["doc → error ...", ...]
+    detalles_sync = []     # ["doc → sincronizado (ya existía) cod 12345", ...]
+
+    # Recorremos por PK para asegurar atomicidad por fila si luego quieres agregar select_for_update()
+    pks = list(queryset.values_list("pk", flat=True))
+
+    for pk in pks:
+        try:
+            with transaction.atomic():
+                cliente = queryset.model.objects.get(pk=pk)
+
+                # 1) Consultar SIEMPRE
+                existe = getClienteICG(cliente.numero_documento)
+                cod_icg = _extraer_codcliente(existe)
+
+                if _cod_valido(cod_icg):
+                    # Ya existe en ICG: sincronizar
+                    cambios = []
+                    if cliente.codcliente != cod_icg:
+                        cliente.codcliente = cod_icg
+                        cambios.append("codcliente")
+                    if not cliente.creadoICG:
+                        cliente.creadoICG = True
+                        cambios.append("creadoICG")
+                    if not cliente.creado_desde_admin:
+                        cliente.creado_desde_admin = True
+                        cambios.append("creado_desde_admin")
+                    if cambios:
+                        cliente.save(update_fields=cambios)
+
                     exitosos += 1
-                    print(str(cliente.codcliente) + "Creacciòn exitosa")
-                else:
-                    fallidos += 1
-            except Exception as e:
-                fallidos += 1
-                print(e)
-        else:
-            if cliente.creadoICG == True and cliente.codcliente is None:
-                        print("Cliente ya creado en ICG pero sin codcliente, actualizando...")
-                        existe_cliente = getClienteICG(cliente.numero_documento)
-                        if existe_cliente:
-                            print(existe_cliente[0][0])
-                            cliente.codcliente = existe_cliente[0][0]
-                        else:
-                            cliente.codcliente = None
-                        cliente.save(update_fields=["creado_desde_admin", "codcliente"])
-                        exitosos += 1
-                        print(str(cliente.codcliente) + "Creacciòn exitosa pero sin codcliente")
-                        cliente_actulizados.append(cliente.numero_documento)
+                    detalles_sync.append(f"{cliente.numero_documento} → sincronizado (cod {cod_icg})")
+                    # Mensaje inmediato (opcional)
+                    # modeladmin.message_user(request, f"{cliente.numero_documento} sincronizado (cod {cod_icg})", level=messages.SUCCESS)
+                    continue
+
+                # 2) No existe: crear SOLO si aplica tu regla
+                if cliente.creado_desde_fisico and not cliente.creado_desde_admin:
+                    modeladmin.message_user(request, f"{cliente.numero_documento} → creando en ICG…", level=messages.INFO)
+                    resultado = crearClienteICG(cliente)
+                    print(resultado)
+                    if not resultado.get("ok"):
+                        # NO marcar flags aquí; crearClienteICG ya es defensiva
+                        fallidos += 1
+                        err = resultado
+                        detalles_err.append(f"{cliente.numero_documento} → {err}")
+                        # Mensaje inmediato (opcional)
+                        # modeladmin.message_user(request, f"{cliente.numero_documento} → {err}", level=messages.ERROR)
                         continue
-            existe_cliente = getClienteICG(cliente.numero_documento)
-            if existe_cliente:
-                clientes_creados.append(existe_cliente[0][0])
-            else:
+
+                    # Re-consultar para obtener/confirmar codcliente
+                    existe2 = getClienteICG(cliente.numero_documento)
+                    cod_icg2 = _extraer_codcliente(existe2)
+
+                    if _cod_valido(cod_icg2):
+                        cambios = []
+                        if cliente.codcliente != cod_icg2:
+                            cliente.codcliente = cod_icg2
+                            cambios.append("codcliente")
+                        if not cliente.creadoICG:
+                            cliente.creadoICG = True
+                            cambios.append("creadoICG")
+                        if not cliente.creado_desde_admin:
+                            cliente.creado_desde_admin = True
+                            cambios.append("creado_desde_admin")
+                        if cambios:
+                            cliente.save(update_fields=cambios)
+
+                        exitosos += 1
+                        detalles_ok.append(f"{cliente.numero_documento} → creado (cod {cod_icg2})")
+                        # modeladmin.message_user(request, f"{cliente.numero_documento} creado (cod {cod_icg2})", level=messages.SUCCESS)
+                    else:
+                        fallidos += 1
+                        detalles_err.append(f"{cliente.numero_documento} → creado pero sin código leído")
+                        # modeladmin.message_user(request, f"{cliente.numero_documento} creado pero sin código leído", level=messages.WARNING)
+                    continue
+
+                # 3) No existe y no cumple creación automática
                 fallidos += 1
-                clientes_validar.append(cliente.numero_documento)
-            
+                detalles_err.append(f"{cliente.numero_documento} → no cumple criterio de creación (marcar desde físico primero)")
+
+        except Exception as e:
+            fallidos += 1
+            detalles_err.append(f"{pk} → excepción: {e}")
+
+    # ---- MENSAJES EN ADMIN ----
     if exitosos:
-        modeladmin.message_user(
-            request,
-            f"Se procesaron correctamente {exitosos} cliente(s).",
-            level=messages.SUCCESS,
-        )
+        modeladmin.message_user(request, f"Procesados correctamente {exitosos} cliente(s).", level=messages.SUCCESS)
+    if detalles_sync:
+        _flash_chunked(modeladmin, request, detalles_sync, level=messages.SUCCESS, prefix="Sincronizados:")
+    if detalles_ok:
+        _flash_chunked(modeladmin, request, detalles_ok, level=messages.SUCCESS, prefix="Creados:")
+
     if fallidos:
-        modeladmin.message_user(
-            request,
-            f"No se pudieron procesar {fallidos} cliente(s) (ya creados o error{clientes_validar}. se actualizan los clientes: {cliente_actulizados} ",
-            level=messages.WARNING,
-        )
+        modeladmin.message_user(request, f"No se pudieron procesar {fallidos} cliente(s).", level=messages.WARNING)
+    if detalles_err:
+        _flash_chunked(modeladmin, request, detalles_err, level=messages.WARNING, prefix="Pendientes/errores:")
 
 
 @admin.register(RegistroCliente)

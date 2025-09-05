@@ -5,6 +5,8 @@ from geopy.distance import geodesic
 from datetime import datetime
 from clientes.correo import enviar_correo
 from clientes.utils import generar_nuevo_codcliente, calcular_edad, bool_a_tf
+from django.db import transaction
+from django.db.models import F
 
 def getClienteICG(numero_documento):
     """
@@ -266,86 +268,96 @@ def crearClienteICG(intanse_cliente):
     else :
         tipocliente = 14
     try:
-        conexion = conectar_sql_server()
-        cursor = conexion.cursor()
-        consulta = SQLQuery.objects.filter(pk=6).first().consulta
-        valores = (
-            generar_nuevo_codcliente(),                     # CODCLIENTE (Usamos el mismo que el número de documento)
-            '13050501',                                     # CODCONTABLE (Valor predeterminado del SQL)
-            nombreCompleto,                                 # NOMBRECLIENTE
-            nombreCompleto,                                 # NOMBRECOMERCIAL (Usamos el mismo que NOMBRECLIENTE)
-            intanse_cliente.numero_documento,     # CIF
-            intanse_cliente.numero_documento,     # ALIAS (Usamos el mismo que CIF)
-            f'{intanse_cliente.tipo_via} {intanse_cliente.direccion}' or '',      # DIRECCION1 (Usar cadena vacía si es NULL localmente)
-            '680001',                                       # CODPOSTAL (Valor predeterminado del SQL) - No está en tu modelo Django
-            intanse_cliente.ciudad or '',         # POBLACION
-            'SANTANDER',                                    # PROVINCIA (Valor predeterminado del SQL) - No está en tu modelo Django
-            'Colombia',                                     # PAIS (Valor predeterminado del SQL) - No está en tu modelo Django
-            intanse_cliente.telefono or '',       # TELEFONO1
-            intanse_cliente.celular or '',                                           # TELEFONO2 (NULL en tu SQL)
-            intanse_cliente.correo or '',         # E_MAIL
-            0,                                              # CANTPORTESPAG (Valor predeterminado del SQL)
-            'D',                                            # TIPOPORTES (Valor predeterminado del SQL)
-            0,                                              # NUMDIASENTREGA (Valor predeterminado del SQL)
-            1,                                              # RIESGOCONCEDIDO (Valor predeterminado del SQL)
-            tipocliente,                                             # TIPO (Valor predeterminado del SQL)
-            'F',                                            # RECARGO (Valor predeterminado del SQL) - Ojo: 'F' puede ser un booleano en ICG
-            0,                                              # DIAPAGO1 (Valor predeterminado del SQL)
-            0,                                              # DIAPAGO2 (Valor predeterminado del SQL)
-            'F',                                            # FACTURARSINIMPUESTOS (Valor predeterminado del SQL)
-            0,                                              # DTOCOMERCIAL (Valor predeterminado del SQL)
-            'G',                                            # REGIMFACT (Valor predeterminado del SQL)
-            1,                                              # CODMONEDA (Valor predeterminado del SQL)
-            intanse_cliente.fecha_nacimiento,     # FECHANACIMIENTO (pyodbc maneja objetos date de Python)
-            intanse_cliente.numero_documento,     # NIF20 (Usamos el mismo que CIF)
-            'F',                                            # DESCATALOGADO (Valor predeterminado del SQL)
-            'L',                                            # LOCAL_REMOTA (Valor predeterminado del SQL)
-            2,                                           # CODVISIBLE (NULL en tu SQL)
-            'CO',                                           # CODPAIS (Valor predeterminado del SQL) - No está en tu modelo Django
-            None,                                           # CARGOSFIJOSA (NULL en tu SQL)
-            intanse_cliente.celular or '',        # MOBIL
-            0,                                              # NOCALCULARCARGO1ARTIC (Valor predeterminado del SQL)
-            0,                                              # NOCALCULARCARGO2ARTIC (Valor predeterminado del SQL)
-            0,                                              # ESCLIENTEDELGRUPO (Valor predeterminado del SQL)
-            0,                                              # RET_TIPORETENCIONIVA (Valor predeterminado del SQL)
-            0,                                              # CAMPOSLIBRESTOTALIZAR (Valor predeterminado del SQL)
-            0,                                              # BLOQUEADO (Valor predeterminado del SQL)
-            0,                                              # TIPODOCIDENT (Valor predeterminado del SQL)
-            'L',                                            # PERSONAJURIDICA (Valor predeterminado del SQL) - Asumimos 'L' literal del SQL
-            1 if intanse_cliente.preferencias_email else 0, # RECIBIRINFORMACION (Mapeamos preferencia_email a 1/0)
-            0,                                              # MAXIMOVENTA_APLICAR (Valor predeterminado del SQL)
-            0,                                              # ENVIARMAILCHECKIN (Valor predeterminado del SQL)
-            0,                                              # ENVIARMAILCHECKOUT (Valor predeterminado del SQL)
-            0,                                              # FORZARNOIMPRIMIR (Valor predeterminado del SQL)
-            0,                                              # TIPO_EXCEP_SII (Valor predeterminado del SQL)
-            0,                                              # NOCALCULARCARGO3ARTIC (Valor predeterminado del SQL)
-            0,                                              # NOCALCULARCARGO4ARTIC (Valor predeterminado del SQL)
-            0,                                              # NOCALCULARCARGO5ARTIC (Valor predeterminado del SQL)
-            0                                               # NOCALCULARCARGO6ARTIC (Valor predeterminado del SQL)
-        )
-        try:
-            cursor.execute(consulta, valores)
-            conexion.commit()
-        except Exception as e:
-            conexion.rollback()
-            print(f"Error al ejecutar la consulta: {e}")
-        cliente = getClienteICG(intanse_cliente.numero_documento)
-        if cliente:
-            intanse_cliente.codcliente = cliente[0][0]
-            intanse_cliente.creadoICG = True
-            intanse_cliente.save()
-            actualizar_campos_libres_cliente(intanse_cliente)
-            create_fidelizacion(intanse_cliente)
-            intanse_cliente.Actualizado = False
-            intanse_cliente.save()
-            if intanse_cliente.correo_notificacion == True:
-                print("proceso de enviar correo")
-                enviar_correo(intanse_cliente)
-        else:
-            print("error codcliente")
+        with transaction.atomic():
+            conexion = conectar_sql_server()
+            cursor = conexion.cursor()
+            consulta = SQLQuery.objects.filter(pk=6).first().consulta
+            secuencia = generar_nuevo_codcliente()
+            print(secuencia)
+            valores = (
+                secuencia,                     # CODCLIENTE (Usamos el mismo que el número de documento)
+                '13050501',                                     # CODCONTABLE (Valor predeterminado del SQL)
+                nombreCompleto,                                 # NOMBRECLIENTE
+                nombreCompleto,                                 # NOMBRECOMERCIAL (Usamos el mismo que NOMBRECLIENTE)
+                intanse_cliente.numero_documento,     # CIF
+                intanse_cliente.numero_documento,     # ALIAS (Usamos el mismo que CIF)
+                f'{intanse_cliente.tipo_via} {intanse_cliente.direccion}' or '',      # DIRECCION1 (Usar cadena vacía si es NULL localmente)
+                '680001',                                       # CODPOSTAL (Valor predeterminado del SQL) - No está en tu modelo Django
+                intanse_cliente.ciudad or '',         # POBLACION
+                'SANTANDER',                                    # PROVINCIA (Valor predeterminado del SQL) - No está en tu modelo Django
+                'Colombia',                                     # PAIS (Valor predeterminado del SQL) - No está en tu modelo Django
+                intanse_cliente.telefono or '',       # TELEFONO1
+                intanse_cliente.celular or '',                                           # TELEFONO2 (NULL en tu SQL)
+                intanse_cliente.correo or '',         # E_MAIL
+                0,                                              # CANTPORTESPAG (Valor predeterminado del SQL)
+                'D',                                            # TIPOPORTES (Valor predeterminado del SQL)
+                0,                                              # NUMDIASENTREGA (Valor predeterminado del SQL)
+                1,                                              # RIESGOCONCEDIDO (Valor predeterminado del SQL)
+                tipocliente,                                             # TIPO (Valor predeterminado del SQL)
+                'F',                                            # RECARGO (Valor predeterminado del SQL) - Ojo: 'F' puede ser un booleano en ICG
+                0,                                              # DIAPAGO1 (Valor predeterminado del SQL)
+                0,                                              # DIAPAGO2 (Valor predeterminado del SQL)
+                'F',                                            # FACTURARSINIMPUESTOS (Valor predeterminado del SQL)
+                0,                                              # DTOCOMERCIAL (Valor predeterminado del SQL)
+                'G',                                            # REGIMFACT (Valor predeterminado del SQL)
+                1,                                              # CODMONEDA (Valor predeterminado del SQL)
+                intanse_cliente.fecha_nacimiento,     # FECHANACIMIENTO (pyodbc maneja objetos date de Python)
+                intanse_cliente.numero_documento,     # NIF20 (Usamos el mismo que CIF)
+                'F',                                            # DESCATALOGADO (Valor predeterminado del SQL)
+                'L',                                            # LOCAL_REMOTA (Valor predeterminado del SQL)
+                2,                                           # CODVISIBLE (NULL en tu SQL)
+                'CO',                                           # CODPAIS (Valor predeterminado del SQL) - No está en tu modelo Django
+                None,                                           # CARGOSFIJOSA (NULL en tu SQL)
+                intanse_cliente.celular or '',        # MOBIL
+                0,                                              # NOCALCULARCARGO1ARTIC (Valor predeterminado del SQL)
+                0,                                              # NOCALCULARCARGO2ARTIC (Valor predeterminado del SQL)
+                0,                                              # ESCLIENTEDELGRUPO (Valor predeterminado del SQL)
+                0,                                              # RET_TIPORETENCIONIVA (Valor predeterminado del SQL)
+                0,                                              # CAMPOSLIBRESTOTALIZAR (Valor predeterminado del SQL)
+                0,                                              # BLOQUEADO (Valor predeterminado del SQL)
+                0,                                              # TIPODOCIDENT (Valor predeterminado del SQL)
+                'L',                                            # PERSONAJURIDICA (Valor predeterminado del SQL) - Asumimos 'L' literal del SQL
+                1 if intanse_cliente.preferencias_email else 0, # RECIBIRINFORMACION (Mapeamos preferencia_email a 1/0)
+                0,                                              # MAXIMOVENTA_APLICAR (Valor predeterminado del SQL)
+                0,                                              # ENVIARMAILCHECKIN (Valor predeterminado del SQL)
+                0,                                              # ENVIARMAILCHECKOUT (Valor predeterminado del SQL)
+                0,                                              # FORZARNOIMPRIMIR (Valor predeterminado del SQL)
+                0,                                              # TIPO_EXCEP_SII (Valor predeterminado del SQL)
+                0,                                              # NOCALCULARCARGO3ARTIC (Valor predeterminado del SQL)
+                0,                                              # NOCALCULARCARGO4ARTIC (Valor predeterminado del SQL)
+                0,                                              # NOCALCULARCARGO5ARTIC (Valor predeterminado del SQL)
+                0                                               # NOCALCULARCARGO6ARTIC (Valor predeterminado del SQL)
+            )
+            try:
+                cursor.execute(consulta, valores)
+                conexion.commit()
+            except Exception as e:
+                conexion.rollback()
+                print(f"Error al ejecutar la consulta: {e}")
+                return f"Error al ejecutar la consulta: {e}"
+            cliente = getClienteICG(intanse_cliente.numero_documento)
+            if cliente:
+                print("validaCliente")
+                intanse_cliente.codcliente = cliente[0][0]
+                intanse_cliente.creadoICG = True
+                intanse_cliente.save()
+                actualizar_campos_libres_cliente(intanse_cliente)
+                create_fidelizacion(intanse_cliente)
+                intanse_cliente.Actualizado = False
+                intanse_cliente.save()
+                intanse_cliente.refresh_from_db()
+                if intanse_cliente.correo_notificacion == True:
+                    print("proceso de enviar correo")
+                    enviar_correo(intanse_cliente)
+                print("Proceso Exitoso")
+                return f"ok"
+            else:
+                print("error codcliente")
+                return "error codcliente"
+            
 
     except:
-        return 'error'
+        return f'error: {e}'
 
 
 def actualizarClienteICG(intanse_cliente):
