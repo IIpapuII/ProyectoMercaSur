@@ -104,7 +104,41 @@ def procesar_articulos_parze_task():
         update_or_create_articles(df, 'Parze')
 
         #  Enviar artículos modificados a Rappi
-        generar_csv_articulos_modificados()
+        generar_csv_articulos_modificados(tipo=True)
+        enviar_csv_a_api()
+        print("Enviado")
+        marcarArticulosComoNoModificados()
+        print("Proceso de artículos completado.")
+
+    except Exception as e:
+        print(f"Error en procesar_articulos_task: {e}")
+        raise
+
+@shared_task
+def procesar_articulos_parze_task_total():
+    """Tarea programada para actualizar y enviar artículos modificados."""
+    try:
+        print("Iniciando tarea de procesamiento de artículos...")
+        
+        conexion = conectar_sql_server()
+
+        #  Obtener la consulta desde el modelo SQLQuery
+        consulta = SQLQuery.objects.filter(pk=2).first()
+        if not consulta:
+            print("No hay consultas activas.")
+            return
+
+        #  Ejecutar la consulta
+        df = ejecutar_consulta(conexion, consulta.consulta)
+        if df is None:
+            print("No se pudo ejecutar la consulta.")
+            return
+
+        # 5️⃣ Actualizar o crear artículos
+        update_or_create_articles(df, 'Parze')
+
+        #  Enviar artículos modificados a Rappi
+        generar_csv_articulos_modificados(tipo=False)
         enviar_csv_a_api()
         print("Enviado")
         marcarArticulosComoNoModificados()
@@ -140,7 +174,7 @@ def actualizar_descuentos_task():
 
         print(f"Procesando artículos para canal: Parze")
         update_or_create_articles(df, canal="Parze")
-        generar_csv_articulos_modificados()
+        generar_csv_articulos_modificados(tipo=True)
         enviar_csv_a_api()
         send_modified_articles()
         print("Proceso completado para ambos canales.")
