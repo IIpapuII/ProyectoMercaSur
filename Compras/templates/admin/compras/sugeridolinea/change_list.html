@@ -1,0 +1,62 @@
+{% extends "admin/change_list.html" %}
+{% load humanize %}
+
+{% block result_list %}
+  <style>
+    .kpi-wrap { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap: 12px; margin: 8px 0 16px; }
+    .kpi-card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px 14px; }
+    .kpi-title { font-size: 12px; color: #666; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }
+    .kpi-value { font-size: 18px; font-weight: 600; }
+    @media (max-width: 1100px) { .kpi-wrap { grid-template-columns: repeat(2, 1fr); } }
+
+    /* Botón */
+    .btn-confirm {
+      display: inline-block;
+      margin-bottom: 15px;
+      padding: 10px 18px;
+      background-color: #2e7d32;
+      color: #fff !important;
+      border-radius: 6px;
+      font-weight: 600;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-confirm:hover {
+      background-color: #1b5e20;
+    }
+  </style>
+
+  {% if kpis %}
+  <div class="kpi-wrap">
+    <div class="kpi-card">
+      <div class="kpi-title">Costo total</div>
+      <div class="kpi-value">${{ kpis.costo_total|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Unidades totales a pedir</div>
+      <div class="kpi-value">{{ kpis.total_unidades|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Cajas totales</div>
+      <div class="kpi-value">{{ kpis.total_cajas|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Artículos (filtrados)</div>
+      <div class="kpi-value">{{ kpis.total_articulos|intcomma }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Costo promedio por artículo</div>
+      <div class="kpi-value">${{ kpis.costo_promedio_por_articulo|floatformat:0|intcomma }}</div>
+    </div>
+  </div>
+
+  <!-- Botón Confirmar Orden -->
+  <form method="post" action="">
+    {% csrf_token %}
+    <button type="submit" class="btn-confirm">✅ Confirmar Orden de Compra ICG</button>
+  </form>
+  {% endif %}
+
+  {{ block.super }}
+{% endblock %}

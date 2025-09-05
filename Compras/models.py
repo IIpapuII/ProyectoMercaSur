@@ -1,3 +1,5 @@
+from django.utils import timezone
+from decimal import Decimal
 from django.db import models
 from django.contrib.auth import get_user_model
 from auditlog.registry import auditlog
@@ -170,3 +172,334 @@ class ArticuloClasificacionFinal(models.Model):
     def __str__(self):
         return f"{self.seccion} - {self.codigo} - {self.descripcion}"
 auditlog.register(ArticuloClasificacionFinal)
+
+#Proceso de c pedido de compras
+
+class Proveedor(models.Model):
+    nombre = models.CharField(max_length=255, unique=True)
+    nit = models.CharField(max_length=32, blank=True, null=True)
+    email_contacto = models.EmailField(blank=True, null=True)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Proveedor"
+        verbose_name_plural = "Proveedores"
+
+    def __str__(self):
+        return self.nombre
+
+
+class Marca(models.Model):
+    nombre = models.CharField(max_length=255, unique=True)
+
+    class Meta:
+        verbose_name = "Marca"
+        verbose_name_plural = "Marcas"
+
+    def __str__(self):
+        return self.nombre
+
+
+class VendedorPerfil(models.Model):
+    """Vincula un usuario interno como 'vendedor' (para sub-agrupación por marca)."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="perfil_vendedor")
+    alias = models.CharField(max_length=120, blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Vendedor"
+        verbose_name_plural = "Vendedores"
+
+    def __str__(self):
+        return self.alias or str(self.user)
+
+
+class AsignacionMarcaVendedor(models.Model):
+    """Qué vendedor atiende qué marca para un proveedor."""
+    proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE, related_name="asignaciones")
+    marca = models.ForeignKey(Marca, on_delete=models.CASCADE, related_name="asignaciones")
+    vendedor = models.ForeignKey(VendedorPerfil, on_delete=models.CASCADE, related_name="asignaciones")
+
+    class Meta:
+        unique_together = [("proveedor", "marca", "vendedor")]
+        verbose_name = "Asignación Marca ↔ Vendedor"
+        verbose_name_plural = "Asignaciones Marca ↔ Vendedor"
+
+    def __str__(self):
+        return f"{self.proveedor} · {self.marca} → {self.vendedor}"
+
+
+class ProveedorUsuario(models.Model):
+    """
+    Usuarios externos (proveedores) con acceso restringido a sus líneas.
+    Si el mismo sistema también usa usuarios internos, este perfil identifica a los externos.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="perfil_proveedor")
+    proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE, related_name="usuarios")
+
+    class Meta:
+        verbose_name = "Perfil de Proveedor (Usuario)"
+        verbose_name_plural = "Perfiles de Proveedor (Usuarios)"
+
+    def __str__(self):
+        return f"{self.user} → {self.proveedor}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lotes y Líneas de Sugerido
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SugeridoLote(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente"
+        ENVIADO = "ENVIADO", "Enviado a proveedor"
+        CONFIRMADO = "CONFIRMADO", "Confirmado por proveedor"
+        COMPLETADO = "COMPLETADO", "Completado/Orden generada"
+
+    nombre = models.CharField(max_length=255, help_text="Identificador legible del lote (e.g. Sugerido 2025-08 corte semanal)")
+    marca = models.ForeignKey(Marca, on_delete=models.SET_NULL, null=True, blank=True, related_name="lotes")
+    fecha_extraccion = models.DateTimeField(default=timezone.now, db_index=True)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PENDIENTE, db_index=True)
+    clasificacion_filtro = models.CharField(max_length=50, blank=True, null=True, help_text="Si se filtró por A/B/C/I u otra etiqueta.")
+    creado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name="lotes_creados")
+
+    total_lineas = models.PositiveIntegerField(default=0)
+    total_costo = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+
+    observaciones = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-fecha_extraccion"]
+        verbose_name = "Lote de Sugerido"
+        verbose_name_plural = "Lotes de Sugerido"
+
+    def __str__(self):
+        return f"Lote #{self.pk} · {self.nombre}"
+
+    def recomputar_totales(self):
+        agg = self.lineas.aggregate(
+            n=models.Count("id"),
+            cost=models.Sum(models.F("costo_linea"))
+        )
+        self.total_lineas = agg.get("n") or 0
+        self.total_costo = agg.get("cost") or Decimal("0")
+        self.save(update_fields=["total_lineas", "total_costo"])
+
+
+class SugeridoLinea(models.Model):
+    class EstadoLinea(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente"
+        ENVIADA_PROV = "ENVIADA_PROV", "Enviada a proveedor"
+        RESPONDIDA = "RESPONDIDA", "Respondida por proveedor"
+        APROBADA = "APROBADA", "Aprobada por compras"
+        RECHAZADA = "RECHAZADA", "Rechazada"
+        ORDENADA = "ORDENADA", "Orden generada"
+
+    # relación y metadatos
+    lote = models.ForeignKey(SugeridoLote, on_delete=models.CASCADE, related_name="lineas")
+    proveedor = models.ForeignKey(Proveedor, on_delete=models.PROTECT, related_name="lineas_sugerido")
+    marca = models.ForeignKey(Marca, on_delete=models.SET_NULL, null=True, blank=True, related_name="lineas_sugerido")
+    vendedor = models.ForeignKey(VendedorPerfil, on_delete=models.SET_NULL, null=True, blank=True, related_name="lineas_sugerido")
+
+    cod_almacen = models.CharField(max_length=20, db_index=True)
+    nombre_almacen = models.CharField(max_length=120)
+
+    codigo_articulo = models.CharField(max_length=64, db_index=True)
+    referencia = models.CharField(max_length=128, blank=True, null=True)
+    descripcion = models.CharField(max_length=255)
+    departamento = models.CharField(max_length=120, blank=True, null=True)
+    seccion = models.CharField(max_length=120, blank=True, null=True)
+    familia = models.CharField(max_length=120, blank=True, null=True)
+    subfamilia = models.CharField(max_length=120, blank=True, null=True)
+    tipo = models.CharField(max_length=50, blank=True, null=True)
+
+    # clasificación ABCI (o libre)
+    clasificacion = models.CharField(max_length=20, blank=True, null=True, db_index=True)
+
+    # indicadores operativos
+    stock_actual = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    stock_minimo = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    stock_maximo = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    lead_time_dias = models.PositiveIntegerField(default=0)
+    stock_seguridad = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"), help_text="Si no se usa, igual a stock_minimo")
+
+    # empaque / costo
+    uds_compra_base = models.PositiveIntegerField(default=1)
+    uds_compra_mult = models.PositiveIntegerField(default=1)
+    embalaje = models.PositiveIntegerField(default=1)  # calculado/base*mult
+    ultimo_costo = models.DecimalField(max_digits=18, decimal_places=4, default=Decimal("0"))
+
+    # sugerido calculado desde SQL de extracción
+    sugerido_base = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    factor_almacen = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("1.00"))
+    sugerido_calculado = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    cajas_calculadas = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    costo_linea = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+
+    # edición interna (compras)
+    sugerido_interno = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"), help_text="Editable por Responsable de Compras")
+    comentario_interno = models.CharField(max_length=500, blank=True, null=True)
+
+    # respuesta del proveedor (editable según clasificación)
+    continuidad_activo = models.BooleanField(default=True, help_text="Activo/Descontinuado según proveedor")
+    nuevo_sugerido_prov = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    descuento_prov_pct = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    nuevo_nombre_prov = models.CharField(max_length=255, blank=True, null=True)
+    observaciones_prov = models.CharField(max_length=500, blank=True, null=True)
+
+    estado_linea = models.CharField(max_length=20, choices=EstadoLinea.choices, default=EstadoLinea.PENDIENTE, db_index=True)
+
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    warning_no_multiplo = models.BooleanField(default=False)
+    warning_incremento_100 = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["lote", "cod_almacen", "codigo_articulo"], name="uniq_linea_por_lote_alm_art"),
+        ]
+        indexes = [
+            models.Index(fields=["lote", "proveedor"]),
+            models.Index(fields=["proveedor", "marca"]),
+            models.Index(fields=["clasificacion"]),
+        ]
+        verbose_name = "Línea de Sugerido"
+        verbose_name_plural = "Líneas de Sugerido"
+
+# ─── Helpers de permisos por clasificación ───────────────────────
+    @property
+    def clasif_upper(self) -> str:
+        return (self.clasificacion or "").strip().upper()
+
+    def editable_por_proveedor(self) -> bool:
+        return self.clasif_upper in {"A", "B"}
+
+    def editable_por_interno(self) -> bool:
+        # internos (Mercasur) editan A, B, C ; I bloqueado
+        return self.clasif_upper in {"A", "B", "C"}
+
+    # ─── KPIs / costo / validaciones ────────────────────────────────
+    @property
+    def cantidad_a_ordenar(self) -> Decimal:
+        """Preferir sugerido_interno si >0; si no, sugerido_calculado."""
+        return (self.sugerido_interno or Decimal("0")) or (self.sugerido_calculado or Decimal("0"))
+
+    @property
+    def desviacion_seguridad_pct(self) -> Decimal:
+        base = self.stock_seguridad or self.stock_minimo or Decimal("0")
+        if base and base != 0:
+            return ((self.stock_actual - base) / base) * Decimal("100")
+        return Decimal("0")
+
+    def _es_multiplo(self, valor: Decimal) -> bool:
+        empa = int(self.embalaje or 1)
+        if empa <= 0:
+            return True
+        try:
+            return (Decimal(valor) % Decimal(empa)) == 0
+        except Exception:
+            return True
+
+    def recomputar_costos(self):
+        qty = self.cantidad_a_ordenar
+        self.costo_linea = (qty or Decimal("0")) * (self.ultimo_costo or Decimal("0"))
+
+    def clean(self):
+        # sugeridos no negativos
+        if self.sugerido_interno is not None and self.sugerido_interno < 0:
+            raise models.ValidationError("El sugerido interno no puede ser negativo.")
+        if self.nuevo_sugerido_prov is not None and self.nuevo_sugerido_prov < 0:
+            raise models.ValidationError("El nuevo sugerido del proveedor no puede ser negativo.")
+
+        # advertencia (no bloqueo) si no múltiplo de embalaje
+        self.warning_no_multiplo = False
+        candidato = self.sugerido_interno or self.nuevo_sugerido_prov or Decimal("0")
+        if candidato and not self._es_multiplo(candidato):
+            self.warning_no_multiplo = True
+
+  
+        # stock de seguridad default
+        if not self.stock_seguridad or self.stock_seguridad == 0:
+            self.stock_seguridad = self.stock_minimo or Decimal("0")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        self.recomputar_costos()
+        super().save(*args, **kwargs)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Respuesta del proveedor (lote de modificaciones) y confirmación
+# ─────────────────────────────────────────────────────────────────────
+
+class SugeridoLineaCambio(models.Model):
+    """Snapshot de cambios enviados por el proveedor (retransmisión)."""
+    linea = models.ForeignKey(SugeridoLinea, on_delete=models.CASCADE, related_name="cambios")
+    fecha = models.DateTimeField(default=timezone.now)
+    usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    continuidad_activo = models.BooleanField(default=True)
+    nuevo_sugerido_prov = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    descuento_prov_pct = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    nuevo_nombre_prov = models.CharField(max_length=255, blank=True, null=True)
+    observaciones_prov = models.CharField(max_length=500, blank=True, null=True)
+
+    class Meta:
+        ordering = ["-fecha"]
+        verbose_name = "Cambio de Sugerido (Proveedor)"
+        verbose_name_plural = "Cambios de Sugerido (Proveedor)"
+
+# ─────────────────────────────────────────────────────────────────────
+# Orden de compra / historial y logs de integración ICG
+# ─────────────────────────────────────────────────────────────────────
+
+
+class OrdenCompra(models.Model):
+    """Documento interno (previo a ICG) que se puede exportar y sincronizar con ICG."""
+    lote = models.ForeignKey(SugeridoLote, on_delete=models.PROTECT, related_name="ordenes")
+    proveedor = models.CharField(max_length=255, db_index=True)
+    cod_almacen = models.CharField(max_length=20)
+    nombre_almacen = models.CharField(max_length=120)
+
+    numero_orden = models.CharField(max_length=50, unique=True)
+    fecha = models.DateTimeField(default=timezone.now)
+    costo_total = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+
+    id_orden_icg = models.CharField(max_length=80, blank=True, null=True, help_text="Identificador devuelto por ICG")
+    generado_por = models.ForeignKey(User, on_delete=models.PROTECT, related_name="ordenes_generadas")
+
+    class Meta:
+        ordering = ["-fecha"]
+        verbose_name = "Orden de Compra"
+        verbose_name_plural = "Órdenes de Compra"
+
+    def __str__(self):
+        return f"OC {self.numero_orden} · {self.proveedor} · {self.nombre_almacen}"
+
+class OrdenCompraLinea(models.Model):
+    orden = models.ForeignKey(OrdenCompra, on_delete=models.CASCADE, related_name="lineas")
+    codigo_articulo = models.CharField(max_length=64)
+    descripcion = models.CharField(max_length=255)
+    embalaje = models.PositiveIntegerField(default=1)
+    cantidad = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    costo_unitario = models.DecimalField(max_digits=18, decimal_places=4, default=Decimal("0"))
+    costo_total = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    clasificacion = models.CharField(max_length=20, blank=True, null=True)
+
+    class Meta:
+        verbose_name = "Línea de OC"
+        verbose_name_plural = "Líneas de OC"
+
+class OrdenICGLog(models.Model):
+    orden = models.ForeignKey(OrdenCompra, on_delete=models.CASCADE, related_name="logs")
+    fecha = models.DateTimeField(default=timezone.now)
+    accion = models.CharField(max_length=50, default="enviar_icg")
+    exito = models.BooleanField(default=False)
+    id_orden_icg = models.CharField(max_length=80, blank=True, null=True)
+    mensaje = models.TextField(blank=True, null=True)
+    payload = models.JSONField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-fecha"]
+        verbose_name = "Log Integración ICG"
+        verbose_name_plural = "Logs Integración ICG"
