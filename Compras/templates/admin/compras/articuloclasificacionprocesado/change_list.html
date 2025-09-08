@@ -2,12 +2,75 @@
 {% load static %}
 
 {% block object-tools %}
-    {% if request.GET.proceso__id__exact %}
-    <div>
-        <a class="button" href="{% url 'admin:generar_clasificacion_final' %}?proceso__id__exact={{ request.GET.proceso__id__exact }}" style="background:#2ca646;color:#fff;padding:6px 10px;border-radius:5px;text-decoration:none;">
-            ▶ Generar Clasificación Final
-        </a>
-    </div>
-    {% endif %}
-    {{ block.super }}
+  {{ block.super }}
+
+  {% if request.GET.proceso__id__exact %}
+  <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+    <a class="button"
+       href="{% url 'admin:generar_clasificacion_final' %}?proceso__id__exact={{ request.GET.proceso__id__exact }}"
+       style="background:#2ca646;color:#fff;padding:6px 10px;border-radius:5px;text-decoration:none;">
+      ▶ Generar Clasificación Final
+    </a>
+
+    {# BOTÓN: Exportar a Excel usando la acción existente #}
+    <button type="button"
+            id="btn-exportar-excel"
+            class="button"
+            style="background:#1976d2;color:#fff;padding:6px 10px;border-radius:5px;border:none;cursor:pointer;">
+      📊 Exportar a Excel
+    </button>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const btn = document.getElementById("btn-exportar-excel");
+      if (!btn) return;
+
+      btn.addEventListener("click", function () {
+        const form = document.getElementById("changelist-form");
+        if (!form) {
+          alert("No se encontró el formulario del listado.");
+          return;
+        }
+
+        // Setear la acción al valor de tu action 'exportar_excel'
+        const actionSelect = form.querySelector('select[name="action"]');
+        if (!actionSelect) {
+          alert("No se encontró el selector de acciones.");
+          return;
+        }
+
+        // Verifica que exista la opción exportar_excel
+        const opt = Array.from(actionSelect.options).find(o => o.value === "exportar_excel");
+        if (!opt) {
+          alert("La acción 'exportar_excel' no está disponible en este listado.");
+          return;
+        }
+        actionSelect.value = "exportar_excel";
+
+        // Si no hay seleccionados, ofrecer exportar todos los filtrados
+        const seleccionados = form.querySelectorAll('input[name="_selected_action"]:checked');
+        if (seleccionados.length === 0) {
+          if (!confirm("No seleccionaste filas. ¿Deseas exportar TODOS los resultados filtrados?")) {
+            return;
+          }
+          // Señal para que Django aplique la acción a TODO el queryset filtrado
+          let across = form.querySelector('input[name="select_across"]');
+          if (!across) {
+            across = document.createElement("input");
+            across.type = "hidden";
+            across.name = "select_across";
+            form.appendChild(across);
+          }
+          across.value = "1";
+        }
+
+        form.submit();
+      });
+    });
+  </script>
 {% endblock %}

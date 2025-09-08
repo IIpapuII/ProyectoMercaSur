@@ -8,7 +8,7 @@ from celery import shared_task
 from .utils import notificar_proceso_finalizado, notificar_proceso_con_excel
 from datetime import date, timedelta
 
-@shared_task()
+##@shared_task()
 def cargar_proceso_clasificacion_task( user_id: int | None = None):
     """
     Task de Celery para extraer datos de ICG y poblar los modelos ProcesoClasificacion
@@ -35,6 +35,7 @@ def cargar_proceso_clasificacion_task( user_id: int | None = None):
     # Conectar a ICG
     conexion = conectar_sql_server()
     if not conexion:
+        print("No fue posible conectar a ICG.")
         proceso.estado = 'procesado'
         proceso.save(update_fields=['estado'])
         return f"Fallo de conexión a ICG en Proceso #{proceso.pk}"

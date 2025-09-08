@@ -61,7 +61,7 @@ def get_clasificacion_actual(temp):
 def procesar_clasificacion(proceso: ProcesoClasificacion):
     """
     Extrae de ArticuloClasificacionTemporal, filtra, calcula el porcentaje de cada artículo
-    sobre el total de su sesión (sección+almacén) y el acumulado hasta 100%, y guarda en
+    sobre el total de su familia (familia + almacén) y el acumulado hasta 100%, y guarda en
     ArticuloClasificacionProcesado.
     """
     # 1) QuerySet base con anotaciones
@@ -77,10 +77,10 @@ def procesar_clasificacion(proceso: ProcesoClasificacion):
         .exclude(marca__in=MARCAS_EXCLUIDAS)
         .annotate(
             clasificacion_actual=Case(
-                When(almacen__iexact='MERCASUR CALDAS',   then=F('clasificacion')),
-                When(almacen__iexact='MERCASUR CENTRO',   then=F('clasificacion2')),
-                When(almacen__iexact='MERCASUR CABECERA', then=F('clasificacion3')),
-                When(almacen__iexact='MERCASUR SOTOMAYOR',then=F('clasificacion5')),
+                When(almacen__iexact='MERCASUR CALDAS',    then=F('clasificacion')),
+                When(almacen__iexact='MERCASUR CENTRO',    then=F('clasificacion2')),
+                When(almacen__iexact='MERCASUR CABECERA',  then=F('clasificacion3')),
+                When(almacen__iexact='MERCASUR SOTOMAYOR', then=F('clasificacion5')),
                 default=Value(None),
                 output_field=CharField(),
             )
@@ -104,16 +104,22 @@ def procesar_clasificacion(proceso: ProcesoClasificacion):
         )
     )
 
-    # 2) Convertir a lista y ordenar por sección, almacén y importe descendente
+    # 2) Convertir a lista y ordenar por familia, almacén e importe descendente
     temporales = list(qs)
-    temporales.sort(key=lambda t: (t.seccion, t.almacen, -Decimal(t.importe_num)))
 
-    # 3) Agrupar por (sección, almacén) y calcular porcentajes y acumulados
-    for (seccion, almacen), group in groupby(temporales, key=lambda t: (t.seccion, t.almacen)):
-        print(f"Procesando sección: {seccion}, Almacén: {almacen}")
+    # Helper para evitar problemas con None
+    def _safe(val, default=""):
+        return default if val is None else val
+
+    temporales.sort(key=lambda t: (_safe(t.familia), _safe(t.almacen), -Decimal(t.importe_num)))
+
+    # 3) Agrupar por (familia, almacén) y calcular porcentajes y acumulados
+    for (familia, almacen), group in groupby(temporales, key=lambda t: (_safe(t.familia), _safe(t.almacen))):
+        print(f"Procesando familia: {familia}, Almacén: {almacen}")
         items = list(group)
         total = sum(Decimal(t.importe_num) for t in items)
         acumulado = Decimal('0')
+
         # Reordenar cada grupo internamente por importe_num descendente
         for temp in sorted(items, key=lambda t: -Decimal(t.importe_num)):
             importe_val = Decimal(temp.importe_num)
@@ -122,6 +128,7 @@ def procesar_clasificacion(proceso: ProcesoClasificacion):
             print(f"Porcentaje: {pct:.2f}%")
             acumulado += pct
             print(f"Acumulado: {acumulado:.2f}%")
+
             # Nueva clasificación según unidades y % acumulado
             nueva_clas = calcular_clasificacion(acumulado, temp.unidades)
             print(f"Nueva clasificación: {nueva_clas}")
@@ -132,18 +139,18 @@ def procesar_clasificacion(proceso: ProcesoClasificacion):
                 codigo=temp.codigo,
                 almacen=temp.almacen,
                 defaults={
-                    'seccion':             temp.seccion,
-                    'descripcion':         temp.descripcion,
-                    'referencia':          temp.referencia,
-                    'marca':               temp.marca,
-                    'clasificacion_actual':temp.clasificacion_actual,
-                    # % del artículo sobre el total de la sesión
-                    'suma_importe':        pct,
-                    'importe_num':         importe_val,
-                    'suma_unidades':       temp.unidades,
-                    # acumulado de porcentajes ronda 100 al final
-                    'porcentaje_acumulado':acumulado,
-                    'nueva_clasificacion': nueva_clas,
+                    'seccion':               temp.familia,        # <-- guardamos la familia
+                    'descripcion':           temp.descripcion,
+                    'referencia':            temp.referencia,
+                    'marca':                 temp.marca,
+                    'clasificacion_actual':  temp.clasificacion_actual,
+                    # % del artículo sobre el total de la familia (familia+almacén)
+                    'suma_importe':          pct,
+                    'importe_num':           importe_val,
+                    'suma_unidades':         temp.unidades,
+                    # acumulado de porcentajes (≈100% al final del grupo)
+                    'porcentaje_acumulado':  acumulado,
+                    'nueva_clasificacion':   nueva_clas,
                 }
             )
 
@@ -189,13 +196,13 @@ def notificar_proceso_finalizado(proceso: ProcesoClasificacion, total: int):
     text_content = strip_tags(html_content)  # fallback de texto plano
 
     destinatarios = [
-        'gconectores@mercasur.com.co',
-        'Gestrategadeportafolio@mercasur.com.co',
-        'guerrerademarca@mercasur.com.co',
-        'gresaltadores@mercasur.com.co',
+
         'desarrollador@mercasur.com.co'
     ]
-
+#'gconectores@mercasur.com.co',
+ #       'Gestrategadeportafolio@mercasur.com.co',
+  #      'guerrerademarca@mercasur.com.co',
+   #     'gresaltadores@mercasur.com.co', 
     msg = EmailMultiAlternatives(
         subject=asunto,
         body=text_content,

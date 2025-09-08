@@ -138,6 +138,117 @@ class ArticuloClasificacionFinalAdmin(admin.ModelAdmin):
 
 
 
+
+
+
+
+@admin.register(ProcesoClasificacion)
+class ProcesoClasificacionAdmin(admin.ModelAdmin):
+    list_display = ('proceso_display', 'estado', 'fecha_inicio', 'lanzar_wizard')
+    actions = ['ejecutar_carga']
+
+    def has_add_permission(self, request):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        if obj is not None and obj.estado == 'confirmado':
+            return False
+        return True
+
+    def ejecutar_carga(self, request, queryset):
+        """
+        Acción que inicia la tarea Celery independientemente de la selección.
+        """
+        # Encolar la tarea una sola vez
+        cargar_proceso_clasificacion_task.delay(user_id=request.user.id)
+        self.message_user(request, 
+            "Tarea encolada: carga de clasificación iniciada.", 
+            level=messages.SUCCESS
+        )
+    ejecutar_carga.short_description = "Iniciar carga de clasificación"
+
+    def proceso_display(self, obj):
+        if obj.estado == 'actualizado':
+            return format_html(
+                '<span style="padding:2px 10px; background:#eee; border-left:6px solid #19b23b; font-weight:bold; color:#19b23b;">{} (FINALIZADO)</span>',
+                obj
+            )
+        return str(obj)
+    proceso_display.short_description = 'Proceso'
+
+    def lanzar_wizard(self, obj):
+        estado = obj.estado
+        proceso_id = obj.pk
+        if estado == 'extraccion':
+            url = reverse('admin:Compras_procesoclasificacion_procesar', args=[proceso_id])
+            texto = 'Procesar Extracción'
+        elif estado == 'procesado':
+            url = reverse('admin:Compras_articuloclasificacionprocesado_changelist') + f'?proceso__id__exact={proceso_id}'
+            texto = 'Ir a Procesado'
+        elif estado == 'confirmado':
+            url = reverse('admin:Compras_articuloclasificacionfinal_changelist') + f'?proceso__id__exact={proceso_id}'
+            texto = 'Ir a Confirmado'
+        elif estado == 'actualizado':
+            url = reverse('admin:Compras_articuloclasificacionfinal_changelist') + f'?proceso__id__exact={proceso_id}'
+            texto = 'Finalizado'
+        else:
+            url = '#'
+            texto = estado.capitalize()
+
+        if estado == 'actualizado':
+            return format_html('<span style="color:#aaa;">{}</span>', texto)
+        else:
+            return format_html(
+                '<a class="button" style="background:#19b23b;color:#fff;padding:4px 8px;border-radius:4px;text-decoration:none;" href="{}">{}</a>',
+                url, texto
+            )
+    lanzar_wizard.short_description = 'Acción'
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                '<int:proceso_id>/procesar/',
+                self.admin_site.admin_view(self.procesar_view),
+                name='Compras_procesoclasificacion_procesar'
+            )
+        ]
+        return custom + urls
+
+    def procesar_view(self, request, proceso_id, *args, **kwargs):
+        proceso = get_object_or_404(ProcesoClasificacion, pk=proceso_id)
+
+        # Ejecutar procesar_clasificacion si está en 'extraccion'
+        if proceso.estado == 'extraccion':
+            procesar_clasificacion(proceso)
+            proceso.estado = 'procesado'
+            proceso.save(update_fields=['estado'])
+            messages.success(request, "Extracción procesada correctamente. Ahora puede editar la clasificación.")
+
+        # Redirigir según el estado actual
+        if proceso.estado == 'procesado':
+            opts = ArticuloClasificacionProcesado._meta
+            changelist_url = reverse(
+                'admin:%s_%s_changelist' % (opts.app_label, opts.model_name)
+            )
+            changelist_url += f'?proceso__id__exact={proceso.pk}'
+            return redirect(changelist_url)
+        elif proceso.estado == 'confirmado' or proceso.estado == 'actualizado':
+            opts = ArticuloClasificacionFinal._meta
+            changelist_url = reverse(
+                'admin:%s_%s_changelist' % (opts.app_label, opts.model_name)
+            )
+            changelist_url += f'?proceso__id__exact={proceso.pk}'
+            return redirect(changelist_url)
+        else:
+            # Por defecto, redirigir al listado de procesos
+            opts = ProcesoClasificacion._meta
+            changelist_url = reverse(f'admin:{opts.app_label}_{opts.model_name}_changelist')
+            return redirect(changelist_url)
+            return redirect(changelist_url)
+        # 3) Redirigir
+        return redirect(changelist_url)
+
 @admin.register(ArticuloClasificacionProcesado)
 class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
     list_display = (
@@ -153,7 +264,7 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
     search_fields = ('codigo', 'descripcion', 'referencia')
     ordering = ('seccion', '-suma_importe', 'almacen')
     change_list_template = "admin/Compras/articuloclasificacionprocesado/change_list.html"
-
+    actions = ['exportar_excel']
 
     def import_number_format(self, obj):
         """
@@ -271,114 +382,49 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
         changelist_url = reverse(f'admin:{opts.app_label}_{opts.model_name}_changelist')
         return redirect(f"{changelist_url}?proceso__id__exact={proceso.pk}")
 
-    
+    def exportar_excel(self, request, queryset):
+        import openpyxl
+        from django.http import HttpResponse
+        from openpyxl.utils import get_column_letter
+        from openpyxl.styles import Font
 
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Clasificación Procesada"
 
-
-@admin.register(ProcesoClasificacion)
-class ProcesoClasificacionAdmin(admin.ModelAdmin):
-    list_display = ('proceso_display', 'estado', 'fecha_inicio', 'lanzar_wizard')
-    actions = ['ejecutar_carga']
-
-    def has_add_permission(self, request):
-        return False
-    
-    def has_change_permission(self, request, obj=None):
-        if obj is not None and obj.estado == 'confirmado':
-            return False
-        return True
-
-    def ejecutar_carga(self, request, queryset):
-        """
-        Acción que inicia la tarea Celery independientemente de la selección.
-        """
-        # Encolar la tarea una sola vez
-        cargar_proceso_clasificacion_task.delay(user_id=request.user.id)
-        self.message_user(request, 
-            "Tarea encolada: carga de clasificación iniciada.", 
-            level=messages.SUCCESS
-        )
-    ejecutar_carga.short_description = "Iniciar carga de clasificación"
-
-    def proceso_display(self, obj):
-        if obj.estado == 'actualizado':
-            return format_html(
-                '<span style="padding:2px 10px; background:#eee; border-left:6px solid #19b23b; font-weight:bold; color:#19b23b;">{} (FINALIZADO)</span>',
-                obj
-            )
-        return str(obj)
-    proceso_display.short_description = 'Proceso'
-
-    def lanzar_wizard(self, obj):
-        estado = obj.estado
-        proceso_id = obj.pk
-        if estado == 'extraccion':
-            url = reverse('admin:Compras_procesoclasificacion_procesar', args=[proceso_id])
-            texto = 'Procesar Extracción'
-        elif estado == 'procesado':
-            url = reverse('admin:Compras_articuloclasificacionprocesado_changelist') + f'?proceso__id__exact={proceso_id}'
-            texto = 'Ir a Procesado'
-        elif estado == 'confirmado':
-            url = reverse('admin:Compras_articuloclasificacionfinal_changelist') + f'?proceso__id__exact={proceso_id}'
-            texto = 'Ir a Confirmado'
-        elif estado == 'actualizado':
-            url = reverse('admin:Compras_articuloclasificacionfinal_changelist') + f'?proceso__id__exact={proceso_id}'
-            texto = 'Finalizado'
-        else:
-            url = '#'
-            texto = estado.capitalize()
-
-        if estado == 'actualizado':
-            return format_html('<span style="color:#aaa;">{}</span>', texto)
-        else:
-            return format_html(
-                '<a class="button" style="background:#19b23b;color:#fff;padding:4px 8px;border-radius:4px;text-decoration:none;" href="{}">{}</a>',
-                url, texto
-            )
-    lanzar_wizard.short_description = 'Acción'
-
-    def get_urls(self):
-        urls = super().get_urls()
-        custom = [
-            path(
-                '<int:proceso_id>/procesar/',
-                self.admin_site.admin_view(self.procesar_view),
-                name='Compras_procesoclasificacion_procesar'
-            )
+        # Encabezados
+        headers = [
+            'Familia', 'Código', 'Descripción', 'Referencia', 'Marca',
+            'Clasificación Actual', 'Nueva Clasificación', 'Almacén',
+            'Importe', 'Unidades', 'Porcentaje Acumulado'
         ]
-        return custom + urls
+        ws.append(headers)
+        for col_num, col_name in enumerate(headers, 1):
+            ws.cell(row=1, column=col_num).font = Font(bold=True)
 
-    def procesar_view(self, request, proceso_id, *args, **kwargs):
-        proceso = get_object_or_404(ProcesoClasificacion, pk=proceso_id)
+        # Filas
+        for obj in queryset:
+            ws.append([
+                obj.seccion,  # Si el campo es realmente familia, cámbialo aquí
+                obj.codigo,
+                obj.descripcion,
+                obj.referencia,
+                obj.marca,
+                obj.clasificacion_actual,
+                obj.nueva_clasificacion,
+                obj.almacen,
+                obj.suma_importe,
+                obj.suma_unidades,
+                obj.porcentaje_acumulado,
+            ])
 
-        # Ejecutar procesar_clasificacion si está en 'extraccion'
-        if proceso.estado == 'extraccion':
-            procesar_clasificacion(proceso)
-            proceso.estado = 'procesado'
-            proceso.save(update_fields=['estado'])
-            messages.success(request, "Extracción procesada correctamente. Ahora puede editar la clasificación.")
+        # Ajustar ancho de columnas
+        for i, col in enumerate(headers, 1):
+            ws.column_dimensions[get_column_letter(i)].width = 18
 
-        # Redirigir según el estado actual
-        if proceso.estado == 'procesado':
-            opts = ArticuloClasificacionProcesado._meta
-            changelist_url = reverse(
-                'admin:%s_%s_changelist' % (opts.app_label, opts.model_name)
-            )
-            changelist_url += f'?proceso__id__exact={proceso.pk}'
-            return redirect(changelist_url)
-        elif proceso.estado == 'confirmado' or proceso.estado == 'actualizado':
-            opts = ArticuloClasificacionFinal._meta
-            changelist_url = reverse(
-                'admin:%s_%s_changelist' % (opts.app_label, opts.model_name)
-            )
-            changelist_url += f'?proceso__id__exact={proceso.pk}'
-            return redirect(changelist_url)
-        else:
-            # Por defecto, redirigir al listado de procesos
-            opts = ProcesoClasificacion._meta
-            changelist_url = reverse(f'admin:{opts.app_label}_{opts.model_name}_changelist')
-            return redirect(changelist_url)
-            return redirect(changelist_url)
-        # 3) Redirigir
-        return redirect(changelist_url)
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=clasificacion_procesada.xlsx'
+        wb.save(response)
+        return response
+    exportar_excel.short_description = "Exportar a Excel"
 
