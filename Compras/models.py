@@ -282,7 +282,15 @@ class SugeridoLote(models.Model):
         )
         self.total_lineas = agg.get("n") or 0
         self.total_costo = agg.get("cost") or Decimal("0")
-        self.save(update_fields=["total_lineas", "total_costo"])
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new and self.marca:
+            from Compras.services.icg_import import import_data_sugerido_inventario
+            import_data_sugerido_inventario(user_id=self.creado_por_id, marca=self.marca.nombre)
+        self.recomputar_totales()
+        super().save(update_fields=["total_lineas", "total_costo"])
 
 
 class SugeridoLinea(models.Model):
@@ -343,8 +351,13 @@ class SugeridoLinea(models.Model):
     continuidad_activo = models.BooleanField(default=True, help_text="Activo/Descontinuado según proveedor")
     nuevo_sugerido_prov = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
     descuento_prov_pct = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    # --- Nuevos descuentos adicionales secuenciales ---
+    descuento_prov_pct_2 = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"), help_text="Segundo descuento proveedor % (se aplica tras el primero)")
+    descuento_prov_pct_3 = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"), help_text="Tercer descuento proveedor % (se aplica tras el segundo)")
     nuevo_nombre_prov = models.CharField(max_length=255, blank=True, null=True)
     observaciones_prov = models.CharField(max_length=500, blank=True, null=True)
+    # Presupuesto (monto meta costo proveedor para esta línea – opcional)
+    presupuesto_proveedor = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"), help_text="Presupuesto meta de compra (costo) para esta línea")
 
     estado_linea = models.CharField(max_length=20, choices=EstadoLinea.choices, default=EstadoLinea.PENDIENTE, db_index=True)
 
@@ -410,6 +423,12 @@ class SugeridoLinea(models.Model):
             raise models.ValidationError("El sugerido interno no puede ser negativo.")
         if self.nuevo_sugerido_prov is not None and self.nuevo_sugerido_prov < 0:
             raise models.ValidationError("El nuevo sugerido del proveedor no puede ser negativo.")
+        if self.descuento_prov_pct and self.descuento_prov_pct < 0:
+            raise models.ValidationError("El descuento proveedor no puede ser negativo.")
+        if self.descuento_prov_pct_2 and self.descuento_prov_pct_2 < 0:
+            raise models.ValidationError("El segundo descuento proveedor no puede ser negativo.")
+        if self.descuento_prov_pct_3 and self.descuento_prov_pct_3 < 0:
+            raise models.ValidationError("El tercer descuento proveedor no puede ser negativo.")
 
         # advertencia (no bloqueo) si no múltiplo de embalaje
         self.warning_no_multiplo = False

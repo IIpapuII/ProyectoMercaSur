@@ -1,5 +1,7 @@
 {% extends "admin/change_list.html" %}
 {% load humanize %}
+{% load pivot_extras %}
+{% load l10n %}
 
 {% block result_list %}
   <style>
@@ -8,22 +10,15 @@
     .kpi-title { font-size: 12px; color: #666; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }
     .kpi-value { font-size: 18px; font-weight: 600; }
     @media (max-width: 1100px) { .kpi-wrap { grid-template-columns: repeat(2, 1fr); } }
-
-    /* Botón */
-    .btn-confirm {
-      display: inline-block;
-      margin-bottom: 15px;
-      padding: 10px 18px;
-      background-color: #2e7d32;
-      color: #fff !important;
-      border-radius: 6px;
-      font-weight: 600;
-      text-decoration: none;
-      border: none;
-      cursor: pointer;
-    }
-    .btn-confirm:hover {
-      background-color: #1b5e20;
+    .pivot-table-wrap { width: 100%; overflow-x: auto; }
+    .pivot-table { border-collapse: collapse; width: max-content; min-width: 100%; margin-top: 24px; }
+    .pivot-table th, .pivot-table td { border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; white-space: nowrap; }
+    .pivot-table th { background: #f7f7f7; }
+    .pivot-table input[type="number"] { width: 80px; }
+    .pivot-table input[type="submit"] { padding: 2px 8px; font-size: 13px; }
+    @media (max-width: 700px) {
+      .pivot-table th, .pivot-table td { font-size: 11px; padding: 4px 4px; }
+      .pivot-table input[type="number"] { width: 50px; }
     }
   </style>
 
@@ -49,14 +44,165 @@
       <div class="kpi-title">Costo promedio por artículo</div>
       <div class="kpi-value">${{ kpis.costo_promedio_por_articulo|floatformat:0|intcomma }}</div>
     </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Costo sugerido proveedor</div>
+      <div class="kpi-value">${{ kpis.costo_sugerido_prov|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Gap prov vs calculado</div>
+      <div class="kpi-value">${{ kpis.gap_prov_vs_calc|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Gap interno vs calculado</div>
+      <div class="kpi-value">${{ kpis.gap_interno_vs_calc|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Presupuesto total</div>
+      <div class="kpi-value">${{ kpis.presupuesto_total|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Cumpl. presupuesto %</div>
+      <div class="kpi-value">{{ kpis.cumplimiento_presupuesto_pct|floatformat:1 }}%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Líneas con algún descuento %</div>
+      <div class="kpi-value">{{ kpis.lineas_con_algún_descuento_pct|floatformat:1 }}%</div>
+    </div>
   </div>
-
-  <!-- Botón Confirmar Orden -->
-  <form method="post" action="">
-    {% csrf_token %}
-    <button type="submit" class="btn-confirm">✅ Confirmar Orden de Compra ICG</button>
-  </form>
   {% endif %}
 
-  {{ block.super }}
+  <form method="post" action="">
+    {% csrf_token %}
+    <div class="pivot-table-wrap">
+      <table class="pivot-table">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Referencia</th>
+            <th>Descripción</th>
+            {% for alm in almacenes_list %}
+              <th colspan="16">{{ alm }}</th>
+            {% endfor %}
+          </tr>
+          <tr>
+            <th></th>
+            <th></th>
+            <th></th>
+            {% for alm in almacenes_list %}
+              <th>Clasificación</th>
+              <th>Stock actual</th>
+              <th>Stock mínimo</th>
+              <th>Stock máximo</th>
+              <th>Sugerido calculado</th>
+              <th>Embalaje</th>
+              <th>Cajas calculadas</th>
+              <th>Sugerido interno</th>
+              <th>Último costo</th>
+              <th>Costo línea</th>
+              <th>Estado línea</th>
+              <th>Nuevo sugerido prov</th>
+              <th>Desc. prov 1 %</th>
+              <th>Desc. prov 2 %</th>
+              <th>Desc. prov 3 %</th>
+              <th>Presupuesto prov</th>
+              <th>Continuidad activo</th>
+              <th>Nuevo nombre prov</th>
+              <th>Observaciones prov</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for codigo, almacenes_dict in articulos_pivot.items %}
+          <tr>
+            <td>{{ codigo }}</td>
+            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
+            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
+            {% for alm in almacenes_list %}
+              {% with linea=almacenes_dict|dict_get:alm %}
+              {% if linea %}
+                <td>{{ linea.clasificacion }}</td>
+                <td>{{ linea.stock_actual }}</td>
+                <td>{{ linea.stock_minimo }}</td>
+                <td>{{ linea.stock_maximo }}</td>
+                <td>{{ linea.sugerido_calculado }}</td>
+                <td>{{ linea.embalaje }}</td>
+                <td>{{ linea.cajas_calculadas }}</td>
+                <td>
+                  {% if not es_proveedor %}
+                    <input type="number" name="sugerido_interno_{{ linea.pk }}" value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}" step="0.01" />
+                  {% else %}
+                    {{ linea.sugerido_interno|default_if_none:'' }}
+                  {% endif %}
+                  <input type="hidden" name="linea_id_{{ linea.pk }}" value="{{ linea.pk }}" />
+                </td>
+                <td>{{ linea.ultimo_costo }}</td>
+                <td>{{ linea.costo_linea }}</td>
+                <td>{{ linea.estado_linea }}</td>
+                <td>
+                  {% if es_proveedor %}
+                    <input type="number" name="nuevo_sugerido_prov_{{ linea.pk }}" value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}" step="0.01" />
+                  {% else %}
+                    {{ linea.nuevo_sugerido_prov|default_if_none:'' }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if es_proveedor %}
+                    <input type="number" name="descuento_prov_pct_{{ linea.pk }}" value="{{ linea.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" />
+                  {% else %}
+                    {{ linea.descuento_prov_pct|default_if_none:'' }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if es_proveedor %}
+                    <input type="number" name="descuento_prov_pct_2_{{ linea.pk }}" value="{{ linea.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" />
+                  {% else %}
+                    {{ linea.descuento_prov_pct_2|default_if_none:'' }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if es_proveedor %}
+                    <input type="number" name="descuento_prov_pct_3_{{ linea.pk }}" value="{{ linea.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" />
+                  {% else %}
+                    {{ linea.descuento_prov_pct_3|default_if_none:'' }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if es_proveedor %}
+                    <input type="number" name="presupuesto_proveedor_{{ linea.pk }}" value="{{ linea.presupuesto_proveedor|default_if_none:''|unlocalize }}" step="0.01" />
+                  {% else %}
+                    {{ linea.presupuesto_proveedor|default_if_none:'' }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if es_proveedor %}
+                    <input type="checkbox" name="continuidad_activo_{{ linea.pk }}" {% if linea.continuidad_activo %}checked{% endif %} />
+                  {% else %}
+                    {{ linea.continuidad_activo }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if es_proveedor %}
+                    <input type="text" name="nuevo_nombre_prov_{{ linea.pk }}" value="{{ linea.nuevo_nombre_prov|default_if_none:'' }}" />
+                  {% else %}
+                    {{ linea.nuevo_nombre_prov|default_if_none:'' }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if es_proveedor %}
+                    <input type="text" name="observaciones_prov_{{ linea.pk }}" value="{{ linea.observaciones_prov|default_if_none:'' }}" />
+                  {% else %}
+                    {{ linea.observaciones_prov|default_if_none:'' }}
+                  {% endif %}
+                </td>
+              {% else %}
+                {% for i in "1234567890123456" %}<td></td>{% endfor %}
+              {% endif %}
+              {% endwith %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
 {% endblock %}

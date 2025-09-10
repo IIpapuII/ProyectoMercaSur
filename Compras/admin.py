@@ -176,7 +176,28 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
                     return redirect(f"{url}?proceso__id__exact={proceso_id}")
             except ProcesoClasificacion.DoesNotExist:
                 pass
-        return super().changelist_view(request, extra_context=extra_context)
+        response = super().changelist_view(request, extra_context=extra_context)
+        try:
+            cl = response.context_data["cl"]
+            qs = cl.queryset
+        except Exception:
+            return response
+
+        # Agrupar por artículo y obtener almacenes únicos
+        articulos_pivot = {}
+        almacenes_set = set()
+        for ln in qs:
+            key = ln.codigo_articulo
+            if key not in articulos_pivot:
+                articulos_pivot[key] = {}
+            articulos_pivot[key][ln.nombre_almacen] = ln
+            almacenes_set.add(ln.nombre_almacen)
+        almacenes_list = sorted(almacenes_set)
+
+        response.context_data["articulos_pivot"] = articulos_pivot
+        response.context_data["almacenes_list"] = almacenes_list
+
+        return response
 
     def has_change_permission(self, request, obj=None):
         # Solo permitir edición si el proceso está en 'procesado'
@@ -648,12 +669,12 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
                     oc.costo_total = total
                     oc.save(update_fields=["costo_total"])
 
-                    exito, id_icg, msg = enviar_orden_a_icg(oc)
+                    exito, id_orden_icg, msg = enviar_orden_a_icg(oc)
                     OrdenICGLog.objects.create(
-                        orden=oc, exito=exito, id_orden_icg=id_icg, mensaje=msg, payload=None
+                        orden=oc, exito=exito, id_orden_icg=id_orden_icg, mensaje=msg, payload=None
                     )
                     if exito:
-                        oc.id_orden_icg = id_icg
+                        oc.id_orden_icg = id_orden_icg  # corregido nombre de variable
                         oc.save(update_fields=["id_orden_icg"])
                     generadas += 1
 
@@ -679,33 +700,23 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
     # ---- VISTA POR DEFECTO (interno). La de proveedor se arma dinámicamente ----
     list_display = (
-        "proveedor", "marca",
-         "nombre_almacen",
-         "descripcion_corta",
-        "stock_actual", "stock_minimo", "stock_maximo",
-        "sugerido_calculado","cajas_calculadas", "sugerido_interno",
-        "ultimo_costo", "costo_linea",
-        "clasificacion", 
-        "estado_linea",
-        "nuevo_sugerido_prov", "descuento_prov_pct", "continuidad_activo",
-                "nuevo_nombre_prov", "observaciones_prov",
+        "proveedor", "marca", "nombre_almacen", "codigo_articulo", "get_descripcion_corta",
+        "stock_actual", "sugerido_calculado", "sugerido_interno",
+        "nuevo_sugerido_prov", "descuento_prov_pct", "descuento_prov_pct_2", "descuento_prov_pct_3",
+        "presupuesto_proveedor", "costo_linea", "clasificacion", "estado_linea",
     )
-    list_display_links = ("lote", "codigo_articulo")  # se ajusta dinámicamente
+    list_display_links = ("codigo_articulo",)
     list_editable = ("sugerido_interno",)            # se ajusta dinámicamente
     ordering = ("-lote__fecha_extraccion", "proveedor", "marca", "codigo_articulo")
 
     list_filter = (
-        ("lote__fecha_extraccion", admin.DateFieldListFilter),
-        "lote__estado",
-        ("lote", admin.RelatedOnlyFieldListFilter),
-        "cod_almacen", "nombre_almacen",
+        "nombre_almacen",
         "proveedor", "marca",
         "familia", "subfamilia",
         "clasificacion",
-        "warning_no_multiplo", "warning_incremento_100",
         "estado_linea",
     )
-    search_fields = ("codigo_articulo", "descripcion", "proveedor", "marca", "familia", "subfamilia", "cod_almacen", "nombre_almacen")
+    search_fields = ("codigo_articulo", "referencia")
 
     # Campos RO comunes
     readonly_fields_base = (
@@ -718,8 +729,8 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
         "sugerido_calculado", "cajas_calculadas", "costo_linea",
         "clasificacion",
         "estado_linea", 
-        "nuevo_sugerido_prov", "descuento_prov_pct", "continuidad_activo",
-                "nuevo_nombre_prov", "observaciones_prov",
+        "nuevo_sugerido_prov", "descuento_prov_pct", "descuento_prov_pct_2", "descuento_prov_pct_3", "continuidad_activo",
+        "nuevo_nombre_prov", "observaciones_prov", "presupuesto_proveedor",
     )
 
     # Fieldsets por defecto (interno). El de proveedor se arma dinámicamente.
@@ -747,9 +758,7 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
         ("Edición interna (Compras)", {
             "fields": ("sugerido_interno", "ultima_cantidad_pedida")
         }),
-        ("Respuesta del proveedor", {
-            "fields": ("continuidad_activo", "nuevo_sugerido_prov", "descuento_prov_pct", "nuevo_nombre_prov", "observaciones_prov")
-        }),
+        ("Respuesta del proveedor", {"fields": ("continuidad_activo", "nuevo_sugerido_prov", "descuento_prov_pct", "descuento_prov_pct_2", "descuento_prov_pct_3", "nuevo_nombre_prov", "observaciones_prov", "presupuesto_proveedor")}),
         ("Validaciones", {
             "fields": ("warning_no_multiplo", "warning_incremento_100")
         })
@@ -773,19 +782,9 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
     # --------- LISTA DINÁMICA SEGÚN ROL ----------
     def get_list_display(self, request):
         if self._es_proveedor(request):
-            # Vista proveedor: solo campos que debe diligenciar + contexto mínimo
-            return (
-                "marca", "nombre_almacen",
-                 "descripcion_corta", "referencia",
-                "stock_actual",  # solo lectura
-                "sugerido_calculado",
-                "embalaje",
-                "cajas_calculadas",
-                "nuevo_sugerido_prov", "descuento_prov_pct", "continuidad_activo",
-                "nuevo_nombre_prov", "observaciones_prov",
-                "ultimo_costo", "costo_linea",
-                "clasificacion", "estado_linea",
-            )
+            return ("marca", "nombre_almacen", "codigo_articulo", "get_descripcion_corta", "stock_actual",
+                    "sugerido_calculado", "nuevo_sugerido_prov", "descuento_prov_pct", "descuento_prov_pct_2", "descuento_prov_pct_3",
+                    "presupuesto_proveedor", "costo_linea", "clasificacion", "estado_linea")
         return super().get_list_display(request)
 
     def get_list_display_links(self, request, list_display):
@@ -808,19 +807,98 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         """
-        - Ajusta list_editable según rol.
-        - Agrega KPIs (con separador de miles en plantilla).
+        - Procesa guardado masivo desde la vista pivot (POST).
+        - Ajusta list_editable según rol (solo para vista estándar, la pivot usa formulario propio).
+        - Agrega KPIs y estructuras pivot.
         """
-        # 1) Cambiar list_editable según rol (y restaurarlo al salir)
+        es_proveedor = self._es_proveedor(request)
+
+        # --- Procesar POST (form pivot) ---
+        if request.method == 'POST':
+            from django.db import transaction
+            ids = []
+            for k in request.POST.keys():
+                if k.startswith('linea_id_'):
+                    try:
+                        ids.append(int(k.split('_')[-1]))
+                    except Exception:
+                        pass
+            lineas = self.model.objects.filter(pk__in=ids).select_related('lote')
+            actualizados = 0
+            with transaction.atomic():
+                for ln in lineas:
+                    cambio = False
+                    cla = (ln.clasificacion or '').strip().upper()
+                    estado_lote = (getattr(ln.lote, 'estado', '') or '').strip().upper()
+                    estado_linea = (ln.estado_linea or '').strip().upper()
+
+                    if es_proveedor:
+                        # Validar proveedor dueño
+                        perfil = getattr(request.user, 'perfil_proveedor', None)
+                        if not perfil or perfil.proveedor != ln.proveedor:
+                            continue
+                        # Reglas de edición proveedor
+                        if not (cla in {'A','B'} and estado_linea in {'PENDIENTE','ENVIADA_PROV'} and estado_lote not in {'CONFIRMADO','COMPLETADO'}):
+                            continue
+                        # Campos proveedor
+                        pref = str(ln.pk)
+                        def _dec(val):
+                            if val in (None,'','None'): return None
+                            try:
+                                return Decimal(str(val).replace(',','.'))
+                            except Exception:
+                                return None
+                        nsug = request.POST.get(f'nuevo_sugerido_prov_{pref}')
+                        dcto = request.POST.get(f'descuento_prov_pct_{pref}')
+                        cont = request.POST.get(f'continuidad_activo_{pref}')
+                        nnombre = request.POST.get(f'nuevo_nombre_prov_{pref}')
+                        obs = request.POST.get(f'observaciones_prov_{pref}')
+                        # Asignar si cambió
+                        val_nsug = _dec(nsug)
+                        if val_nsug is not None and val_nsug != ln.nuevo_sugerido_prov:
+                            ln.nuevo_sugerido_prov = val_nsug; cambio = True
+                        val_dcto = _dec(dcto)
+                        if val_dcto is not None and val_dcto != ln.descuento_prov_pct:
+                            ln.descuento_prov_pct = val_dcto; cambio = True
+                        new_cont = bool(cont)  # checkbox
+                        if new_cont != ln.continuidad_activo:
+                            ln.continuidad_activo = new_cont; cambio = True
+                        if nnombre is not None and nnombre != ln.nuevo_nombre_prov:
+                            ln.nuevo_nombre_prov = nnombre; cambio = True
+                        if obs is not None and obs != ln.observaciones_prov:
+                            ln.observaciones_prov = obs; cambio = True
+                    else:
+                        # Interno: sólo sugerido_interno (si permitido)
+                        if cla == 'I' or estado_linea == 'ORDENADA' or estado_lote in {'CONFIRMADO','COMPLETADO'}:
+                            continue
+                        val = request.POST.get(f'sugerido_interno_{ln.pk}')
+                        if val is not None:
+                            try:
+                                nuevo_si = Decimal(val.replace(',','.'))
+                                if nuevo_si != ln.sugerido_interno:
+                                    ln.sugerido_interno = nuevo_si
+                                    cambio = True
+                            except Exception:
+                                pass
+                    if cambio:
+                        ln.save()
+                        actualizados += 1
+            if actualizados:
+                self.message_user(request, f"{actualizados} línea(s) actualizada(s).", level=messages.SUCCESS)
+            else:
+                self.message_user(request, "No hubo cambios aplicables.", level=messages.INFO)
+            # Redirigir (PRG)
+            return redirect(request.get_full_path())
+
+        # --- Ajustar list_editable estándar (no pivot) ---
         original_editable = self.list_editable
-        if self._es_proveedor(request):
+        if es_proveedor:
             self.list_editable = ("nuevo_sugerido_prov", "descuento_prov_pct", "continuidad_activo", "nuevo_nombre_prov", "observaciones_prov")
         else:
             self.list_editable = ("sugerido_interno",)
 
         try:
             response = super().changelist_view(request, extra_context=extra_context)
-            # 2) Agregar KPIs
             try:
                 cl = response.context_data["cl"]
                 qs = cl.queryset
@@ -838,250 +916,40 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                 total_cajas=Coalesce(Sum("cajas_calculadas"), Decimal("0")),
                 total_articulos=Count("id"),
                 articulos_con_pedido=Count(Case(When(Q(sugerido_interno__gt=0) | Q(sugerido_calculado__gt=0), then=1))),
+                presupuesto_total=Coalesce(Sum("presupuesto_proveedor"), Decimal("0")),
+                costo_sugerido_prov=Coalesce(Sum(F("nuevo_sugerido_prov") * F("ultimo_costo")), Decimal("0")),
+                costo_sugerido_interno=Coalesce(Sum(F("sugerido_interno") * F("ultimo_costo")), Decimal("0")),
             )
-            kpis["costo_promedio_por_articulo"] = (
-                (kpis["costo_total"] or 0) / kpis["articulos_con_pedido"]
-                if kpis["articulos_con_pedido"] else Decimal("0")
-            )
+            kpis["costo_promedio_por_articulo"] = (kpis["costo_total"] / kpis["articulos_con_pedido"] if kpis["articulos_con_pedido"] else Decimal("0"))
+            kpis["gap_interno_vs_calc"] = kpis["costo_sugerido_interno"] - kpis["costo_total"]
+            kpis["gap_prov_vs_calc"] = kpis["costo_sugerido_prov"] - kpis["costo_total"]
+            # Cumplimiento presupuesto (% de costo sugerido proveedor sobre presupuesto total)
+            kpis["cumplimiento_presupuesto_pct"] = (kpis["costo_sugerido_prov"] / kpis["presupuesto_total"] * 100) if kpis["presupuesto_total"] else Decimal("0")
+            # KPI adicional: % líneas con descuento >0
+            kpis["lineas_con_algún_descuento_pct"] = (qs.filter(Q(descuento_prov_pct__gt=0) | Q(descuento_prov_pct_2__gt=0) | Q(descuento_prov_pct_3__gt=0)).count() / (kpis["total_articulos"] or 1)) * 100
             response.context_data["kpis"] = kpis
+
+            articulos_pivot = {}
+            almacenes_set = set()
+            for ln in qs:
+                key = ln.codigo_articulo
+                if key not in articulos_pivot:
+                    articulos_pivot[key] = {}
+                articulos_pivot[key][ln.nombre_almacen] = ln
+                almacenes_set.add(ln.nombre_almacen)
+            almacenes_list = sorted(almacenes_set)
+            response.context_data["articulos_pivot"] = articulos_pivot
+            response.context_data["almacenes_list"] = almacenes_list
+            response.context_data["es_proveedor"] = es_proveedor
             return response
         finally:
-            # Restaurar config para no “contaminar” otros requests
             self.list_editable = original_editable
 
-    # --------- CAMPOS EDITABLES/RO POR CLASIFICACIÓN ----------
-    def get_readonly_fields(self, request, obj=None):
-        """
-        Reglas de edición:
-        - Lote CONFIRMADO/COMPLETADO => todo read-only.
-        - Clasif I => todo read-only.
-        - Proveedor: solo A/B, y solo cuando estado_linea sea PENDIENTE o ENVIADA_PROV.
-        Nunca puede editar 'sugerido_interno'.
-        - Interno:
-            * A/B/C => puede editar sugerido_interno y también los campos del proveedor.
-            * Otras clasificaciones => sugerido_interno read-only (los del proveedor quedan editables).
-            * Si la línea ya está ORDENADA => todo read-only.
-        """
-        ro = list(getattr(self, "readonly_fields_base", ()))
+    def get_descripcion_corta(self, obj):
+        txt = getattr(obj, 'descripcion', '') or ''
+        return txt if len(txt) <= 50 else txt[:47] + '…'
+    get_descripcion_corta.short_description = "Descripción"
 
-        # Campos de edición
-        campos_prov = [
-            "continuidad_activo",
-            "nuevo_sugerido_prov",
-            "descuento_prov_pct",
-            "nuevo_nombre_prov",
-            "observaciones_prov",
-        ]
-        campo_interno = ["sugerido_interno"]
-
-        # Sin objeto (add view): nada se crea manualmente desde aquí → todo RO
-        if obj is None:
-            return ro + campos_prov + campo_interno
-
-        # Normaliza
-        cla = (obj.clasificacion or "").strip().upper()
-        estado_linea = (obj.estado_linea or "").strip().upper()
-        estado_lote = (getattr(obj.lote, "estado", "") or "").strip().upper()
-
-        perfil = getattr(request.user, "perfil_proveedor", None)
-        es_proveedor = bool(perfil and getattr(perfil, "proveedor", None))
-
-        # 1) Bloqueos globales por estado de lote
-        if estado_lote in {"CONFIRMADO", "COMPLETADO"}:
-            return ro + campos_prov + campo_interno
-
-        # 2) Clasificación I => histórico / consulta
-        if cla == "I":
-            return ro + campos_prov + campo_interno
-
-        # 3) Bloqueo si la línea ya fue ORDENADA
-        if estado_linea in {"ORDENADA"}:
-            return ro + campos_prov + campo_interno
-
-        # 4) Reglas por rol
-        if es_proveedor:
-            # El proveedor NUNCA edita el sugerido_interno
-            ro_base = ro + campo_interno
-
-            # Solo A/B y solo si la línea está disponible para edición del proveedor
-            if cla in {"A", "B"} and estado_linea in {"PENDIENTE", "ENVIADA_PROV"}:
-                # deja editables los campos del proveedor
-                return ro_base
-            else:
-                # bloquea campos del proveedor también
-                return ro_base + campos_prov
-
-        # Interno (Compras)
-        if cla in {"A", "B", "C"}:
-            # puede editar sugerido_interno y también (si lo deseas) los campos del proveedor
-            # (no añadimos nada a 'ro')
-            return ro
-
-        # Otras clasificaciones: sugerido_interno read-only; resto editable
-        return ro + campo_interno
-    from django.forms import ModelForm
-
-    def get_changelist_formset(self, request, **kwargs):
-        """
-        Deshabilita inputs en la tabla (list_editable) según mismas reglas,
-        para que las filas se comporten como read-only en UI.
-        """
-        formset = super().get_changelist_formset(request, **kwargs)
-        base_init = formset.form.__init__
-
-        perfil = getattr(request.user, "perfil_proveedor", None)
-        es_proveedor = bool(perfil and getattr(perfil, "proveedor", None))
-
-        def _init(formself, *args, **kw):
-            base_init(formself, *args, **kw)
-            obj = getattr(formself, "instance", None)
-            if not obj:
-                return
-
-            cla = (obj.clasificacion or "").strip().upper()
-            estado_linea = (obj.estado_linea or "").strip().upper()
-            estado_lote = (getattr(obj.lote, "estado", "") or "").strip().upper()
-
-            # mismos conjuntos de campos que arriba
-            campos_prov = [
-                "continuidad_activo",
-                "nuevo_sugerido_prov",
-                "descuento_prov_pct",
-                "nuevo_nombre_prov",
-                "observaciones_prov",
-            ]
-            campo_interno = ["sugerido_interno"]
-
-            def _disable(campos):
-                for name in campos:
-                    if name in formself.fields:
-                        f = formself.fields[name]
-                        f.disabled = True
-                        f.widget.attrs["readonly"] = "readonly"
-                        f.widget.attrs["data-ro-i"] = "1"
-                        f.widget.attrs["tabindex"] = "-1"
-
-            # Reglas espejo
-            if estado_lote in {"CONFIRMADO", "COMPLETADO"} or cla == "I" or estado_linea in {"ORDENADA"}:
-                _disable(campos_prov + campo_interno)
-                return
-
-            if es_proveedor:
-                # Proveedor nunca edita el sugerido interno
-                _disable(campo_interno)
-                if not (cla in {"A", "B"} and estado_linea in {"PENDIENTE", "ENVIADA_PROV"}):
-                    _disable(campos_prov)
-            else:
-                # Interno: A/B/C editables; otras clasif => sugerido_interno RO
-                if cla not in {"A", "B", "C"}:
-                    _disable(campo_interno)
-
-        formset.form.__init__ = _init
-        return formset
-
-
-    # --------- QUERYSET RESTRINGIDO PARA PROVEEDOR ----------
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        perfil_prov = getattr(request.user, "perfil_proveedor", None)
-        if perfil_prov:
-            qs = qs.filter(proveedor=perfil_prov.proveedor)
-        return qs
-
-    # --------- GUARDADO / MENSAJES ----------
-    def save_model(self, request, obj, form, change):
-        prev_multiplo = obj.warning_no_multiplo
-        prev_inc = obj.warning_incremento_100
-        super().save_model(request, obj, form, change)
-        obj.lote.recomputar_totales()
-        if obj.warning_no_multiplo and not prev_multiplo:
-            self.message_user(request, "⚠️ El sugerido NO es múltiplo del embalaje.", level=messages.WARNING)
-        if obj.warning_incremento_100 and not prev_inc:
-            self.message_user(request, "⚠️ Incremento >100% frente al último pedido.", level=messages.WARNING)
-
-    # --------- VARIOS ----------
-    @admin.display(description="Descripción")
-    def descripcion_corta(self, obj: SugeridoLinea):
-        txt = obj.descripcion or ""
-        return txt if len(txt) <= 50 else txt[:47] + "…"
-
-    @admin.action(description="(Compras) Setear sugerido interno = sugerido calculado")
-    def accion_set_interno_igual_calculado(self, request, queryset):
-        if self._es_proveedor(request):
-            messages.warning(request, "Acción reservada para Compras.")
-            return
-        n = 0
-        for ln in queryset:
-            if (ln.clasificacion or "").strip().upper() == "I":
-                continue
-            ln.sugerido_interno = ln.sugerido_calculado
-            ln.save(update_fields=["sugerido_interno", "actualizado"])
-            n += 1
-        messages.success(request, f"{n} línea(s) actualizada(s).")
-
-    @admin.action(description="(Proveedor) Enviar respuesta de sugerido")
-    def accion_proveedor_enviar_respuesta(self, request, queryset):
-        perfil_prov = getattr(request.user, "perfil_proveedor", None)
-        if not perfil_prov:
-            messages.warning(request, "Acción reservada para proveedores.")
-            return
-        from .models import SugeridoLineaCambio
-        creados = 0
-        for ln in queryset:
-            if ln.proveedor != perfil_prov.proveedor:
-                continue
-            SugeridoLineaCambio.objects.create(
-                linea=ln, usuario=request.user,
-                continuidad_activo=ln.continuidad_activo,
-                nuevo_sugerido_prov=ln.nuevo_sugerido_prov,
-                descuento_prov_pct=ln.descuento_prov_pct,
-                nuevo_nombre_prov=ln.nuevo_nombre_prov,
-                observaciones_prov=ln.observaciones_prov,
-            )
-            ln.estado_linea = SugeridoLinea.EstadoLinea.RESPONDIDA
-            ln.save(update_fields=["estado_linea", "actualizado"])
-            creados += 1
-        if creados:
-            notificar_compras_respuesta_proveedor(proveedor_nombre=perfil_prov.proveedor, lineas=queryset, request=request)
-        messages.success(request, f"Respuesta enviada. {creados} línea(s) respondida(s).")
-
-    @admin.action(description="Exportar CSV (vista actual)")
-    def accion_exportar_csv(self, request, queryset):
-        response = HttpResponse(content_type="text/csv")
-        fn = f"sugerido_lineas_{timezone.now().date()}.csv"
-        response["Content-Disposition"] = f'attachment; filename="{fn}"'
-        w = csv.writer(response, delimiter=";")
-        w.writerow([
-            "Lote","Proveedor","Marca","Almacén","Código","Descripción",
-            "StockAct","StockMin","StockMax",
-            "UdsBase","UdsMult","Embalaje",
-            "CostoUnit","SugeridoBase","Factor","SugeridoCalc",
-            "SugeridoInterno","NuevoSugProv","DescProv%","Continuidad","NuevoNombre","Obs",
-            "Cajas","CostoLinea","Clasificación",
-            "NoMultiplo","Inc>100%"
-        ])
-        for ln in queryset:
-            w.writerow([
-                ln.lote_id, ln.proveedor, (ln.marca or ""),
-                f"{ln.cod_almacen}-{ln.nombre_almacen}",
-                ln.codigo_articulo, ln.descripcion,
-                ln.stock_actual, ln.stock_minimo, ln.stock_maximo,
-                ln.uds_compra_base, ln.uds_compra_mult, ln.embalaje,
-                ln.ultimo_costo, ln.sugerido_base, ln.factor_almacen,
-                ln.sugerido_calculado,
-                ln.sugerido_interno, ln.nuevo_sugerido_prov, ln.descuento_prov_pct,
-                ln.continuidad_activo, (ln.nuevo_nombre_prov or ""), (ln.observaciones_prov or ""),
-                ln.cajas_calculadas, ln.costo_linea, (ln.clasificacion or ""),
-                ln.warning_no_multiplo, ln.warning_incremento_100
-            ])
-        return response
-
-    @admin.action(description="Exportar XLSX (vista actual)")
-    def accion_exportar_xlsx(self, request, queryset):
-        wb_bytes, filename = export_lines_to_xlsx(queryset, filename=f"sugerido_lineas_{timezone.now().strftime('%Y%m%d_%H%M')}.xlsx")
-        resp = HttpResponse(wb_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return resp
 
 # Registros (si no los tenías ya)
 @admin.register(SugeridoLineaCambio)

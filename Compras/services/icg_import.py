@@ -1,4 +1,3 @@
-
 from django.utils import timezone
 from ..models import SugeridoLote, SugeridoLinea
 from django.contrib.auth import get_user_model
@@ -8,7 +7,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.conf import settings
 
-def import_data_sugerido_inventario(user_id: int | None = None) -> str:
+def import_data_sugerido_inventario(user_id: int | None = None, marca: str | None = None) -> str:
     """
     Importa datos desde ICG y genera líneas de sugerido.
     - Crea Proveedor y Marca si no existen.
@@ -192,7 +191,10 @@ WITH Base AS (
         ON p.CODPROVEEDOR = r.CODPROVEEDOR 
     WHERE AR.DESCATALOGADO = 'F'
       AND a.CODALMACEN IN ('1','2','3','50')
-      AND AR.REFPROVEEDOR in ('7702047001769','7501006721317','7702047001769','7707036000075','7702004013514') 
+"""
+    if marca:
+        consulta += f"      AND MC.DESCRIPCION = '{marca.replace("'", "''")}'\n"
+    consulta += """
 ),
 Calculos AS (
     SELECT
