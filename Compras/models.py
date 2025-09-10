@@ -180,6 +180,8 @@ class Proveedor(models.Model):
     nit = models.CharField(max_length=32, blank=True, null=True)
     email_contacto = models.EmailField(blank=True, null=True)
     activo = models.BooleanField(default=True)
+    # Nuevo: presupuesto mensual asignado al proveedor
+    presupuesto_mensual = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"), help_text="Presupuesto mensual de compras asignado a este proveedor")
 
     class Meta:
         verbose_name = "Proveedor"

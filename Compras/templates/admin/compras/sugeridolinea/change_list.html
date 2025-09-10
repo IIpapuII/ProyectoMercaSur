@@ -68,7 +68,22 @@
       <div class="kpi-title">Líneas con algún descuento %</div>
       <div class="kpi-value">{{ kpis.lineas_con_algún_descuento_pct|floatformat:1 }}%</div>
     </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Costo confirmado mes</div>
+      <div class="kpi-value">${{ kpis.costo_confirmado_mes|floatformat:0|intcomma }}</div>
+    </div>
   </div>
+  {% endif %}
+
+  {% if lote_id_actual %}
+    <div style="margin:10px 0; display:flex; gap:8px; flex-wrap:wrap;">
+      {% if es_proveedor %}
+        <a class="button" style="background:#007bff;color:#fff;padding:6px 12px;border-radius:4px;" href="{% url 'admin:confirmar_lote_proveedor' lote_id_actual %}">Confirmar Sugerido</a>
+      {% else %}
+        <a class="button" style="background:#17a2b8;color:#fff;padding:6px 12px;border-radius:4px;" href="{% url 'admin:importar_a_icg' lote_id_actual %}">Importar a ICG</a>
+        <a class="button" style="background:#6c757d;color:#fff;padding:6px 12px;border-radius:4px;" href="{% url 'admin:confirmar_pedido_icg' lote_id_actual %}">Confirmar Pedido ICG (Info)</a>
+      {% endif %}
+    </div>
   {% endif %}
 
   <form method="post" action="">
@@ -81,7 +96,7 @@
             <th>Referencia</th>
             <th>Descripción</th>
             {% for alm in almacenes_list %}
-              <th colspan="16">{{ alm }}</th>
+              <th colspan="19">{{ alm }}</th>
             {% endfor %}
           </tr>
           <tr>

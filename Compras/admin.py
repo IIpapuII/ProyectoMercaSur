@@ -805,6 +805,106 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
             base = [f for f in base if f not in ("proveedor",)]
         return base
 
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path('confirmar-lote-proveedor/<int:lote_id>/', self.admin_site.admin_view(self.confirmar_lote_proveedor), name='confirmar_lote_proveedor'),
+            path('confirmar-pedido-icg/<int:lote_id>/', self.admin_site.admin_view(self.confirmar_pedido_icg), name='confirmar_pedido_icg'),
+            path('importar-a-icg/<int:lote_id>/', self.admin_site.admin_view(self.importar_a_icg), name='importar_a_icg'),
+        ]
+        return custom + urls
+
+    # --- Métodos de acciones personalizadas ---
+    def confirmar_lote_proveedor(self, request, lote_id):
+        from .models import SugeridoLote
+        lote = get_object_or_404(SugeridoLote, pk=lote_id)
+        perfil = getattr(request.user, 'perfil_proveedor', None)
+        if not perfil:
+            self.message_user(request, 'Solo un usuario proveedor puede confirmar el sugerido.', level=messages.ERROR)
+            return redirect('..')
+        if lote.estado in {SugeridoLote.Estado.CONFIRMADO, SugeridoLote.Estado.COMPLETADO}:
+            self.message_user(request, 'El lote ya fue confirmado/completado.', level=messages.INFO)
+            return redirect(request.META.get('HTTP_REFERER', '..'))
+        # (Opcional) validar que todas las líneas del lote sean del mismo proveedor del perfil
+        if not lote.lineas.filter(proveedor=perfil.proveedor).exists():
+            self.message_user(request, 'No hay líneas de su proveedor en este lote.', level=messages.WARNING)
+            return redirect(request.META.get('HTTP_REFERER', '..'))
+        lote.estado = SugeridoLote.Estado.CONFIRMADO
+        lote.save(update_fields=['estado'])
+        self.message_user(request, f'Lote {lote.id} confirmado correctamente.', level=messages.SUCCESS)
+        return redirect(request.META.get('HTTP_REFERER', '..'))
+
+    def confirmar_pedido_icg(self, request, lote_id):
+        from .models import SugeridoLote
+        lote = get_object_or_404(SugeridoLote, pk=lote_id)
+        if getattr(request.user, 'perfil_proveedor', None):
+            self.message_user(request, 'Acción solo para usuarios internos.', level=messages.ERROR)
+            return redirect('..')
+        if lote.estado == SugeridoLote.Estado.COMPLETADO:
+            self.message_user(request, 'El lote ya está completado.', level=messages.INFO)
+            return redirect(request.META.get('HTTP_REFERER', '..'))
+        lote.estado = SugeridoLote.Estado.COMPLETADO
+        lote.save(update_fields=['estado'])
+        self.message_user(request, f'Lote {lote.id} marcado como COMPLETADO (informativo).', level=messages.SUCCESS)
+        return redirect(request.META.get('HTTP_REFERER', '..'))
+
+    def importar_a_icg(self, request, lote_id):
+        """Genera órdenes de compra para el lote y las envía a ICG (similar a acción del admin de Lote)."""
+        from django.db import transaction
+        from .models import SugeridoLote, OrdenCompra, OrdenCompraLinea, SugeridoLinea
+        from .services.icg_integration import enviar_orden_a_icg
+        lote = get_object_or_404(SugeridoLote, pk=lote_id)
+        if getattr(request.user, 'perfil_proveedor', None):
+            self.message_user(request, 'Acción solo para usuarios internos.', level=messages.ERROR)
+            return redirect('..')
+        generadas = 0
+        grupos = {}
+        for ln in lote.lineas.all():
+            qty = (ln.sugerido_interno or 0) or (ln.sugerido_calculado or 0)
+            if (ln.clasificacion or '').upper() == 'I' or qty <= 0:
+                continue
+            key = (ln.proveedor, ln.cod_almacen, ln.nombre_almacen)
+            grupos.setdefault(key, []).append(ln)
+        with transaction.atomic():
+            from decimal import Decimal as _D
+            from django.utils import timezone
+            for (prov, codalm, nomalm), lineas in grupos.items():
+                num = f"OC-{lote.id}-{prov[:8]}-{codalm}-{timezone.now().strftime('%H%M%S')}"
+                oc = OrdenCompra.objects.create(
+                    lote=lote, proveedor=prov, cod_almacen=codalm, nombre_almacen=nomalm,
+                    numero_orden=num, generado_por=request.user
+                )
+                total = _D('0')
+                for l in lineas:
+                    qty = (l.sugerido_interno or 0) or (l.sugerido_calculado or 0)
+                    costo_total = qty * (l.ultimo_costo or 0)
+                    OrdenCompraLinea.objects.create(
+                        orden=oc,
+                        codigo_articulo=l.codigo_articulo,
+                        descripcion=l.descripcion,
+                        embalaje=l.embalaje,
+                        cantidad=qty,
+                        costo_unitario=l.ultimo_costo,
+                        costo_total=costo_total,
+                        clasificacion=l.clasificacion,
+                    )
+                    total += costo_total
+                    l.estado_linea = SugeridoLinea.EstadoLinea.ORDENADA
+                    l.save(update_fields=['estado_linea', 'actualizado'])
+                oc.costo_total = total
+                oc.save(update_fields=['costo_total'])
+                exito, id_orden_icg, msg = enviar_orden_a_icg(oc)
+                from .models import OrdenICGLog
+                OrdenICGLog.objects.create(orden=oc, exito=exito, id_orden_icg=id_orden_icg, mensaje=msg, payload=None)
+                if exito:
+                    oc.id_orden_icg = id_orden_icg
+                    oc.save(update_fields=['id_orden_icg'])
+                generadas += 1
+        lote.estado = SugeridoLote.Estado.COMPLETADO
+        lote.save(update_fields=['estado'])
+        self.message_user(request, f'{generadas} orden(es) generadas e importadas a ICG.', level=messages.SUCCESS)
+        return redirect(request.META.get('HTTP_REFERER', '..'))
+
     def changelist_view(self, request, extra_context=None):
         """
         - Procesa guardado masivo desde la vista pivot (POST).
@@ -940,7 +1040,14 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
             almacenes_list = sorted(almacenes_set)
             response.context_data["articulos_pivot"] = articulos_pivot
             response.context_data["almacenes_list"] = almacenes_list
-            response.context_data["es_proveedor"] = es_proveedor
+            # Después de response.context_data["es_proveedor"] = es_proveedor (ya abajo) añadimos lote_id_actual
+            lote_id = request.GET.get('lote__id__exact')
+            if not lote_id:
+                ids = list(qs.values_list('lote_id', flat=True).distinct())
+                if len(ids) == 1:
+                    lote_id = ids[0]
+            response.context_data['lote_id_actual'] = lote_id
+            response.context_data['es_proveedor'] = es_proveedor
             return response
         finally:
             self.list_editable = original_editable
