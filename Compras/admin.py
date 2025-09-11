@@ -906,97 +906,97 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
         return redirect(request.META.get('HTTP_REFERER', '..'))
 
     def changelist_view(self, request, extra_context=None):
-        """
-        - Procesa guardado masivo desde la vista pivot (POST).
-        - Ajusta list_editable según rol (solo para vista estándar, la pivot usa formulario propio).
-        - Agrega KPIs y estructuras pivot.
-        """
         es_proveedor = self._es_proveedor(request)
-
-        # --- Procesar POST (form pivot) ---
+        original_editable = self.list_editable
         if request.method == 'POST':
             from django.db import transaction
-            ids = []
+            # Recolectar IDs desde cualquier campo enviado
+            ids = set()
             for k in request.POST.keys():
                 if k.startswith('linea_id_'):
-                    try:
-                        ids.append(int(k.split('_')[-1]))
-                    except Exception:
-                        pass
+                    try: ids.add(int(k.split('_')[-1]))
+                    except: pass
+                elif k.startswith(('sugerido_interno_','nuevo_sugerido_prov_','descuento_prov_pct_','descuento_prov_pct_2_','descuento_prov_pct_3_','continuidad_activo_','nuevo_nombre_prov_','observaciones_prov_')):
+                    try: ids.add(int(k.split('_')[-1]))
+                    except: pass
             lineas = self.model.objects.filter(pk__in=ids).select_related('lote')
             actualizados = 0
             with transaction.atomic():
                 for ln in lineas:
                     cambio = False
                     cla = (ln.clasificacion or '').strip().upper()
-                    estado_lote = (getattr(ln.lote, 'estado', '') or '').strip().upper()
+                    estado_lote = (getattr(ln.lote,'estado','') or '').strip().upper()
                     estado_linea = (ln.estado_linea or '').strip().upper()
-
                     if es_proveedor:
-                        # Validar proveedor dueño
-                        perfil = getattr(request.user, 'perfil_proveedor', None)
+                        perfil = getattr(request.user,'perfil_proveedor',None)
                         if not perfil or perfil.proveedor != ln.proveedor:
                             continue
-                        # Reglas de edición proveedor
-                        if not (cla in {'A','B'} and estado_linea in {'PENDIENTE','ENVIADA_PROV'} and estado_lote not in {'CONFIRMADO','COMPLETADO'}):
-                            continue
-                        # Campos proveedor
-                        pref = str(ln.pk)
-                        def _dec(val):
-                            if val in (None,'','None'): return None
-                            try:
-                                return Decimal(str(val).replace(',','.'))
-                            except Exception:
-                                return None
-                        nsug = request.POST.get(f'nuevo_sugerido_prov_{pref}')
-                        dcto = request.POST.get(f'descuento_prov_pct_{pref}')
-                        cont = request.POST.get(f'continuidad_activo_{pref}')
-                        nnombre = request.POST.get(f'nuevo_nombre_prov_{pref}')
-                        obs = request.POST.get(f'observaciones_prov_{pref}')
-                        # Asignar si cambió
-                        val_nsug = _dec(nsug)
-                        if val_nsug is not None and val_nsug != ln.nuevo_sugerido_prov:
-                            ln.nuevo_sugerido_prov = val_nsug; cambio = True
-                        val_dcto = _dec(dcto)
-                        if val_dcto is not None and val_dcto != ln.descuento_prov_pct:
-                            ln.descuento_prov_pct = val_dcto; cambio = True
-                        new_cont = bool(cont)  # checkbox
-                        if new_cont != ln.continuidad_activo:
-                            ln.continuidad_activo = new_cont; cambio = True
-                        if nnombre is not None and nnombre != ln.nuevo_nombre_prov:
-                            ln.nuevo_nombre_prov = nnombre; cambio = True
-                        if obs is not None and obs != ln.observaciones_prov:
-                            ln.observaciones_prov = obs; cambio = True
-                    else:
-                        # Interno: sólo sugerido_interno (si permitido)
                         if cla == 'I' or estado_linea == 'ORDENADA' or estado_lote in {'CONFIRMADO','COMPLETADO'}:
                             continue
-                        val = request.POST.get(f'sugerido_interno_{ln.pk}')
-                        if val is not None:
+                        pid = ln.pk
+                        def _dec(v):
+                            if v in (None,'','None'): return None
+                            try: return Decimal(str(v).replace(',','.'))
+                            except: return None
+                        m_nsug = request.POST.get(f'nuevo_sugerido_prov_{pid}')
+                        m_d1 = request.POST.get(f'descuento_prov_pct_{pid}')
+                        m_d2 = request.POST.get(f'descuento_prov_pct_2_{pid}')
+                        m_d3 = request.POST.get(f'descuento_prov_pct_3_{pid}')
+                        m_cont = request.POST.get(f'continuidad_activo_{pid}')
+                        m_nom = request.POST.get(f'nuevo_nombre_prov_{pid}')
+                        m_obs = request.POST.get(f'observaciones_prov_{pid}')
+                        v_nsug = _dec(m_nsug)
+                        if v_nsug is not None and v_nsug != ln.nuevo_sugerido_prov:
+                            ln.nuevo_sugerido_prov = v_nsug; cambio = True
+                        v_d1 = _dec(m_d1)
+                        if v_d1 is not None and v_d1 != ln.descuento_prov_pct:
+                            ln.descuento_prov_pct = v_d1; cambio = True
+                        v_d2 = _dec(m_d2)
+                        if v_d2 is not None and v_d2 != ln.descuento_prov_pct_2:
+                            ln.descuento_prov_pct_2 = v_d2; cambio = True
+                        v_d3 = _dec(m_d3)
+                        if v_d3 is not None and v_d3 != ln.descuento_prov_pct_3:
+                            ln.descuento_prov_pct_3 = v_d3; cambio = True
+                        v_cont = bool(m_cont)
+                        if v_cont != ln.continuidad_activo:
+                            ln.continuidad_activo = v_cont; cambio = True
+                        if m_nom is not None and m_nom != ln.nuevo_nombre_prov:
+                            ln.nuevo_nombre_prov = m_nom; cambio = True
+                        if m_obs is not None and m_obs != ln.observaciones_prov:
+                            ln.observaciones_prov = m_obs; cambio = True
+                        # Propagar descuentos a todas las líneas del mismo código (agrupador)
+                        if any(x is not None for x in [v_d1, v_d2, v_d3]):
+                            hermanos = self.model.objects.filter(lote_id=ln.lote_id, codigo_articulo=ln.codigo_articulo).exclude(pk=ln.pk)
+                            for h in hermanos:
+                                h_cambio = False
+                                if v_d1 is not None and h.descuento_prov_pct != v_d1:
+                                    h.descuento_prov_pct = v_d1; h_cambio = True
+                                if v_d2 is not None and h.descuento_prov_pct_2 != v_d2:
+                                    h.descuento_prov_pct_2 = v_d2; h_cambio = True
+                                if v_d3 is not None and h.descuento_prov_pct_3 != v_d3:
+                                    h.descuento_prov_pct_3 = v_d3; h_cambio = True
+                                if h_cambio:
+                                    h.save(update_fields=['descuento_prov_pct','descuento_prov_pct_2','descuento_prov_pct_3'])
+                                    actualizados += 1
+                    else:
+                        if cla == 'I' or estado_linea == 'ORDENADA' or estado_lote in {'CONFIRMADO','COMPLETADO'}:
+                            continue
+                        pid = ln.pk
+                        m_si = request.POST.get(f'sugerido_interno_{pid}')
+                        if m_si is not None:
                             try:
-                                nuevo_si = Decimal(val.replace(',','.'))
-                                if nuevo_si != ln.sugerido_interno:
-                                    ln.sugerido_interno = nuevo_si
-                                    cambio = True
-                            except Exception:
-                                pass
+                                v_si = Decimal(m_si.replace(',','.'))
+                                if v_si != ln.sugerido_interno:
+                                    ln.sugerido_interno = v_si; cambio = True
+                            except: pass
                     if cambio:
-                        ln.save()
+                        ln.save(update_fields=[f for f in ['nuevo_sugerido_prov','descuento_prov_pct','descuento_prov_pct_2','descuento_prov_pct_3','continuidad_activo','nuevo_nombre_prov','observaciones_prov','sugerido_interno'] if f in ln.get_deferred_fields() or True])
                         actualizados += 1
             if actualizados:
                 self.message_user(request, f"{actualizados} línea(s) actualizada(s).", level=messages.SUCCESS)
             else:
                 self.message_user(request, "No hubo cambios aplicables.", level=messages.INFO)
-            # Redirigir (PRG)
             return redirect(request.get_full_path())
-
-        # --- Ajustar list_editable estándar (no pivot) ---
-        original_editable = self.list_editable
-        if es_proveedor:
-            self.list_editable = ("nuevo_sugerido_prov", "descuento_prov_pct", "continuidad_activo", "nuevo_nombre_prov", "observaciones_prov")
-        else:
-            self.list_editable = ("sugerido_interno",)
-
         try:
             response = super().changelist_view(request, extra_context=extra_context)
             try:
@@ -1085,6 +1085,7 @@ class OrdenICGLogAdmin(admin.ModelAdmin):
     list_display = ("orden", "fecha", "accion", "exito", "id_orden_icg")
     list_filter = ("exito", "fecha")
     search_fields = ("orden__numero_orden", "id_orden_icg", "mensaje")
+    
 # Catálogos
 class AsignacionMarcaVendedorInline(admin.TabularInline):
     model = AsignacionMarcaVendedor
