@@ -7,13 +7,11 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.conf import settings
 
-def import_data_sugerido_inventario(user_id: int | None = None, marca: str | None = None) -> str:
+def import_data_sugerido_inventario(user_id: int | None = None, marca: str | None = None, lote_id: int | None = None) -> str:
     """
     Importa datos desde ICG y genera líneas de sugerido.
-    - Crea Proveedor y Marca si no existen.
-    - Asigna FK por *_id.
-    - Evita duplicados por lote (cod_almacen + codigo_articulo).
-    Retorna: string con el resumen de inserciones/omisiones.
+    Si se pasa lote_id, usa ese SugeridoLote existente (no crea uno nuevo).
+    Caso contrario crea un lote nuevo basado en timestamp.
     """
 
     # ------------------------ Helpers internos ------------------------
@@ -105,16 +103,24 @@ def import_data_sugerido_inventario(user_id: int | None = None, marca: str | Non
     # ------------------------ Inicio del proceso ------------------------
     usuario = _resolve_usuario(user_id)
     now = timezone.localtime(timezone.now())
-    nombre_lote = f"Lote {now.strftime('%Y-%m-%d %H:%M:%S')}"
 
-    # Si se ejecuta 2 veces en el mismo segundo, reusa el lote
-    proceso, creado = SugeridoLote.objects.get_or_create(
-        nombre=nombre_lote,
-        defaults={
-            "fecha_extraccion": now,
-            "creado_por": usuario,
-        },
-    )
+    if lote_id:
+        try:
+            proceso = SugeridoLote.objects.get(pk=lote_id)
+            creado = False
+        except SugeridoLote.DoesNotExist:
+            return f"Lote con id={lote_id} no existe."
+    else:
+        nombre_lote = f"Lote {now.strftime('%Y-%m-%d %H:%M:%S')}"
+        proceso, creado = SugeridoLote.objects.get_or_create(
+            nombre=nombre_lote,
+            defaults={
+                "fecha_extraccion": now,
+                "creado_por": usuario,
+            },
+        )
+
+    # Si no se creó uno nuevo, se puede optar por actualizar el usuario/fecha del lote existente
     if not creado:
         # Reasigna usuario/fecha si quieres, o déjalo así para idempotencia
         pass

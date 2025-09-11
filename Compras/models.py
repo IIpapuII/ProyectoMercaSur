@@ -288,9 +288,10 @@ class SugeridoLote(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         super().save(*args, **kwargs)
+        # Solo importar automáticamente si es nuevo y se indicó marca
         if is_new and self.marca:
             from Compras.services.icg_import import import_data_sugerido_inventario
-            import_data_sugerido_inventario(user_id=self.creado_por_id, marca=self.marca.nombre)
+            import_data_sugerido_inventario(user_id=self.creado_por_id, marca=self.marca.nombre, lote_id=self.pk)
         self.recomputar_totales()
         super().save(update_fields=["total_lineas", "total_costo"])
 
@@ -370,9 +371,6 @@ class SugeridoLinea(models.Model):
     warning_incremento_100 = models.BooleanField(default=False)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["lote", "cod_almacen", "codigo_articulo"], name="uniq_linea_por_lote_alm_art"),
-        ]
         indexes = [
             models.Index(fields=["lote", "proveedor"]),
             models.Index(fields=["proveedor", "marca"]),
