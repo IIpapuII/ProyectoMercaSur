@@ -27,7 +27,7 @@ MARCAS_EXCLUIDAS = [
     'MERCASUR FRUVER', 'MERCASUR PANADERIA', 'BOCADILLOS CATICA CONSIGN',
     'UNBROKEN CONSIGNACION', 'UMBROKEN MASCOTAS CONSIGN'
 ]
-CLASIFICACION_EXCLUIDAS = ['I', 'T', 'R']
+CLASIFICACION_EXCLUIDAS = ['I']
 
 def calcular_clasificacion(acumulado: float, unidades: float):
     reglas = ReglaClasificacion.objects.filter(activa=True).order_by('orden')

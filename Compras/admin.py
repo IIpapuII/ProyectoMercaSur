@@ -267,7 +267,15 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
         else:
             articulos = ArticuloClasificacionProcesado.objects.filter(proceso=proceso)
             creados = []
+            # Identificar artículos nuevos usando el modelo temporal y el campo estado_nuevo
+            from .models import ArticuloClasificacionTemporal
+            codigos_nuevos = set(ArticuloClasificacionTemporal.objects.filter(proceso=proceso, estado_nuevo='NUEVO').values_list('codigo', flat=True))
             for art in articulos:
+                # Si el artículo es nuevo, resultado_validacion=False; si no, lógica original
+                if art.codigo in codigos_nuevos:
+                    resultado_validacion = False
+                else:
+                    resultado_validacion = (art.clasificacion_actual == art.nueva_clasificacion)
                 final = ArticuloClasificacionFinal(
                     proceso=proceso,
                     seccion=art.seccion,
@@ -277,7 +285,7 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
                     marca=art.marca,
                     clasificacion_actual=art.clasificacion_actual,
                     nueva_clasificacion=art.nueva_clasificacion,
-                    resultado_validacion=(art.clasificacion_actual == art.nueva_clasificacion),  # lógica personalizada si deseas
+                    resultado_validacion=resultado_validacion,
                     almacen=art.almacen,
                     estado_accion="PENDIENTE",
                     usuario=request.user,
