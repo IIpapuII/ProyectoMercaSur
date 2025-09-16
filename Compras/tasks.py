@@ -72,55 +72,92 @@ WITH VentasFiltradas AS (
             ON AL.CODARTICULO = AR.CODARTICULO
         WHERE TRY_CONVERT(DATE, AC.FECHA, 105) BETWEEN '{fecha_inicio}' AND '{fecha_fin}'
           AND AC.TIPODOC IN ('13','82','83')
-), VentasDetalle AS (
+), -- Ventas previas a la ventana (cualquier almacén)
+VentasPrevias AS (
+    SELECT DISTINCT
+        AL.CODARTICULO
+    FROM ALBVENTALIN AL
+    INNER JOIN ALBVENTACAB AC
+        ON AL.NUMSERIE = AC.NUMSERIE
+       AND AL.NUMALBARAN = AC.NUMALBARAN
+       AND AL.N = AC.N
+    WHERE TRY_CONVERT(DATE, AC.FECHA, 105) < '{fecha_inicio}'
+      AND AC.TIPODOC IN ('13','82','83')
+),
+VentasDetalle AS (
     SELECT
         CODALMACEN,
         CODARTICULO,
         SUM(UNID1) AS Unidad,
         SUM(ROUND(PRECIO * (1 - DTO / 100.0) * UNID1, 2)) +
         SUM(CASE 
-            WHEN (DTO = 0 AND PRECIO = 0 AND PRECIODEFECTO > 0 AND UNIDADESTOTAL > 0)
-            THEN (UNIDADESTOTAL * PRECIODEFECTO)
-            ELSE 0
-        END) AS Importe
+                WHEN (DTO = 0 AND PRECIO = 0 AND PRECIODEFECTO > 0 AND UNIDADESTOTAL > 0)
+                     THEN (UNIDADESTOTAL * PRECIODEFECTO)
+                ELSE 0
+            END) AS Importe
     FROM VentasFiltradas
     GROUP BY CODALMACEN, CODARTICULO
 )
-select
-AR.CODARTICULO AS 'Código',
-DP.DESCRIPCION as 'Departamento',
-SC.DESCRIPCION AS 'Sección',
-FM.DESCRIPCION AS 'Familia',
-FM.DESCRIPCION AS 'SubFamilia',
-MC.DESCRIPCION as 'Marca',
-AR.DESCRIPCION as 'Descripción',
-AR.DESCATALOGADO as 'Descat',
-AR.TIPO as 'Tipo',
-AR.REFPROVEEDOR as 'Referencia',
-ACL.CLASIFICACION,
-ACL.CLASIFICACION2,
-ACL.CLASIFICACION3,
-ACL.CLASIFICACION5,
-0 as 'Unidades-compras',
-VPA.Unidad as'Unidades',
-0 as'Coste',
-0 as'Beneficio',
-VPA.Importe as'IMPORTE',
-0 as'%S/V',
-S.STOCK as'StockActual',
-0 as'Valoración Stock Actual',
-A.NOMBREALMACEN as 'Almacen'
-from ARTICULOS AR 
-INNER JOIN ARTICULOSCAMPOSLIBRES ACL ON AR.CODARTICULO = ACL.CODARTICULO
-LEFT JOIN DEPARTAMENTO DP ON AR.DPTO = DP.NUMDPTO
-LEFT JOIN SECCIONES SC ON AR.SECCION = SC.NUMSECCION AND DP.NUMDPTO = SC.NUMDPTO
-LEFT JOIN FAMILIAS FM ON DP.NUMDPTO = FM.NUMDPTO AND SC.NUMSECCION = FM.NUMSECCION AND AR.FAMILIA = FM.NUMFAMILIA
-LEFT JOIN SUBFAMILIAS SF ON AR.DPTO = SF.NUMDPTO AND AR.SECCION = SF.NUMSECCION AND AR.FAMILIA = SF.NUMFAMILIA AND AR.SUBFAMILIA = SF.NUMSUBFAMILIA
-LEFT JOIN MARCA MC ON AR.MARCA = MC.CODMARCA
-LEFT JOIN VentasDetalle VPA ON AR.CODARTICULO  = VPA.CODARTICULO
-LEFT JOIN ALMACEN A ON A.CODALMACEN = VPA.CODALMACEN
-LEFT JOIN STOCKS S ON AR.CODARTICULO = S.CODARTICULO  AND A.CODALMACEN  = S.CODALMACEN
-
+SELECT
+    AR.CODARTICULO AS 'Código',
+    DP.DESCRIPCION  AS 'Departamento',
+    SC.DESCRIPCION  AS 'Sección',
+    FM.DESCRIPCION  AS 'Familia',
+    SF.DESCRIPCION  AS 'SubFamilia',      -- (ojo: antes estabas usando FM aquí)
+    MC.DESCRIPCION  AS 'Marca',
+    AR.DESCRIPCION  AS 'Descripción',
+    AR.DESCATALOGADO AS 'Descat',
+    AR.TIPO         AS 'Tipo',
+    AR.REFPROVEEDOR AS 'Referencia',
+    ACL.CLASIFICACION,
+    ACL.CLASIFICACION2,
+    ACL.CLASIFICACION3,
+    ACL.CLASIFICACION5,
+    0               AS 'Unidades-compras',
+    VPA.Unidad      AS 'Unidades',
+    0               AS 'Coste',
+    0               AS 'Beneficio',
+    VPA.Importe     AS 'IMPORTE',
+    0               AS '%S/V',
+    S.STOCK         AS 'StockActual',
+    0               AS 'Valoración Stock Actual',
+    A.NOMBREALMACEN AS 'Almacen',
+    -- Flags de "nuevo"
+    CASE 
+        WHEN VPA.CODARTICULO IS NOT NULL AND VP.CODARTICULO IS NULL THEN 1
+        ELSE 0
+    END             AS EsNuevo,
+    CASE 
+        WHEN VPA.CODARTICULO IS NOT NULL AND VP.CODARTICULO IS NULL THEN 'NUEVO'
+        ELSE 'EXISTENTE'
+    END             AS EstadoNuevo
+FROM ARTICULOS AR 
+INNER JOIN ARTICULOSCAMPOSLIBRES ACL 
+    ON AR.CODARTICULO = ACL.CODARTICULO
+LEFT JOIN DEPARTAMENTO DP 
+    ON AR.DPTO = DP.NUMDPTO
+LEFT JOIN SECCIONES SC 
+    ON AR.SECCION = SC.NUMSECCION AND DP.NUMDPTO = SC.NUMDPTO
+LEFT JOIN FAMILIAS FM 
+    ON DP.NUMDPTO = FM.NUMDPTO 
+   AND SC.NUMSECCION = FM.NUMSECCION 
+   AND AR.FAMILIA = FM.NUMFAMILIA
+LEFT JOIN SUBFAMILIAS SF
+    ON AR.DPTO = SF.NUMDPTO 
+   AND AR.SECCION = SF.NUMSECCION 
+   AND AR.FAMILIA = SF.NUMFAMILIA 
+   AND AR.SUBFAMILIA = SF.NUMSUBFAMILIA
+LEFT JOIN MARCA MC 
+    ON AR.MARCA = MC.CODMARCA
+LEFT JOIN VentasDetalle VPA 
+    ON AR.CODARTICULO  = VPA.CODARTICULO
+LEFT JOIN ALMACEN A 
+    ON A.CODALMACEN = VPA.CODALMACEN
+LEFT JOIN STOCKS S 
+    ON AR.CODARTICULO = S.CODARTICULO  
+   AND A.CODALMACEN  = S.CODALMACEN
+LEFT JOIN VentasPrevias VP
+    ON AR.CODARTICULO = VP.CODARTICULO
 """
 
     # Ejecutar y cargar datos
@@ -155,7 +192,8 @@ LEFT JOIN STOCKS S ON AR.CODARTICULO = S.CODARTICULO  AND A.CODALMACEN  = S.CODA
             porcentaje_sv='0',
             stock_actual=row['StockActual'],
             valoracion_stock_actual='0',
-            almacen=row['Almacen']
+            almacen=row['Almacen'],
+            estado_nuevo=row['EstadoNuevo'],
         ))
     ArticuloClasificacionTemporal.objects.bulk_create(articulos)
     notificar_proceso_finalizado(proceso, len(articulos))

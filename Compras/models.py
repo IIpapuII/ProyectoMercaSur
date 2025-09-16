@@ -87,6 +87,7 @@ class ArticuloClasificacionTemporal(models.Model):
     stock_actual = models.FloatField(blank=True, null=True)
     valoracion_stock_actual = models.CharField(max_length=200, blank=True, null=True)
     almacen = models.CharField(max_length=100, blank=True, null=True)
+    estado_nuevo = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return f"{self.codigo} - {self.descripcion}"
