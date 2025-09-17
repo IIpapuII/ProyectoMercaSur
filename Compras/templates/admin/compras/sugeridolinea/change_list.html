@@ -25,6 +25,18 @@
     th.group-head.alm-2 { background:#eaf2f8; }
     th.group-head.alm-3 { background:#f5eef8; }
     th.group-head.alm-4 { background:#fef9e7; }
+
+    /* Modal de confirmación (nuevo) */
+    .ms-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:9999; }
+    .ms-modal { background:#fff; border-radius:10px; width:min(520px, 92%); box-shadow:0 8px 24px rgba(0,0,0,.2); overflow:hidden; }
+    .ms-modal__head { padding:14px 16px; background:#ffc107; color:#333; font-weight:600; }
+    .ms-modal__body { padding:16px; color:#333; }
+    .ms-modal__foot { padding:12px 16px; display:flex; gap:8px; justify-content:flex-end; background:#f7f7f7; }
+    .ms-btn { padding:6px 12px; border-radius:6px; text-decoration:none; border:1px solid transparent; cursor:pointer; }
+    .ms-btn--cancel { background:#fff; border-color:#ccc; color:#333; }
+    .ms-btn--danger { background:#dc3545; color:#fff; }
+    .ms-hidden { display:none; }
+    .ms-modal-backdrop.show { display:flex; }
   </style>
 
   {% if kpis %}
@@ -44,14 +56,90 @@
   {% endif %}
 
   {% if lote_id_actual %}
-    <div style="margin:10px 0; display:flex; gap:8px; flex-wrap:wrap;">
-      {% if es_proveedor %}
-        <a class="button" style="background:#007bff;color:#fff;padding:6px 12px;border-radius:4px;" href="{% url 'admin:confirmar_lote_proveedor' lote_id_actual %}">Confirmar Sugerido</a>
-      {% else %}
-        <a class="button" style="background:#17a2b8;color:#fff;padding:6px 12px;border-radius:4px;" href="{% url 'admin:importar_a_icg' lote_id_actual %}">Importar a ICG</a>
-        <a class="button" style="background:#6c757d;color:#fff;padding:6px 12px;border-radius:4px;" href="{% url 'admin:confirmar_pedido_icg' lote_id_actual %}">Confirmar Pedido ICG (Info)</a>
-      {% endif %}
-    </div>
+    {# Ocultar botones si el lote está COMPLETADO #}
+    {% if not inputs_disabled %}
+      <div style="margin:10px 0; display:flex; gap:8px; flex-wrap:wrap;">
+        {% if es_proveedor and not ocultar_boton_confirmar_proveedor %}
+          <a
+            class="button"
+            style="background:#007bff;color:#fff;padding:6px 12px;border-radius:4px;"
+            href="{% url 'admin:confirmar_lote_proveedor' lote_id_actual %}"
+            data-confirm="Al confirmar el sugerido no se puede deshacer. ¿Desea continuar?">
+            Confirmar Sugerido
+          </a>
+        {% elif not es_proveedor %}
+          <a
+            class="button"
+            style="background:#17a2b8;color:#fff;padding:6px 12px;border-radius:4px;"
+            href="{% url 'admin:importar_a_icg' lote_id_actual %}"
+            data-confirm="Importar a ICG generará la orden de pedido. Esta acción no se puede deshacer. ¿Desea continuar?">
+            Importar a ICG
+          </a>
+          <a
+            class="button"
+            style="background:#6c757d;color:#fff;padding:6px 12px;border-radius:4px;"
+            href="{% url 'admin:confirmar_pedido_icg' lote_id_actual %}"
+            data-confirm="Marcar como COMPLETADO no se puede deshacer. ¿Desea continuar?">
+            Confirmar Pedido ICG (Info)
+          </a>
+        {% endif %}
+      </div>
+
+      <!-- Modal de confirmación solo si hay botones -->
+      <div id="ms-confirm" class="ms-modal-backdrop">
+        <div class="ms-modal">
+          <div class="ms-modal__head">Confirmación requerida</div>
+          <div class="ms-modal__body">
+            <p id="ms-confirm-text" style="margin:0;"></p>
+          </div>
+          <div class="ms-modal__foot">
+            <button type="button" class="ms-btn ms-btn--cancel" data-ms-cancel>Cancelar</button>
+            <button type="button" class="ms-btn ms-btn--danger" data-ms-accept>Continuar</button>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function() {
+          const modal = document.getElementById('ms-confirm');
+          if (!modal) return;
+          const txt = modal.querySelector('#ms-confirm-text');
+          const btnCancel = modal.querySelector('[data-ms-cancel]');
+          const btnAccept = modal.querySelector('[data-ms-accept]');
+          let targetHref = null;
+
+          function openModal(message, href) {
+            targetHref = href;
+            txt.textContent = message || '¿Desea continuar?';
+            modal.classList.add('show');
+          }
+          function closeModal() {
+            modal.classList.remove('show');
+            targetHref = null;
+          }
+
+          document.addEventListener('click', function(ev) {
+            const link = ev.target.closest('a[data-confirm]');
+            if (!link) return;
+            ev.preventDefault();
+            openModal(link.getAttribute('data-confirm'), link.getAttribute('href'));
+          }, true);
+
+          btnCancel && btnCancel.addEventListener('click', closeModal);
+          btnAccept && btnAccept.addEventListener('click', function() {
+            if (targetHref) window.location.assign(targetHref);
+          });
+          // Cerrar al hacer click fuera del cuadro
+          modal.addEventListener('click', function(ev) {
+            if (ev.target === modal) closeModal();
+          });
+          // ESC para cerrar
+          document.addEventListener('keydown', function(ev) {
+            if (ev.key === 'Escape') closeModal();
+          });
+        })();
+      </script>
+    {% endif %}
   {% endif %}
 
   <form method="post" action="">
@@ -102,21 +190,27 @@
             <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}<input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" />{% endif %}{% endfor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
               {% else %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}<input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" />{% endif %}{% endfor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
               {% else %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_2|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}<input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" />{% endif %}{% endfor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
               {% else %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_3|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
@@ -132,7 +226,7 @@
                 <td>{{ linea.cajas_calculadas }}</td>
                 <td>
                   {% if es_proveedor %}
-                    <input type="number" name="nuevo_sugerido_prov_{{ linea.pk }}" value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}" step="0.01" />
+                    <input type="number" name="nuevo_sugerido_prov_{{ linea.pk }}" value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
                   {% else %}
                     {{ linea.nuevo_sugerido_prov|default_if_none:'' }}
                   {% endif %}
@@ -140,7 +234,7 @@
 
                 <td>
                   {% if not es_proveedor %}
-                    <input type="number" name="sugerido_interno_{{ linea.pk }}" value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}" step="0.01" />
+                    <input type="number" name="sugerido_interno_{{ linea.pk }}" value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
                   {% else %}
                     {{ linea.sugerido_interno|default_if_none:'' }}
                   {% endif %}
@@ -154,21 +248,27 @@
             {% endfor %}
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}<input type="checkbox" name="continuidad_activo_{{ ln.pk }}" {% if ln.continuidad_activo %}checked{% endif %} />{% endif %}{% endfor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="checkbox" name="continuidad_activo_{{ ln.pk }}" {% if ln.continuidad_activo %}checked{% endif %} {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
               {% else %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.continuidad_activo }}{% endif %}{% endfor %}
               {% endif %}
             </td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}<input type="text" name="nuevo_nombre_prov_{{ ln.pk }}" value="{{ ln.nuevo_nombre_prov|default_if_none:'' }}" />{% endif %}{% endfor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="text" name="nuevo_nombre_prov_{{ ln.pk }}" value="{{ ln.nuevo_nombre_prov|default_if_none:'' }}" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
               {% else %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.nuevo_nombre_prov|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}<input type="text" name="observaciones_prov_{{ ln.pk }}" value="{{ ln.observaciones_prov|default_if_none:'' }}" />{% endif %}{% endfor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="text" name="observaciones_prov_{{ ln.pk }}" value="{{ ln.observaciones_prov|default_if_none:'' }}" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
               {% else %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.observaciones_prov|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}

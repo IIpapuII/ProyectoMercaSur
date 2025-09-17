@@ -7,13 +7,13 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.conf import settings
 
-def import_data_sugerido_inventario(user_id: int | None = None, marca: str | None = None, lote_id: int | None = None) -> str:
+def import_data_sugerido_inventario(user_id: int | None = None, marca: str | None = None, lote_id: int | None = None, provedor:str | None =None) -> str:
     """
     Importa datos desde ICG y genera líneas de sugerido.
     Si se pasa lote_id, usa ese SugeridoLote existente (no crea uno nuevo).
     Caso contrario crea un lote nuevo basado en timestamp.
     """
-
+    print(f"Importando datos ICG para marca={marca}, proveedor={provedor}, lote_id={lote_id}, user_id={user_id}")
     # ------------------------ Helpers internos ------------------------
     def _safe_int(val, default=0):
         try:
@@ -30,6 +30,15 @@ def import_data_sugerido_inventario(user_id: int | None = None, marca: str | Non
             if val is None:
                 return default
             return float(val)
+        except Exception:
+            return default
+
+    # NUEVO: asegurar cast a string con strip sin fallar en int/None
+    def _safe_str(val, default=""):
+        try:
+            if val is None:
+                return default
+            return str(val).strip()
         except Exception:
             return default
 
@@ -136,6 +145,7 @@ def import_data_sugerido_inventario(user_id: int | None = None, marca: str | Non
     # ------------------------ Conexión y consulta ------------------------
     conexion = conectar_sql_server()
     if conexion is None or isinstance(conexion, str):
+        # No cambies estado del SugeridoLote aquí; solo retorna mensaje de error
         try:
             setattr(proceso, "estado", "FALLIDO")
             proceso.save(update_fields=["estado"])
@@ -184,7 +194,9 @@ WITH Base AS (
     where
         a2.CODARTICULO = AR.CODARTICULO 
     ORDER BY
-        TRY_CONVERT(date, a.FECHAPEDIDO, 105) DESC) as ultimodescuento
+        TRY_CONVERT(date, a.FECHAPEDIDO, 105) DESC) as ultimodescuento,
+    p.CODPROVEEDOR as CodProveedor,
+	(select i.IVA from IMPUESTOS i where i.TIPOIVA = AR.IMPUESTOCOMPRA ) as iva
     FROM ARTICULOS AR 
     INNER JOIN ARTICULOSCAMPOSLIBRES ACL 
         ON AR.CODARTICULO = ACL.CODARTICULO
@@ -213,6 +225,8 @@ WITH Base AS (
 """
     if marca:
         consulta += f"      AND MC.DESCRIPCION = '{marca.replace("'", "''")}'\n"
+    if provedor:
+        consulta += f"      AND p.NOMPROVEEDOR = '{provedor.replace("'", "''")}'\n"
     consulta += """
 ),
 Calculos AS (
@@ -271,7 +285,9 @@ SELECT
         ELSE CEILING( (CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) 
                       / CAST(embalaje AS DECIMAL(18,4)) ) * embalaje * ultimo_costo
     END                                         AS [CostoLinea],
-    ultimodescuento AS [UltimoDescuentoPedido]
+    ultimodescuento AS [UltimoDescuentoPedido],
+    CodProveedor as [CodProveedor],
+    iva as [IVA]
 FROM Calculos
 WHERE sugerido_base > 0
 ORDER BY nombre_almacen, codigo;
@@ -288,11 +304,7 @@ ORDER BY nombre_almacen, codigo;
             pass
 
     if df is None:
-        try:
-            setattr(proceso, "estado", "FALLIDO")
-            proceso.save(update_fields=["estado"])
-        except Exception:
-            pass
+        # No cambies estado del SugeridoLote aquí
         return f"Error ejecutando consulta en Proceso #{proceso.pk}"
 
     # ------------------------ Resolver modelos de FK ------------------------
@@ -304,11 +316,17 @@ ORDER BY nombre_almacen, codigo;
     # ------------------------ Construir mapas y crear faltantes ------------------------
     proveedores = set()
     marcas = set()
+    # NUEVO: mapa de nombre proveedor -> CodProveedor (ICG)
+    prov_cod_map = {}
     for _, row in df.iterrows():
-        p = (row.get("Proveedor") or "").strip()
-        m = (row.get("Marca") or "").strip()
+        p = _safe_str(row.get("Proveedor"))
+        m = _safe_str(row.get("Marca"))
         if p:
             proveedores.add(p)
+            # tomar primer código no vacío visto
+            codp = _safe_str(row.get("CodProveedor"))
+            if codp and p not in prov_cod_map:
+                prov_cod_map[p] = codp
         if m:
             marcas.add(m)
 
@@ -317,14 +335,33 @@ ORDER BY nombre_almacen, codigo;
     proveedores.add(default_prov_name)
 
     prov_defaults = {
-        # Ajusta estos defaults según tu modelo Proveedor
         "nit": "",
         "email_contacto": "",
         "activo": True,
+        "cod_icg": None,
     }
     prov_map = _ensure_catalogo_by_nombre(ProveedorModel, proveedores, prov_defaults)
     marca_map = _ensure_catalogo_by_nombre(MarcaModel, marcas, defaults=None)
     default_prov_id = prov_map.get(default_prov_name)
+
+    # NUEVO: asignar/actualizar cod_icg a todos los proveedores con código disponible
+    if prov_cod_map:
+        name_to_id = {name: pid for name, pid in prov_map.items() if name in prov_cod_map}
+        if name_to_id:
+            objs = ProveedorModel.objects.filter(id__in=name_to_id.values()).only("id", "cod_icg")
+            id_to_obj = {o.id: o for o in objs}
+            to_update = []
+            for name, pid in name_to_id.items():
+                obj = id_to_obj.get(pid)
+                code = _safe_str(prov_cod_map.get(name))
+                if not obj or not code:
+                    continue
+                actual = _safe_str(getattr(obj, "cod_icg", ""))
+                if actual != code:
+                    obj.cod_icg = code
+                    to_update.append(obj)
+            if to_update:
+                ProveedorModel.objects.bulk_update(to_update, ["cod_icg"])
 
     # ------------------------ Evitar duplicados por lote ------------------------
     existentes = set(
@@ -337,16 +374,16 @@ ORDER BY nombre_almacen, codigo;
     omitidos = 0
 
     for _, row in df.iterrows():
-        cod_alm = (row.get("CODALMACEN") or "").strip()
-        cod_art = (row.get("Código") or "")
+        cod_alm = _safe_str(row.get("CODALMACEN"))
+        cod_art = _safe_str(row.get("Código"))
 
         if (cod_alm, cod_art) in existentes:
             omitidos += 1
             continue
         existentes.add((cod_alm, cod_art))
 
-        prov_name = (row.get("Proveedor") or "").strip()
-        marca_name = (row.get("Marca") or "").strip()
+        prov_name = _safe_str(row.get("Proveedor"))
+        marca_name = _safe_str(row.get("Marca"))
 
         proveedor_id = prov_map.get(prov_name) or default_prov_id
         marca_id = marca_map.get(marca_name) if marca_name else None
@@ -355,16 +392,16 @@ ORDER BY nombre_almacen, codigo;
             SugeridoLinea(
                 lote=proceso,
                 cod_almacen=cod_alm,
-                nombre_almacen=row.get("Almacen"),
-                codigo_articulo=row.get("Código"),
-                referencia=row.get("Referencia"),
-                departamento=row.get("Departamento"),
-                seccion=row.get("Sección"),
-                familia=row.get("Familia"),
-                subfamilia=row.get("SubFamilia"),
-                proveedor_id=proveedor_id,             # FK obligatorio (PROTECT)
-                marca_id=marca_id,                     # FK opcional (SET_NULL)
-                descripcion=row.get("Descripción"),
+                nombre_almacen=_safe_str(row.get("Almacen")) or None,
+                codigo_articulo=cod_art,
+                referencia=_safe_str(row.get("Referencia")) or None,
+                departamento=_safe_str(row.get("Departamento")) or None,
+                seccion=_safe_str(row.get("Sección")) or None,
+                familia=_safe_str(row.get("Familia")) or None,
+                subfamilia=_safe_str(row.get("SubFamilia")) or None,
+                proveedor_id=proveedor_id,
+                marca_id=marca_id,
+                descripcion=_safe_str(row.get("Descripción")) or None,
                 stock_actual=_safe_int(row.get("StockActual")),
                 stock_minimo=_safe_int(row.get("StockMinimo")),
                 stock_maximo=_safe_int(row.get("StockMaximo")),
@@ -372,14 +409,16 @@ ORDER BY nombre_almacen, codigo;
                 uds_compra_mult=_safe_int(row.get("UdsCompraMult"), 1),
                 embalaje=_safe_int(row.get("Embalaje"), 1),
                 ultimo_costo=_safe_float(row.get("UltimoCosto")),
-                tipo=row.get("Tipo"),
-                clasificacion=row.get("Clasificacion"),
+                tipo=_safe_str(row.get("Tipo")) or None,
+                clasificacion=_safe_str(row.get("Clasificacion")) or None,
                 sugerido_base=_safe_int(row.get("SugeridoBase")),
                 factor_almacen=_safe_float(row.get("Factor"), 1.0),
                 sugerido_calculado=_safe_int(row.get("Sugerido")),
                 cajas_calculadas=_safe_float(row.get("Cajas")),
                 costo_linea=_safe_float(row.get("CostoLinea")),
                 descuento_prov_pct=_safe_float(row.get("UltimoDescuentoPedido")),
+                cod_proveedor=_safe_str(row.get("CodProveedor")) or None,
+                IVA=_safe_float(row.get("IVA"), 0.0),
             )
         )
         insertados += 1
@@ -387,11 +426,9 @@ ORDER BY nombre_almacen, codigo;
     with transaction.atomic():
         if registros:
             SugeridoLinea.objects.bulk_create(registros, batch_size=1000)
-        try:
-            setattr(proceso, "estado", "PROCESADO")
-            proceso.save(update_fields=["estado"])
-        except Exception:
-            pass
+        # Evitar poner estado 'PROCESADO' en SugeridoLote desde este servicio
+        # ...existing code...
+    # ...existing code...
 
     return (
         f"Proceso #{proceso.pk} -> líneas nuevas: {insertados}, "

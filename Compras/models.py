@@ -180,9 +180,9 @@ class Proveedor(models.Model):
     nit = models.CharField(max_length=32, blank=True, null=True)
     email_contacto = models.EmailField(blank=True, null=True)
     activo = models.BooleanField(default=True)
+    cod_icg = models.CharField(max_length=50, blank=True, null=True, help_text="Código del proveedor en ICG")
     # Nuevo: presupuesto mensual asignado al proveedor
     presupuesto_mensual = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"), help_text="Presupuesto mensual de compras asignado a este proveedor")
-
     class Meta:
         verbose_name = "Proveedor"
         verbose_name_plural = "Proveedores"
@@ -256,6 +256,7 @@ class SugeridoLote(models.Model):
         ENVIADO = "ENVIADO", "Enviado a proveedor"
         CONFIRMADO = "CONFIRMADO", "Confirmado por proveedor"
         COMPLETADO = "COMPLETADO", "Completado/Orden generada"
+        ANULADO = "ANULADO", "Anulado"
 
     nombre = models.CharField(max_length=255, help_text="Identificador legible del lote (e.g. Sugerido 2025-08 corte semanal)")
     marca = models.ForeignKey(Marca, on_delete=models.SET_NULL, null=True, blank=True, related_name="lotes", help_text="Marca asociada del sugerido")
@@ -267,8 +268,14 @@ class SugeridoLote(models.Model):
 
     total_lineas = models.PositiveIntegerField(default=0)
     total_costo = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
-
+    pedidos_icg = models.JSONField(
+        default=list, blank=True, null=True,
+        help_text="Listado de pedidos ICG generados por almacén (JSON)."
+    )
     observaciones = models.TextField(blank=True, null=True)
+    numserie = models.CharField(max_length=10, blank=True, null=True, help_text="Número de serie para pedidos en ICG")
+    numpedido = models.CharField(max_length=20, blank=True, null=True, help_text="Número de pedido actual en ICG (se autoincrementa al importar)")
+    subserie = models.CharField(max_length=5, blank=True, null=True, help_text="Subserie para pedidos en ICG")
 
     class Meta:
         ordering = ["-fecha_extraccion"]
@@ -289,10 +296,9 @@ class SugeridoLote(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         super().save(*args, **kwargs)
-        # Solo importar automáticamente si es nuevo y se indicó marca
         if is_new and self.marca:
             from Compras.services.icg_import import import_data_sugerido_inventario
-            import_data_sugerido_inventario(user_id=self.creado_por_id, marca=self.marca.nombre, lote_id=self.pk)
+            import_data_sugerido_inventario(user_id=self.creado_por_id, marca=self.marca.nombre, lote_id=self.pk, provedor=self.proveedor.nombre)
             # NUEVO: notificar vendedor asignado (si hay proveedor y marca)
             if self.proveedor and self.marca:
                 try:
@@ -300,8 +306,15 @@ class SugeridoLote(models.Model):
                     notificar_vendedor_lote_asignado(proveedor=self.proveedor, marca=self.marca, lote=self)
                 except Exception:
                     pass
+        # Recalcula totales luego del import y decide estado inicial
         self.recomputar_totales()
-        super().save(update_fields=["total_lineas", "total_costo"])
+        update_fields = ["total_lineas", "total_costo"]
+        if is_new:
+            nuevo_estado = self.Estado.ENVIADO if self.total_lineas > 0 else self.Estado.PENDIENTE
+            if self.estado != nuevo_estado:
+                self.estado = nuevo_estado
+                update_fields.append("estado")
+        super().save(update_fields=update_fields)
 auditlog.register(SugeridoLote)
 
 class SugeridoLinea(models.Model):
@@ -377,6 +390,8 @@ class SugeridoLinea(models.Model):
 
     warning_no_multiplo = models.BooleanField(default=False)
     warning_incremento_100 = models.BooleanField(default=False)
+    IVA = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"), help_text="IVA aplicable al artículo (%)")
+    cod_proveedor = models.CharField(max_length=50, blank=True, null=True, help_text="Código del artículo según el proveedor")
 
     class Meta:
         indexes = [

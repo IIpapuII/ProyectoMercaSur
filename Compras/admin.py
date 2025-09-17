@@ -21,6 +21,11 @@ from presupuesto.utils import formato_dinero_colombiano
 from django.db.models.functions import Coalesce
 from decimal import Decimal
 
+from .services.kpi_proveedores import calcular_cumplimiento_presupuesto
+from .services.icg_integration import enviar_orden_a_icg
+# NUEVO: servicio que crea el pedido directamente en ICG
+from .services.icg_pedidos import crear_pedido_compra_desde_lote
+
 @admin.register(ReglaClasificacion)
 class ReglaClasificacionAdmin(admin.ModelAdmin):
     list_display = ('clase', 'umbral_minimo', 'umbral_maximo', 'activa', 'orden')
@@ -451,6 +456,7 @@ from .services.exports import export_lines_to_xlsx
 from django.core.mail import send_mail
 from .services.icg_integration import enviar_orden_a_icg
 from django.db.models import Sum, Count, Case, When, F, Q, DecimalField
+from django.db.models import Exists, OuterRef
 
 # ─────────────────────────────
 # Filtros personalizados
@@ -508,6 +514,83 @@ class RangoCostoFilter(admin.SimpleListFilter):
         return qs
 
 
+# NUEVO: Filtro de Marca limitado al lote actual
+class MarcaEnLoteFilter(admin.SimpleListFilter):
+    title = "Marca"
+    parameter_name = "marca__id__exact"
+
+    def lookups(self, request, model_admin):
+        from .models import SugeridoLinea  # evitar import circular en tiempo de carga
+        lote_id = request.GET.get("lote__id__exact")
+        if lote_id:
+            rows = (
+                SugeridoLinea.objects
+                .filter(lote_id=lote_id, marca__isnull=False)
+                .values_list("marca_id", "marca__nombre")
+                .distinct()
+                .order_by("marca__nombre")
+            )
+        else:
+            # Fallback: limitar a lo presente en el queryset actual del admin
+            qs = model_admin.get_queryset(request).filter(marca__isnull=False)
+            rows = qs.values_list("marca_id", "marca__nombre").distinct().order_by("marca__nombre")
+        return [(mid, name) for mid, name in rows]
+
+    def queryset(self, request, qs):
+        val = self.value()
+        if val:
+            return qs.filter(marca_id=val)
+        return qs
+
+
+# NUEVO: base para filtros de valores distintos dentro del lote
+class _BaseEnLoteDistinctFilter(admin.SimpleListFilter):
+    title = ""
+    parameter_name = ""
+    field_name = ""
+
+    def lookups(self, request, model_admin):
+        qs = model_admin.get_queryset(request)
+        lote_id = request.GET.get("lote__id__exact")
+        if lote_id:
+            qs = qs.filter(lote_id=lote_id)
+        # excluir null/vacío
+        qs = qs.exclude(**{f"{self.field_name}__isnull": True}).exclude(**{self.field_name: ""})
+        vals = qs.values_list(self.field_name, flat=True).distinct().order_by(self.field_name)
+        return [(v, v) for v in vals]
+
+    def queryset(self, request, queryset):
+        val = self.value()
+        if val:
+            return queryset.filter(**{self.field_name: val})
+        return queryset
+
+class NombreAlmacenEnLoteFilter(_BaseEnLoteDistinctFilter):
+    title = "Almacén"
+    parameter_name = "nombre_almacen__exact"
+    field_name = "nombre_almacen"
+
+class FamiliaEnLoteFilter(_BaseEnLoteDistinctFilter):
+    title = "Familia"
+    parameter_name = "familia__exact"
+    field_name = "familia"
+
+class SubfamiliaEnLoteFilter(_BaseEnLoteDistinctFilter):
+    title = "Subfamilia"
+    parameter_name = "subfamilia__exact"
+    field_name = "subfamilia"
+
+class ClasificacionEnLoteFilter(_BaseEnLoteDistinctFilter):
+    title = "Clasificación"
+    parameter_name = "clasificacion__exact"
+    field_name = "clasificacion"
+
+class EstadoLineaEnLoteFilter(_BaseEnLoteDistinctFilter):
+    title = "Estado línea"
+    parameter_name = "estado_linea__exact"
+    field_name = "estado_linea"
+
+
 # ─────────────────────────────
 # Inlines / Admins
 # ─────────────────────────────
@@ -546,30 +629,31 @@ class SugeridoLineaInline(admin.TabularInline):
 
 @admin.register(SugeridoLote)
 class SugeridoLoteAdmin(admin.ModelAdmin):
-    list_display = ("id", "nombre", "fecha_extraccion", "estado", "clasificacion_filtro",
+    list_display = ("id", "nombre", "fecha_extraccion", "estado",
                     "total_lineas", "total_costo", "creado_por", "ver_lineas")
-    list_filter = ("estado", "clasificacion_filtro")
+    list_filter = ("estado", "creado_por",)
     search_fields = ("nombre", "id", "creado_por__username")
     date_hierarchy = "fecha_extraccion"
+    readonly_fields = ("total_lineas","total_costo", "fecha_extraccion", "estado", 
+                       "clasificacion_filtro","numserie","numpedido","subserie","pedidos_icg","creado_por",)
     actions = [
         "accion_enviar_a_proveedor",
         "accion_marcar_confirmado",
         "accion_marcar_completado",
         "accion_exportar_xlsx",
         "accion_recalcular_totales",
+        "accion_anular_lote",
+        "accion_reabrir_proveedor",
     ]
 
     @admin.display(description="Ver líneas")
     def ver_lineas(self, obj: SugeridoLote):
-        url = (
-            reverse("admin:Compras_sugeridolinea_changelist")
-            + f"?lote__id__exact={obj.id}"
-        )
+        url = reverse("admin:sugeridolinea_por_lote", args=[obj.id])
         return format_html(
-        '<a class="button" style="background-color: #28a745; color: white; padding: 5px 10px; '
-        'border-radius: 5px; text-decoration: none;" href="{}">Abrir Detalle</a>',
-        url
-    )
+            '<a class="button" style="background-color: #28a745; color: white; padding: 5px 10px; '
+            'border-radius: 5px; text-decoration: none;" href="{}">Abrir Detalle</a>',
+            url
+        )
 
     
     @admin.action(description="Marcar como CONFIRMADO")
@@ -581,6 +665,21 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
     def accion_marcar_completado(self, request, qs):
         n = qs.update(estado=SugeridoLote.Estado.COMPLETADO)
         self.message_user(request, f"{n} lote(s) marcados como COMPLETADO.", messages.SUCCESS)
+    
+    @admin.action(description="Anular Lote")
+    def accion_anular_lote(self, request, qs):
+        n = qs.update(estado=SugeridoLote.Estado.ANULADO)
+        self.message_user(request, f"{n} lote(s) anulados.", messages.SUCCESS)
+    
+    @admin.action(description="Reabrir proveedor")
+    def accion_reabrir_proveedor(self, request, qs):
+        bloqueados = qs.filter(estado=SugeridoLote.Estado.COMPLETADO).count()
+        actualizados = qs.exclude(estado=SugeridoLote.Estado.COMPLETADO)\
+                         .update(estado=SugeridoLote.Estado.ENVIADO)
+        if actualizados:
+            self.message_user(request, f"{actualizados} lote(s) reabiertos para proveedor.", messages.SUCCESS)
+        if bloqueados:
+            self.message_user(request, f"{bloqueados} lote(s) no se pueden reabrir porque están en estado COMPLETADO.", messages.WARNING)
 
     @admin.action(description="Exportar XLSX (lote)")
     def accion_exportar_xlsx(self, request, qs):
@@ -607,6 +706,63 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
 
+    # Nuevo: setear creado_por automáticamente
+    def save_model(self, request, obj, form, change):
+        if not change or not getattr(obj, "creado_por_id", None):
+            obj.creado_por = request.user
+        super().save_model(request, obj, form, change)
+
+    # NUEVO: solo mostrar 'accion_exportar_xlsx' a usuarios con perfil_proveedor
+    def _es_proveedor(self, request) -> bool:
+        return bool(getattr(request.user, "perfil_proveedor", None))
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if self._es_proveedor(request):
+            return {k: v for k, v in actions.items() if k == "accion_exportar_xlsx"}
+        return actions
+
+    # NUEVO: detectar vendedor interno
+    def _es_vendedor(self, request) -> bool:
+        return bool(getattr(request.user, "perfil_vendedor", None))
+
+    # Nuevo: filtrar listado por asignaciones
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        perfil_prov = getattr(request.user, "perfil_proveedor", None)
+        if perfil_prov:
+            return qs.filter(proveedor=perfil_prov.proveedor)
+        perfil_vend = getattr(request.user, "perfil_vendedor", None)
+        if perfil_vend:
+            return qs.filter(
+                Exists(
+                    AsignacionMarcaVendedor.objects.filter(
+                        vendedor=perfil_vend,
+                        proveedor_id=OuterRef("proveedor_id"),
+                        marca_id=OuterRef("marca_id"),
+                    )
+                )
+            )
+        return qs
+
+    # Nuevo: proteger acceso directo a objetos fuera de las asignaciones
+    def has_view_permission(self, request, obj=None):
+        base = super().has_view_permission(request, obj=obj)
+        if not base:
+            return False
+        if obj is None:
+            return True
+        perfil_prov = getattr(request.user, "perfil_proveedor", None)
+        if perfil_prov:
+            return obj.proveedor_id == getattr(perfil_prov.proveedor, "id", None)
+        perfil_vend = getattr(request.user, "perfil_vendedor", None)
+        if perfil_vend:
+            return AsignacionMarcaVendedor.objects.filter(
+                vendedor=perfil_vend,
+                proveedor_id=obj.proveedor_id,
+                marca_id=obj.marca_id,
+            ).exists()
+        return True
 
 # ─────────────────────────────────────────────────────────────────────
 # Admin Línea con TARJETAS KPI + filtros + permisos por rol/proveedor
@@ -628,11 +784,13 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
     ordering = ("-lote__fecha_extraccion", "proveedor", "marca", "codigo_articulo")
 
     list_filter = (
-        "nombre_almacen",
-        "proveedor", "marca",
-        "familia", "subfamilia",
-        "clasificacion",
-        "estado_linea",
+        NombreAlmacenEnLoteFilter,
+        ("proveedor", admin.RelatedOnlyFieldListFilter),
+        MarcaEnLoteFilter,
+        FamiliaEnLoteFilter,
+        SubfamiliaEnLoteFilter,
+        ClasificacionEnLoteFilter,
+        EstadoLineaEnLoteFilter,
     )
     search_fields = ("codigo_articulo", "referencia")
 
@@ -719,18 +877,40 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
     def get_list_filter(self, request):
         base = list(super().get_list_filter(request))
         if self._es_proveedor(request):
-            # Proveedor no necesita filtro por proveedor (ya viene filtrado por queryset)
-            base = [f for f in base if f not in ("proveedor",)]
+            # Elimina el filtro de proveedor aunque sea tupla (('proveedor', RelatedOnlyFieldListFilter), ...)
+            base = [
+                f for f in base
+                if not (f == "proveedor" or (isinstance(f, tuple) and len(f) > 0 and f[0] == "proveedor"))
+            ]
         return base
+
+    # NUEVO: limitar el queryset al lote si viene en la URL
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        lote_id = request.GET.get("lote__id__exact")
+        if lote_id:
+            qs = qs.filter(lote_id=lote_id)
+        return qs
 
     def get_urls(self):
         urls = super().get_urls()
         custom = [
+            # NUEVO: ruta legible por lote
+            path('<int:lote_id>/', self.admin_site.admin_view(self.changelist_por_lote), name='sugeridolinea_por_lote'),
             path('confirmar-lote-proveedor/<int:lote_id>/', self.admin_site.admin_view(self.confirmar_lote_proveedor), name='confirmar_lote_proveedor'),
             path('confirmar-pedido-icg/<int:lote_id>/', self.admin_site.admin_view(self.confirmar_pedido_icg), name='confirmar_pedido_icg'),
             path('importar-a-icg/<int:lote_id>/', self.admin_site.admin_view(self.importar_a_icg), name='importar_a_icg'),
         ]
         return custom + urls
+
+    # NUEVO: wrapper que fuerza el filtro del lote y delega al changelist
+    def changelist_por_lote(self, request, lote_id: int):
+        q = request.GET.copy()
+        q['lote__id__exact'] = str(lote_id)
+        request.GET = q
+        # opcional, ayuda a que Django/links reflejen el querystring actual
+        request.META['QUERY_STRING'] = q.urlencode()
+        return self.changelist_view(request)
 
     # --- Métodos de acciones personalizadas ---
     def confirmar_lote_proveedor(self, request, lote_id):
@@ -767,60 +947,30 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
         return redirect(request.META.get('HTTP_REFERER', '..'))
 
     def importar_a_icg(self, request, lote_id):
-        """Genera órdenes de compra para el lote y las envía a ICG (similar a acción del admin de Lote)."""
-        from django.db import transaction
-        from .models import SugeridoLote, OrdenCompra, OrdenCompraLinea, SugeridoLinea
-        from .services.icg_integration import enviar_orden_a_icg
+        """Genera el pedido en ICG (PEDCOMPRACAB + PEDCOMPRALIN) usando el servicio crear_pedido_compra_desde_lote."""
+        from .models import SugeridoLote
         lote = get_object_or_404(SugeridoLote, pk=lote_id)
+
+        # Solo usuarios internos
         if getattr(request.user, 'perfil_proveedor', None):
             self.message_user(request, 'Acción solo para usuarios internos.', level=messages.ERROR)
             return redirect('..')
-        generadas = 0
-        grupos = {}
-        for ln in lote.lineas.all():
-            qty = (ln.sugerido_interno or 0) or (ln.sugerido_calculado or 0)
-            if (ln.clasificacion or '').upper() == 'I' or qty <= 0:
-                continue
-            key = (ln.proveedor, ln.cod_almacen, ln.nombre_almacen)
-            grupos.setdefault(key, []).append(ln)
-        with transaction.atomic():
-            from decimal import Decimal as _D
-            from django.utils import timezone
-            for (prov, codalm, nomalm), lineas in grupos.items():
-                num = f"OC-{lote.id}-{prov[:8]}-{codalm}-{timezone.now().strftime('%H%M%S')}"
-                oc = OrdenCompra.objects.create(
-                    lote=lote, proveedor=prov, cod_almacen=codalm, nombre_almacen=nomalm,
-                    numero_orden=num, generado_por=request.user
-                )
-                total = _D('0')
-                for l in lineas:
-                    qty = (l.sugerido_interno or 0) or (l.sugerido_calculado or 0)
-                    costo_total = qty * (l.ultimo_costo or 0)
-                    OrdenCompraLinea.objects.create(
-                        orden=oc,
-                        codigo_articulo=l.codigo_articulo,
-                        descripcion=l.descripcion,
-                        embalaje=l.embalaje,
-                        cantidad=qty,
-                        costo_unitario=l.ultimo_costo,
-                        costo_total=costo_total,
-                        clasificacion=l.clasificacion,
-                    )
-                    total += costo_total
-                    l.estado_linea = SugeridoLinea.EstadoLinea.ORDENADA
-                    l.save(update_fields=['estado_linea', 'actualizado'])
-                oc.costo_total = total
-                oc.save(update_fields=['costo_total'])
-                exito, id_orden_icg, msg = enviar_orden_a_icg(oc)
-                from .models import OrdenICGLog
-                OrdenICGLog.objects.create(orden=oc, exito=exito, id_orden_icg=id_orden_icg, mensaje=msg, payload=None)
-                if exito:
-                    oc.id_orden_icg = id_orden_icg
-                    oc.save(update_fields=['id_orden_icg'])
-                generadas += 1
-        lote.estado = SugeridoLote.Estado.COMPLETADO
-        lote.save(update_fields=['estado'])
-        self.message_user(request, f'{generadas} orden(es) generadas e importadas a ICG.', level=messages.SUCCESS)
+
+        try:
+            kwargs = {}
+            if getattr(lote, "numserie", None):
+                kwargs["numserie"] = lote.numserie
+            if getattr(lote, "subserie", None):
+                kwargs["subserie_n"] = lote.subserie
+
+            pedidos = crear_pedido_compra_desde_lote(lote_id=lote.id, **kwargs)
+            if pedidos:
+                resumen = ", ".join([f"{p.get('numserie')}-{p.get('numpedido')}({p.get('cod_almacen')})" for p in pedidos])
+                self.message_user(request, f"{len(pedidos)} pedido(s) en ICG generados: {resumen}.", level=messages.SUCCESS)
+            else:
+                self.message_user(request, "No se generaron pedidos (sin líneas válidas).", level=messages.INFO)
+        except Exception as e:
+            self.message_user(request, f'Error al generar pedido en ICG: {e}', level=messages.ERROR)
         return redirect(request.META.get('HTTP_REFERER', '..'))
 
     def changelist_view(self, request, extra_context=None):
@@ -923,6 +1073,13 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
             except Exception:
                 return response
 
+            # NUEVO: si hay filtro por lote, igualar el "total" al resultado filtrado
+            if request.GET.get("lote__id__exact"):
+                try:
+                    cl.full_result_count = cl.result_count
+                except Exception:
+                    pass
+
             qty_expr = Case(
                 When(sugerido_interno__gt=0, then=F("sugerido_interno")),
                 default=F("sugerido_calculado"),
@@ -942,7 +1099,7 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
             kpis["gap_interno_vs_calc"] = kpis["costo_sugerido_interno"] - kpis["costo_total"]
             kpis["gap_prov_vs_calc"] = kpis["costo_sugerido_prov"] - kpis["costo_total"]
             # Cumplimiento presupuesto (% de costo sugerido proveedor sobre presupuesto total)
-            kpis["cumplimiento_presupuesto_pct"] = (kpis["costo_sugerido_prov"] / kpis["presupuesto_total"] * 100) if kpis["presupuesto_total"] else Decimal("0")
+            kpis["cumplimiento_presupuesto_pct"] = calcular_cumplimiento_presupuesto(proveedor_id=6)
             # KPI adicional: % líneas con descuento >0
             kpis["lineas_con_algún_descuento_pct"] = (qs.filter(Q(descuento_prov_pct__gt=0) | Q(descuento_prov_pct_2__gt=0) | Q(descuento_prov_pct_3__gt=0)).count() / (kpis["total_articulos"] or 1)) * 100
             response.context_data["kpis"] = kpis
@@ -966,6 +1123,29 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                     lote_id = ids[0]
             response.context_data['lote_id_actual'] = lote_id
             response.context_data['es_proveedor'] = es_proveedor
+
+            # NUEVO: estado del lote, flags de UI y bloqueo por grupo 'perfil_vendedor'
+            lote_estado = None
+            inputs_disabled = False
+            if lote_id:
+                try:
+                    lote_obj = SugeridoLote.objects.only('estado').get(pk=lote_id)
+                    lote_estado = lote_obj.estado
+                    # Regla original: COMPLETADO deshabilita para todos
+                    inputs_disabled = (str(lote_estado).upper() == 'COMPLETADO')
+                    # Extra: para usuarios del grupo 'perfil_vendedor', bloquear también en CONFIRMADO
+                    es_vendedor_grupo = request.user.groups.filter(name='perfil_vendedor').exists()
+                    if es_vendedor_grupo and str(lote_estado).upper() in {'CONFIRMADO', 'COMPLETADO'}:
+                        inputs_disabled = True
+                    # Ocultar botón "Confirmar Sugerido" a proveedor cuando ya está confirmado/completado
+                    response.context_data['ocultar_boton_confirmar_proveedor'] = str(lote_estado).upper() in {'CONFIRMADO', 'COMPLETADO'}
+                except SugeridoLote.DoesNotExist:
+                    # A falta de lote, no se oculta botón ni se bloquea por estado
+                    response.context_data['ocultar_boton_confirmar_proveedor'] = False
+
+            response.context_data['lote_estado'] = lote_estado
+            response.context_data['inputs_disabled'] = inputs_disabled
+
             return response
         finally:
             self.list_editable = original_editable
