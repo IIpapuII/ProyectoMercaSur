@@ -33,14 +33,13 @@
     <div class="kpi-card"><div class="kpi-title">Unidades totales a pedir</div><div class="kpi-value">{{ kpis.total_unidades|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Cajas totales</div><div class="kpi-value">{{ kpis.total_cajas|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Artículos (filtrados)</div><div class="kpi-value">{{ kpis.total_articulos|intcomma }}</div></div>
-    <div class="kpi-card"><div class="kpi-title">Costo promedio por artículo</div><div class="kpi-value">${{ kpis.costo_promedio_por_articulo|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Costo sugerido proveedor</div><div class="kpi-value">${{ kpis.costo_sugerido_prov|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Gap prov vs calculado</div><div class="kpi-value">${{ kpis.gap_prov_vs_calc|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Gap interno vs calculado</div><div class="kpi-value">${{ kpis.gap_interno_vs_calc|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Presupuesto total</div><div class="kpi-value">${{ kpis.presupuesto_total|floatformat:0|intcomma }}</div></div>
-    <div class="kpi-card"><div class="kpi-title">Cumpl. presupuesto %</div><div class="kpi-value">{{ kpis.cumplimiento_presupuesto_pct|floatformat:1 }}%</div></div>
     <div class="kpi-card"><div class="kpi-title">Líneas con algún descuento %</div><div class="kpi-value">{{ kpis.lineas_con_algún_descuento_pct|floatformat:1 }}%</div></div>
     <div class="kpi-card"><div class="kpi-title">Costo confirmado mes</div><div class="kpi-value">${{ kpis.costo_confirmado_mes|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Cumpl. presupuesto %</div><div class="kpi-value">{{ kpis.cumplimiento_presupuesto_pct|floatformat:1 }}%</div></div>
   </div>
   {% endif %}
 
@@ -129,7 +128,7 @@
                 <td class="stock-cell">{{ linea.stock_actual }}</td>
                 <td>{{ linea.stock_minimo }}</td>
                 <td>{{ linea.stock_maximo }}</td>
-                <td class="sug-calc-cell">{{ linea.sugerido_calculado }}</td>
+                <td class="sug-calc-cell">{{ linea.sugerido_base }}</td>
                 <td>{{ linea.cajas_calculadas }}</td>
                 <td>
                   {% if es_proveedor %}

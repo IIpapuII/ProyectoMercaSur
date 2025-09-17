@@ -189,7 +189,7 @@ class Proveedor(models.Model):
 
     def __str__(self):
         return self.nombre
-
+auditlog.register(Proveedor)
 
 class Marca(models.Model):
     nombre = models.CharField(max_length=255, unique=True)
@@ -213,7 +213,7 @@ class VendedorPerfil(models.Model):
 
     def __str__(self):
         return self.alias or str(self.user)
-
+auditlog.register(VendedorPerfil)
 
 class AsignacionMarcaVendedor(models.Model):
     """Qué vendedor atiende qué marca para un proveedor."""
@@ -228,7 +228,7 @@ class AsignacionMarcaVendedor(models.Model):
 
     def __str__(self):
         return f"{self.proveedor} · {self.marca} → {self.vendedor}"
-
+auditlog.register(AsignacionMarcaVendedor)
 
 class ProveedorUsuario(models.Model):
     """
@@ -244,7 +244,7 @@ class ProveedorUsuario(models.Model):
 
     def __str__(self):
         return f"{self.user} → {self.proveedor}"
-
+auditlog.register(ProveedorUsuario)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Lotes y Líneas de Sugerido
@@ -258,7 +258,8 @@ class SugeridoLote(models.Model):
         COMPLETADO = "COMPLETADO", "Completado/Orden generada"
 
     nombre = models.CharField(max_length=255, help_text="Identificador legible del lote (e.g. Sugerido 2025-08 corte semanal)")
-    marca = models.ForeignKey(Marca, on_delete=models.SET_NULL, null=True, blank=True, related_name="lotes")
+    marca = models.ForeignKey(Marca, on_delete=models.SET_NULL, null=True, blank=True, related_name="lotes", help_text="Marca asociada del sugerido")
+    proveedor = models.ForeignKey(Proveedor, on_delete=models.PROTECT, related_name="lotes", null=True, blank=True , help_text="Proveedores disponibles para esa marca")
     fecha_extraccion = models.DateTimeField(default=timezone.now, db_index=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PENDIENTE, db_index=True)
     clasificacion_filtro = models.CharField(max_length=50, blank=True, null=True, help_text="Si se filtró por A/B/C/I u otra etiqueta.")
@@ -292,9 +293,16 @@ class SugeridoLote(models.Model):
         if is_new and self.marca:
             from Compras.services.icg_import import import_data_sugerido_inventario
             import_data_sugerido_inventario(user_id=self.creado_por_id, marca=self.marca.nombre, lote_id=self.pk)
+            # NUEVO: notificar vendedor asignado (si hay proveedor y marca)
+            if self.proveedor and self.marca:
+                try:
+                    from Compras.services.notifications import notificar_vendedor_lote_asignado
+                    notificar_vendedor_lote_asignado(proveedor=self.proveedor, marca=self.marca, lote=self)
+                except Exception:
+                    pass
         self.recomputar_totales()
         super().save(update_fields=["total_lineas", "total_costo"])
-
+auditlog.register(SugeridoLote)
 
 class SugeridoLinea(models.Model):
     class EstadoLinea(models.TextChoices):
@@ -395,7 +403,7 @@ class SugeridoLinea(models.Model):
     @property
     def cantidad_a_ordenar(self) -> Decimal:
         """Preferir sugerido_interno si >0; si no, sugerido_calculado."""
-        return (self.sugerido_interno or Decimal("0")) or (self.sugerido_calculado or Decimal("0"))
+        return (self.sugerido_interno or Decimal("0")) or (self.sugerido_base or Decimal("0"))
 
     @property
     def desviacion_seguridad_pct(self) -> Decimal:
@@ -445,7 +453,7 @@ class SugeridoLinea(models.Model):
         self.clean()
         self.recomputar_costos()
         super().save(*args, **kwargs)
-
+auditlog.register(SugeridoLinea)
 
 # ─────────────────────────────────────────────────────────────────────
 # Respuesta del proveedor (lote de modificaciones) y confirmación
@@ -467,7 +475,7 @@ class SugeridoLineaCambio(models.Model):
         ordering = ["-fecha"]
         verbose_name = "Cambio de Sugerido (Proveedor)"
         verbose_name_plural = "Cambios de Sugerido (Proveedor)"
-
+auditlog.register(SugeridoLineaCambio)
 # ─────────────────────────────────────────────────────────────────────
 # Orden de compra / historial y logs de integración ICG
 # ─────────────────────────────────────────────────────────────────────
@@ -494,6 +502,7 @@ class OrdenCompra(models.Model):
 
     def __str__(self):
         return f"OC {self.numero_orden} · {self.proveedor} · {self.nombre_almacen}"
+auditlog.register(OrdenCompra)
 
 class OrdenCompraLinea(models.Model):
     orden = models.ForeignKey(OrdenCompra, on_delete=models.CASCADE, related_name="lineas")

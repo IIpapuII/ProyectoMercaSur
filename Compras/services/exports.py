@@ -1,64 +1,140 @@
-# inventarios/services/exports.py
+# Compras/services/exports.py
+from decimal import Decimal
+import datetime
 from io import BytesIO
-from django.template.loader import render_to_string
+from typing import Iterable
+import datetime
+from django.utils import timezone
+from django.db.models import Model, QuerySet
+from openpyxl import Workbook
 
-def export_lines_to_xlsx(queryset, filename: str = "sugerido.xlsx"):
-    """
-    Export simple a XLSX usando openpyxl. Si no está instalado, cae a CSV.
-    """
-    try:
-        from openpyxl import Workbook
-    except ImportError:
-        # fallback CSV
-        import csv
-        buffer = BytesIO()
-        import codecs
-        writer = csv.writer(codecs.getwriter("utf-8")(buffer), delimiter=";")
-        writer.writerow(["Proveedor","Marca","Almacén","Código","Descripción","SugeridoCalc","SugeridoInterno","CostoUnit","CostoLinea"])
-        for ln in queryset:
-            writer.writerow([
-                ln.proveedor, (ln.marca or ""), f"{ln.cod_almacen}-{ln.nombre_almacen}",
-                ln.codigo_articulo, ln.descripcion,
-                ln.sugerido_calculado, ln.sugerido_interno, ln.ultimo_costo, ln.costo_linea
-            ])
-        return buffer.getvalue(), filename.replace(".xlsx", ".csv")
+def _excel_datetime(dt: datetime.datetime) -> datetime.datetime:
+    """Convierte un datetime aware a naive (en la zona local del servidor o UTC)."""
+    if timezone.is_aware(dt):
+        # Opción A: llevarlo a hora local del servidor y volverlo naive
+        dt = timezone.localtime(dt)
+        return dt.replace(tzinfo=None)
+        # Opción B (alternativa): usar UTC naive
+        # return dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    return dt  # ya es naive
 
+def _excel_time(t: datetime.time) -> datetime.time:
+    """Excel tampoco soporta tz en time(). Quita tzinfo si viene seteado."""
+    if t.tzinfo is not None:
+        return t.replace(tzinfo=None)
+    return t
+
+def _cellify(v):
+    if v is None:
+        return ""
+    if isinstance(v, (str, int, float, bool, Decimal)):
+        return v
+    if isinstance(v, datetime.datetime):
+        return _excel_datetime(v)
+    if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
+        return v  # los date() puros están bien
+    if isinstance(v, datetime.time):
+        return _excel_time(v)
+    # … (resto igual que ya te pasé) …
+    from django.db.models import Model, QuerySet
+    if isinstance(v, Model):
+        return str(v)
+    if isinstance(v, QuerySet):
+        return ", ".join(map(str, v))
+    if isinstance(v, (list, tuple, set)):
+        return ", ".join(map(_cellify, v))
+    return str(v)
+
+
+
+# Cabeceras y mapeo de campos → cómo extraer valor de cada SugeridoLinea
+HEADERS = [
+    "Proveedor", "Marca", "Almacén", "Código", "Referencia" ,"Descripción",
+    "Departamento", "Sección", "Familia", "Subfamilia", "Tipo",
+    "Clasificación",
+    "Stock actual", "Stock mínimo", "Stock máximo", "Lead time (días)", "Stock seguridad",
+    "Uds compra base", "Uds compra mult", "Embalaje",
+    "Último costo",
+    "Sugerido base", "Factor almacén", "Sugerido calculado", "Cajas calculadas",
+    "Costo línea",
+    "Sugerido interno", "Comentario interno",
+    "Continuidad activo", "Nuevo sugerido prov", "Desc. prov %", "Desc. prov % 2", "Desc. prov % 3",
+    "Nuevo nombre prov", "Observaciones prov",
+    "Estado línea",
+    "Creado", "Actualizado",
+    "Vendedor",
+]
+
+def _row_from_linea(ln) -> list:
+    """Extrae una fila plana a partir de una instancia de SugeridoLinea."""
+    return [
+        _cellify(getattr(ln, "proveedor", "")),
+        _cellify(getattr(ln, "marca", "")),
+        _cellify(f"{getattr(ln, 'cod_almacen', '')}-{getattr(ln, 'nombre_almacen', '')}"),
+        _cellify(getattr(ln, "codigo_articulo", "")),
+        _cellify(getattr(ln, "referencia", "")),
+        _cellify(getattr(ln, "descripcion", "")),
+        _cellify(getattr(ln, "departamento", "")),
+        _cellify(getattr(ln, "seccion", "")),
+        _cellify(getattr(ln, "familia", "")),
+        _cellify(getattr(ln, "subfamilia", "")),
+        _cellify(getattr(ln, "tipo", "")),
+        _cellify(getattr(ln, "clasificacion", "")),
+        _cellify(getattr(ln, "stock_actual", 0)),
+        _cellify(getattr(ln, "stock_minimo", 0)),
+        _cellify(getattr(ln, "stock_maximo", 0)),
+        _cellify(getattr(ln, "lead_time_dias", 0)),
+        _cellify(getattr(ln, "stock_seguridad", 0)),
+        _cellify(getattr(ln, "uds_compra_base", 1)),
+        _cellify(getattr(ln, "uds_compra_mult", 1)),
+        _cellify(getattr(ln, "embalaje", 1)),
+        _cellify(getattr(ln, "ultimo_costo", 0)),
+        _cellify(getattr(ln, "sugerido_base", 0)),
+        _cellify(getattr(ln, "factor_almacen", 1)),
+        _cellify(getattr(ln, "sugerido_calculado", 0)),
+        _cellify(getattr(ln, "cajas_calculadas", 0)),
+        _cellify(getattr(ln, "costo_linea", 0)),
+        _cellify(getattr(ln, "sugerido_interno", 0)),
+        _cellify(getattr(ln, "comentario_interno", "")),
+        _cellify(getattr(ln, "continuidad_activo", True)),
+        _cellify(getattr(ln, "nuevo_sugerido_prov", 0)),
+        _cellify(getattr(ln, "descuento_prov_pct", 0)),
+        _cellify(getattr(ln, "descuento_prov_pct_2", 0)),
+        _cellify(getattr(ln, "descuento_prov_pct_3", 0)),
+        _cellify(getattr(ln, "nuevo_nombre_prov", "")),
+        _cellify(getattr(ln, "observaciones_prov", "")),
+        _cellify(getattr(ln, "estado_linea", "")),
+        _cellify(ln.creado.date() if ln.creado else None),
+        _cellify(ln.actualizado.date() if ln.actualizado else None),
+        _cellify(getattr(ln, "vendedor", "")),
+    ]
+
+
+def export_lines_to_xlsx(lineas: Iterable, filename="sugerido.xlsx"):
+    """
+    Acepta un QuerySet de SugeridoLinea (o lista iterable de instancias) y
+    devuelve (bytes_xlsx, filename).
+    """
     wb = Workbook()
     ws = wb.active
-    ws.title = "Sugerido"
-    ws.append(["Proveedor","Marca","Almacén","Código","Descripción",
-               "StockAct","StockMin","StockMax",
-               "UdsBase","UdsMult","Embalaje",
-               "CostoUnit","SugeridoBase","Factor","SugeridoCalc",
-               "SugeridoInterno","Cajas","CostoLinea","Clasificación"])
-    for ln in queryset:
-        ws.append([
-            ln.proveedor, (ln.marca or ""), f"{ln.cod_almacen}-{ln.nombre_almacen}",
-            ln.codigo_articulo, ln.descripcion,
-            ln.stock_actual, ln.stock_minimo, ln.stock_maximo,
-            ln.uds_compra_base, ln.uds_compra_mult, ln.embalaje,
-            ln.ultimo_costo, ln.sugerido_base, ln.factor_almacen,
-            ln.sugerido_calculado, ln.sugerido_interno,
-            ln.cajas_calculadas, ln.costo_linea, (ln.clasificacion or "")
-        ])
-    buf = BytesIO()
-    wb.save(buf)
-    return buf.getvalue(), filename
+    ws.title = "Líneas Sugerido"
 
+    # Cabeceras
+    ws.append(HEADERS)
 
-def render_orden_compra_pdf(encabezado: dict, lineas):
-    """
-    Genera un PDF simple con WeasyPrint si está instalado; si no, devuelve HTML.
-    encabezado = {"numero_orden","proveedor","almacen","fecha","costo_total"}
-    """
-    html = render_to_string("inventarios/orden_compra.html", {
-        "encabezado": encabezado,
-        "lineas": lineas,
-    })
-    filename = f"orden_compra_{encabezado.get('numero_orden','OC')}.pdf"
-    try:
-        from weasyprint import HTML
-        pdf_bytes = HTML(string=html).write_pdf()
-        return pdf_bytes, filename
-    except Exception:
-        return html.encode("utf-8"), filename.replace(".pdf", ".html")
+    # Si es QuerySet, optimiza FKs
+    if isinstance(lineas, QuerySet):
+        lineas = lineas.select_related("proveedor", "marca", "vendedor")
+
+    for ln in lineas:
+        ws.append(_row_from_linea(ln))
+
+    # Auto ancho simple
+    for col in ws.columns:
+        max_len = max((len(str(c.value)) if c.value is not None else 0) for c in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max(10, max_len + 2), 60)
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio.getvalue(), filename

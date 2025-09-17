@@ -171,7 +171,20 @@ WITH Base AS (
             WHEN a.NOMBREALMACEN = 'MERCASUR CABECERA'  THEN ACL.CLASIFICACION3
             WHEN a.NOMBREALMACEN = 'MERCASUR SOTOMAYOR' THEN ACL.CLASIFICACION5
             ELSE NULL
-        END                                         AS clasificacion
+        END                                         AS clasificacion,
+                (
+    SELECT
+        TOP (1)
+        a2.DTO
+    FROM
+        PEDCOMPRACAB a
+    inner JOIN PEDCOMPRALIN a2 ON
+        a2.NUMPEDIDO = a.NUMPEDIDO
+        AND a2.NUMSERIE = a.NUMSERIE
+    where
+        a2.CODARTICULO = AR.CODARTICULO 
+    ORDER BY
+        TRY_CONVERT(date, a.FECHAPEDIDO, 105) DESC) as ultimodescuento
     FROM ARTICULOS AR 
     INNER JOIN ARTICULOSCAMPOSLIBRES ACL 
         ON AR.CODARTICULO = ACL.CODARTICULO
@@ -257,7 +270,8 @@ SELECT
         WHEN embalaje <= 0 THEN CEILING(CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) * ultimo_costo
         ELSE CEILING( (CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) 
                       / CAST(embalaje AS DECIMAL(18,4)) ) * embalaje * ultimo_costo
-    END                                         AS [CostoLinea]
+    END                                         AS [CostoLinea],
+    ultimodescuento AS [UltimoDescuentoPedido]
 FROM Calculos
 WHERE sugerido_base > 0
 ORDER BY nombre_almacen, codigo;
@@ -365,6 +379,7 @@ ORDER BY nombre_almacen, codigo;
                 sugerido_calculado=_safe_int(row.get("Sugerido")),
                 cajas_calculadas=_safe_float(row.get("Cajas")),
                 costo_linea=_safe_float(row.get("CostoLinea")),
+                descuento_prov_pct=_safe_float(row.get("UltimoDescuentoPedido")),
             )
         )
         insertados += 1

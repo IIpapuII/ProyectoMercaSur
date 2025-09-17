@@ -303,6 +303,22 @@ class ProcesoClasificacionAdmin(admin.ModelAdmin):
     list_display = ('proceso_display', 'estado', 'fecha_inicio', 'lanzar_wizard')
     actions = ['ejecutar_carga']
 
+    # NUEVO: helper para detectar proveedor
+    def _es_proveedor(self, request) -> bool:
+        return bool(getattr(request.user, "perfil_proveedor", None))
+
+    # NUEVO: ocultar módulo del índice para proveedores
+    def has_module_permission(self, request):
+        if self._es_proveedor(request):
+            return False
+        return super().has_module_permission(request)
+
+    # NUEVO: bloquear permiso de vista para proveedores
+    def has_view_permission(self, request, obj=None):
+        if self._es_proveedor(request):
+            return False
+        return super().has_view_permission(request, obj=obj)
+
     def has_add_permission(self, request):
         return False
     
@@ -310,6 +326,13 @@ class ProcesoClasificacionAdmin(admin.ModelAdmin):
         if obj is not None and obj.estado == 'confirmado':
             return False
         return True
+
+    # NUEVO: devolver queryset vacío a proveedores (defensa adicional)
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if self._es_proveedor(request):
+            return qs.none()
+        return qs
 
     def ejecutar_carga(self, request, queryset):
         """
@@ -372,6 +395,11 @@ class ProcesoClasificacionAdmin(admin.ModelAdmin):
         return custom + urls
 
     def procesar_view(self, request, proceso_id, *args, **kwargs):
+        # NUEVO: bloquear ingreso directo para proveedores
+        if getattr(request.user, 'perfil_proveedor', None):
+            self.message_user(request, "Acción no permitida para proveedores.", level=messages.ERROR)
+            return redirect('admin:index')
+
         proceso = get_object_or_404(ProcesoClasificacion, pk=proceso_id)
 
         # Ejecutar procesar_clasificacion si está en 'extraccion'
@@ -397,10 +425,8 @@ class ProcesoClasificacionAdmin(admin.ModelAdmin):
             changelist_url += f'?proceso__id__exact={proceso.pk}'
             return redirect(changelist_url)
         else:
-            # Por defecto, redirigir al listado de procesos
             opts = ProcesoClasificacion._meta
             changelist_url = reverse(f'admin:{opts.app_label}_{opts.model_name}_changelist')
-            return redirect(changelist_url)
             return redirect(changelist_url)
         # 3) Redirigir
         return redirect(changelist_url)
@@ -421,7 +447,7 @@ from .services.notifications import (
     notificar_proveedor_lote_enviado,
     notificar_compras_respuesta_proveedor
 )
-from .services.exports import export_lines_to_xlsx, render_orden_compra_pdf
+from .services.exports import export_lines_to_xlsx
 from django.core.mail import send_mail
 from .services.icg_integration import enviar_orden_a_icg
 from django.db.models import Sum, Count, Case, When, F, Q, DecimalField
@@ -530,9 +556,6 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
         "accion_marcar_confirmado",
         "accion_marcar_completado",
         "accion_exportar_xlsx",
-        "accion_exportar_pdf",
-        "accion_exportar_csv",
-        "accion_generar_orden_compra",
         "accion_recalcular_totales",
     ]
 
@@ -548,17 +571,7 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
         url
     )
 
-
-    @admin.action(description="Enviar notificación a proveedor y marcar como ENVIADO")
-    def accion_enviar_a_proveedor(self, request, qs):
-        for lote in qs:
-            provedores = lote.lineas.values_list("proveedor", flat=True).distinct()
-            for prov in provedores:
-                notificar_proveedor_lote_enviado(proveedor_nombre=prov, lote=lote, request=request)
-            lote.estado = SugeridoLote.Estado.ENVIADO
-            lote.save(update_fields=["estado"])
-        self.message_user(request, "Proveedores notificados y lotes marcados como ENVIADO.", messages.SUCCESS)
-
+    
     @admin.action(description="Marcar como CONFIRMADO")
     def accion_marcar_confirmado(self, request, qs):
         n = qs.update(estado=SugeridoLote.Estado.CONFIRMADO)
@@ -571,123 +584,28 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
 
     @admin.action(description="Exportar XLSX (lote)")
     def accion_exportar_xlsx(self, request, qs):
-        lote = qs.first()
-        if not lote:
-            self.message_user(request, "Selecciona un lote.", messages.WARNING)
+        if not qs.exists():
+            self.message_user(request, "Selecciona al menos un lote.", messages.WARNING)
             return
-        wb_bytes, filename = export_lines_to_xlsx(lote.lineas.all(), filename=f"sugerido_lote_{lote.id}.xlsx")
-        resp = HttpResponse(wb_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return resp
 
-    @admin.action(description="Exportar PDF (lote)")
-    def accion_exportar_pdf(self, request, qs):
-        lote = qs.first()
-        if not lote:
-            self.message_user(request, "Selecciona un lote.", messages.WARNING)
-            return
-        pdf_bytes, filename = render_orden_compra_pdf(
-            encabezado={
-                "numero_orden": f"PRE-{lote.id}-{timezone.now().strftime('%Y%m%d')}",
-                "proveedor": "Varios",
-                "almacen": "Varios",
-                "fecha": timezone.now(),
-                "costo_total": lote.total_costo,
-            },
-            lineas=lote.lineas.all()
+        if qs.count() == 1:
+            lote = qs.first()
+            lineas = SugeridoLinea.objects.filter(lote=lote).select_related("proveedor", "marca", "vendedor")
+            filename = f"sugerido_lote_{lote.id}.xlsx"
+        else:
+            ids = list(qs.values_list("id", flat=True))
+            lineas = SugeridoLinea.objects.filter(lote_id__in=ids).select_related("proveedor", "marca", "vendedor")
+            filename = "sugerido_lotes_" + "_".join(map(str, ids)) + ".xlsx"
+
+        # ✅ No intentes mutar FKs a str aquí; el exportador hace la conversión segura
+        xlsx_bytes, filename = export_lines_to_xlsx(lineas, filename=filename)
+
+        resp = HttpResponse(
+            xlsx_bytes,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        resp = HttpResponse(pdf_bytes, content_type="application/pdf")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
-
-    @admin.action(description="Exportar CSV (lote)")
-    def accion_exportar_csv(self, request, qs):
-        lote = qs.first()
-        if not lote:
-            self.message_user(request, "Selecciona un lote.", messages.WARNING)
-            return
-        response = HttpResponse(content_type="text/csv")
-        fn = f"sugerido_lote_{lote.id}_{timezone.now().date()}.csv"
-        response["Content-Disposition"] = f'attachment; filename="{fn}"'
-        w = csv.writer(response, delimiter=";")
-        w.writerow([
-            "Proveedor","Marca","Almacén","Código","Descripción",
-            "StockAct","StockMin","StockMax",
-            "UdsBase","UdsMult","Embalaje",
-            "CostoUnit","SugeridoBase","Factor","SugeridoCalc","Cajas","CostoLinea","Clasificación"
-        ])
-        for ln in lote.lineas.all():
-            w.writerow([
-                ln.proveedor, (ln.marca or ""),
-                f"{ln.cod_almacen}-{ln.nombre_almacen}",
-                ln.codigo_articulo, ln.descripcion,
-                ln.stock_actual, ln.stock_minimo, ln.stock_maximo,
-                ln.uds_compra_base, ln.uds_compra_mult, ln.embalaje,
-                ln.ultimo_costo, ln.sugerido_base, ln.factor_almacen,
-                ln.sugerido_calculado, ln.cajas_calculadas, ln.costo_linea,
-                (ln.clasificacion or "")
-            ])
-        return response
-
-    @admin.action(description="Generar Orden de Compra (agrupada por Proveedor y Almacén)")
-    def accion_generar_orden_compra(self, request, qs):
-        from django.db import transaction
-        generadas = 0
-        for lote in qs:
-            grupos = {}
-            for ln in lote.lineas.all():
-                qty = (ln.sugerido_interno or 0) or (ln.sugerido_calculado or 0)
-                if (ln.clasificacion or "").upper() == "I" or qty <= 0:
-                    continue
-                key = (ln.proveedor, ln.cod_almacen, ln.nombre_almacen)
-                grupos.setdefault(key, []).append(ln)
-
-            with transaction.atomic():
-                for (prov, codalm, nomalm), lineas in grupos.items():
-                    num = f"OC-{lote.id}-{prov[:8]}-{codalm}-{timezone.now().strftime('%H%M%S')}"
-                    oc = OrdenCompra.objects.create(
-                        lote=lote, proveedor=prov, cod_almacen=codalm, nombre_almacen=nomalm,
-                        numero_orden=num, generado_por=request.user
-                    )
-                    total = Decimal("0")
-                    for ln in lineas:
-                        qty = (ln.sugerido_interno or 0) or (ln.sugerido_calculado or 0)
-                        costo_total = qty * (ln.ultimo_costo or 0)
-                        OrdenCompraLinea.objects.create(
-                            orden=oc,
-                            codigo_articulo=ln.codigo_articulo,
-                            descripcion=ln.descripcion,
-                            embalaje=ln.embalaje,
-                            cantidad=qty,
-                            costo_unitario=ln.ultimo_costo,
-                            costo_total=costo_total,
-                            clasificacion=ln.clasificacion,
-                        )
-                        total += costo_total
-                        ln.estado_linea = SugeridoLinea.EstadoLinea.ORDENADA
-                        ln.save(update_fields=["estado_linea", "actualizado"])
-                    oc.costo_total = total
-                    oc.save(update_fields=["costo_total"])
-
-                    exito, id_orden_icg, msg = enviar_orden_a_icg(oc)
-                    OrdenICGLog.objects.create(
-                        orden=oc, exito=exito, id_orden_icg=id_orden_icg, mensaje=msg, payload=None
-                    )
-                    if exito:
-                        oc.id_orden_icg = id_orden_icg  # corregido nombre de variable
-                        oc.save(update_fields=["id_orden_icg"])
-                    generadas += 1
-
-            lote.estado = SugeridoLote.Estado.COMPLETADO
-            lote.save(update_fields=["estado"])
-
-        self.message_user(request, f"{generadas} orden(es) de compra generadas.", messages.SUCCESS)
-
-    @admin.action(description="Recalcular totales del lote")
-    def accion_recalcular_totales(self, request, qs):
-        for lote in qs:
-            lote.recomputar_totales()
-        self.message_user(request, "Totales recalculados.", messages.SUCCESS)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -1014,7 +932,7 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                 costo_total=Coalesce(Sum("costo_linea"), Decimal("0")),
                 total_unidades=Coalesce(Sum(qty_expr), Decimal("0")),
                 total_cajas=Coalesce(Sum("cajas_calculadas"), Decimal("0")),
-                total_articulos=Count("id"),
+                total_articulos=Count("referencia", distinct=True),
                 articulos_con_pedido=Count(Case(When(Q(sugerido_interno__gt=0) | Q(sugerido_calculado__gt=0), then=1))),
                 presupuesto_total=Coalesce(Sum("presupuesto_proveedor"), Decimal("0")),
                 costo_sugerido_prov=Coalesce(Sum(F("nuevo_sugerido_prov") * F("ultimo_costo")), Decimal("0")),
@@ -1057,35 +975,6 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
         return txt if len(txt) <= 50 else txt[:47] + '…'
     get_descripcion_corta.short_description = "Descripción"
 
-
-# Registros (si no los tenías ya)
-@admin.register(SugeridoLineaCambio)
-class SugeridoLineaCambioAdmin(admin.ModelAdmin):
-    list_display = ("linea", "fecha", "usuario", "nuevo_sugerido_prov", "descuento_prov_pct")
-    list_filter = ("fecha",)
-    search_fields = ("linea__codigo_articulo", "usuario__username")
-
-
-@admin.register(OrdenCompra)
-class OrdenCompraAdmin(admin.ModelAdmin):
-    list_display = ("numero_orden", "proveedor", "nombre_almacen", "fecha", "costo_total", "id_orden_icg")
-    list_filter = ("fecha", "proveedor", "nombre_almacen")
-    search_fields = ("numero_orden", "proveedor", "nombre_almacen")
-
-
-@admin.register(OrdenCompraLinea)
-class OrdenCompraLineaAdmin(admin.ModelAdmin):
-    list_display = ("orden", "codigo_articulo", "descripcion", "cantidad", "costo_unitario", "costo_total")
-    list_filter = ("orden__proveedor", "orden__nombre_almacen")
-    search_fields = ("orden__numero_orden", "codigo_articulo", "descripcion")
-
-
-@admin.register(OrdenICGLog)
-class OrdenICGLogAdmin(admin.ModelAdmin):
-    list_display = ("orden", "fecha", "accion", "exito", "id_orden_icg")
-    list_filter = ("exito", "fecha")
-    search_fields = ("orden__numero_orden", "id_orden_icg", "mensaje")
-    
 # Catálogos
 class AsignacionMarcaVendedorInline(admin.TabularInline):
     model = AsignacionMarcaVendedor
@@ -1100,15 +989,14 @@ class ProveedorUsuarioInline(admin.TabularInline):
 
 @admin.register(Proveedor)
 class ProveedorAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "nit", "email_contacto", "activo")
+    list_display = ("nombre","presupuesto_mensual", "nit", "email_contacto", "activo")
     search_fields = ("nombre", "nit")
     list_filter = ("activo",)
     inlines = [AsignacionMarcaVendedorInline, ProveedorUsuarioInline]
     # Opcional: agrupar campos
     fieldsets = (
-        ("Identificación", {"fields": ("nombre", "nit")}),
+        ("Identificación", {"fields": ("nombre", "nit", "presupuesto_mensual", "activo")}),
         ("Contacto", {"fields": ("email_contacto",)}),
-        ("Estado", {"fields": ("activo",)}),
     )
 
 
