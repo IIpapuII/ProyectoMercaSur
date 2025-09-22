@@ -7,7 +7,18 @@
         <a class="button" href="{% url 'admin:generar_clasificacion_final' %}?proceso__id__exact={{ request.GET.proceso__id__exact }}" style="background:#2ca646;color:#fff;padding:6px 10px;border-radius:5px;text-decoration:none;">
             ▶ Generar Clasificación Final
         </a>
+        <a
+            class="button"
+            href="{% url 'admin:exportar_excel_procesado' %}?{{ request.META.QUERY_STRING }}"
+            style="background:#007d3c;color:#fff;padding:6px 10px;border-radius:5px;text-decoration:none;margin-left:8px;">
+            ⬇ Descargar Excel (todas las páginas)
+        </a>
     </div>
     {% endif %}
     {{ block.super }}
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  
 {% endblock %}

@@ -5,7 +5,7 @@ from appMercaSur.conect import conectar_sql_server, ejecutar_consulta
 from .utils import get_campo_clasificacion_por_almacen
 from Compras.models import ProcesoClasificacion, ArticuloClasificacionTemporal, ArticuloClasificacionFinal
 from celery import shared_task
-from .utils import notificar_proceso_finalizado, notificar_proceso_con_excel
+from .utils import notificar_proceso_finalizado, notificar_proceso_con_excel, procesar_clasificacion
 from datetime import date, timedelta
 
 @shared_task()
@@ -196,12 +196,11 @@ LEFT JOIN VentasPrevias VP
             estado_nuevo=row['EstadoNuevo'],
         ))
     ArticuloClasificacionTemporal.objects.bulk_create(articulos)
-    notificar_proceso_finalizado(proceso, len(articulos))
-    
     # Cambia el estado a 'procesado' al finalizar correctamente
     proceso.estado = 'extraccion'
     proceso.save(update_fields=['estado'])
-
+    procesar_clasificacion(proceso= proceso)
+    notificar_proceso_finalizado(proceso, len(articulos))
     return f"Proceso #{proceso.pk} completado: {len(articulos)} artículos cargados"
 
 @shared_task()

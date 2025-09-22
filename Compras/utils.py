@@ -167,7 +167,7 @@ def notificar_proceso_finalizado(proceso: ProcesoClasificacion, total: int):
     html_content = f"""
     <div style="font-family: Arial, sans-serif; color: #333;">
         <div style="text-align: center; margin-bottom: 20px;">
-            <img src="https://notificaciones.mercasur.com.co:9180/assets/logo.png" alt="Mercasur" style="height: 70px;" />
+            <img src="https://notificaciones.mercasur.com.co:9180/logo.png" alt="Mercasur" style="height: 70px;" />
         </div>
 
         <h2 style="color: #2ca646;">Proceso #{proceso.pk}  Iniciado</h2>
@@ -189,11 +189,8 @@ def notificar_proceso_finalizado(proceso: ProcesoClasificacion, total: int):
     text_content = strip_tags(html_content)  # fallback de texto plano
 
     destinatarios = [
-        'gconectores@mercasur.com.co',
-        'Gestrategadeportafolio@mercasur.com.co',
-        'guerrerademarca@mercasur.com.co',
-        'gresaltadores@mercasur.com.co',
-        'desarrollador@mercasur.com.co'
+        'desarrollador@mercasur.com.co',
+        'wilmer3428@gmail.com'
     ]
 
     msg = EmailMultiAlternatives(

@@ -18,6 +18,11 @@ from django.utils.decorators import method_decorator
 from django.contrib.admin.views.decorators import staff_member_required
 from .utils import procesar_clasificacion
 from presupuesto.utils import formato_dinero_colombiano
+from django.http import StreamingHttpResponse, HttpResponse  # agregar HttpResponse
+import csv
+# NUEVO: dependencias para XLSX
+from io import BytesIO
+from openpyxl import Workbook
 
 @admin.register(ReglaClasificacion)
 class ReglaClasificacionAdmin(admin.ModelAdmin):
@@ -213,7 +218,8 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
-            path('generar-clasificacion-final/', self.admin_site.admin_view(self.generar_clasificacion_final), name='generar_clasificacion_final')
+            path('generar-clasificacion-final/', self.admin_site.admin_view(self.generar_clasificacion_final), name='generar_clasificacion_final'),
+            path('exportar-excel/', self.admin_site.admin_view(self.exportar_excel), name='exportar_excel_procesado'),
         ]
         return custom_urls + urls
     
@@ -245,7 +251,7 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
             for art in articulos:
                 # Si el artículo es nuevo, resultado_validacion=False; si no, lógica original
                 if art.codigo in codigos_nuevos:
-                    resultado_validacion = False
+                    resultado_validacion = True
                 else:
                     resultado_validacion = (art.clasificacion_actual == art.nueva_clasificacion)
                 final = ArticuloClasificacionFinal(
@@ -279,6 +285,55 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
         changelist_url = reverse(f'admin:{opts.app_label}_{opts.model_name}_changelist')
         return redirect(f"{changelist_url}?proceso__id__exact={proceso.pk}")
 
+    def exportar_excel(self, request):
+        """
+        Exporta TODO el queryset filtrado actual (todas las páginas) como XLSX (Excel).
+        Respeta búsqueda, filtros y orden del admin.
+        """
+        # Obtener queryset filtrado/ordenado actual
+        cl = self.get_changelist_instance(request)
+        qs = cl.queryset
+
+        headers = [
+            "Sección", "Código", "Descripción", "Referencia",
+            "Marca", "Clasificación actual",
+            "Suma importe", "Suma unidades",
+            "Porcentaje acumulado", "Nueva clasificación", "Almacén",
+        ]
+
+        # Workbook en modo escritura eficiente
+        wb = Workbook(write_only=True)
+        ws = wb.create_sheet(title="Procesado")
+        ws.append(headers)
+
+        # Volcado en filas (iterador por chunks)
+        for obj in qs.iterator(chunk_size=2000):
+            ws.append([
+                getattr(obj, "seccion", ""),
+                getattr(obj, "codigo", ""),
+                getattr(obj, "descripcion", ""),
+                getattr(obj, "referencia", ""),
+                getattr(obj, "marca", ""),
+                getattr(obj, "clasificacion_actual", ""),
+                getattr(obj, "suma_importe", ""),
+                getattr(obj, "suma_unidades", ""),
+                getattr(obj, "porcentaje_acumulado", ""),
+                getattr(obj, "nueva_clasificacion", ""),
+                getattr(obj, "almacen", ""),
+            ])
+
+        # Guardar a memoria y responder
+        bio = BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+
+        proceso = request.GET.get("proceso__id__exact", "") or "all"
+        resp = HttpResponse(
+            bio.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        resp['Content-Disposition'] = f'attachment; filename="articulos_procesados_proceso_{proceso}.xlsx"'
+        return resp
     
 
 
