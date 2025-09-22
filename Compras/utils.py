@@ -189,8 +189,11 @@ def notificar_proceso_finalizado(proceso: ProcesoClasificacion, total: int):
     text_content = strip_tags(html_content)  # fallback de texto plano
 
     destinatarios = [
-        'desarrollador@mercasur.com.co',
-        'wilmer3428@gmail.com'
+        'gconectores@mercasur.com.co',
+        'Gestrategadeportafolio@mercasur.com.co',
+        'guerrerademarca@mercasur.com.co',
+        'gresaltadores@mercasur.com.co',
+        'desarrollador@mercasur.com.co'
     ]
 
     msg = EmailMultiAlternatives(
