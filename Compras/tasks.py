@@ -203,7 +203,7 @@ LEFT JOIN VentasPrevias VP
     notificar_proceso_finalizado(proceso, len(articulos))
     return f"Proceso #{proceso.pk} completado: {len(articulos)} artículos cargados"
 
-@shared_task()
+@shared_task(queue="cola_descuentos")
 def actualizar_clasificaciones_en_icg(proceso_id):
     from appMercaSur.conect import conectar_sql_server, ejecutar_consulta_simple
     from .models import ArticuloClasificacionFinal, ProcesoClasificacion
