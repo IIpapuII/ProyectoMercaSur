@@ -5,21 +5,87 @@
 
 {% block result_list %}
   <style>
-    .kpi-wrap { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap: 12px; margin: 8px 0 16px; }
-    .kpi-card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px 14px; }
-    .kpi-title { font-size: 12px; color: #666; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }
-    .kpi-value { font-size: 18px; font-weight: 600; }
-    @media (max-width: 1100px) { .kpi-wrap { grid-template-columns: repeat(2, 1fr); } }
-    .pivot-table-wrap { width: 100%; overflow-x: auto; }
-    .pivot-table { border-collapse: collapse; width: max-content; min-width: 100%; margin-top: 24px; }
-    .pivot-table th, .pivot-table td { border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; white-space: nowrap; }
+    /* Altura de la primera fila del thead (fallback inicial) */
+    :root { --thead-row1-h: 34px; }
+
+    .kpi-wrap {
+      /* antes: display:grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); */
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      margin: 4px 0 8px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-gutter: stable;
+    }
+    .kpi-card {
+      /* antes no tenía flex */
+      flex: 0 0 auto;
+      min-width: 150px;
+      background: #fff; border: 1px solid #ddd; border-radius: 8px;
+      padding: 6px 8px;
+    }
+    /* Opcional: tamaño de scrollbar horizontal */
+    .kpi-wrap::-webkit-scrollbar { height: 6px; }
+    .kpi-wrap::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+    @media (max-width: 1100px) {
+      /* Ya no se usa grid, se mantiene una sola fila con scroll */
+      .kpi-wrap { gap: 6px; }
+    }
+    .pivot-table-wrap { width: 100%; overflow-x: auto; max-height: 85vh; overflow-y: auto; }
+    .pivot-table { border-collapse: collapse; width: max-content; min-width: 100%; margin-top: 12px; }
+    .pivot-table th, .pivot-table td { border: 1px solid #ccc; padding: 3px 5px; font-size: 11.5px; line-height: 1.1; white-space: nowrap; }
     .pivot-table th { background: #f7f7f7; }
-    .pivot-table input[type="number"] { width: 80px; }
-    .pivot-table input[type="submit"] { padding: 2px 8px; font-size: 13px; }
-    @media (max-width: 700px) { .pivot-table th, .pivot-table td { font-size: 11px; padding: 4px 4px; } .pivot-table input[type="number"] { width: 50px; } }
+
+    /* Sticky header */
+    .pivot-table thead tr:first-child th {
+      position: sticky;
+      top: 0;
+      z-index: 2; /* base para headers */
+    }
+    .pivot-table thead tr:nth-child(2) th {
+      position: sticky;
+      top: var(--thead-row1-h);
+      z-index: 1;
+    }
+
+    /* Sticky columns */
+    .pivot-table th.sticky-col,
+    .pivot-table td.sticky-col {
+      position: sticky;
+      background: #fff;
+      box-shadow: 2px 0 2px -1px #ccc;
+    }
+    .pivot-table thead th.sticky-col { z-index: 7; background: #f7f7f7; }
+    .pivot-table thead tr:nth-child(1) th.sticky-col { z-index: 7; }
+    .pivot-table thead tr:nth-child(2) th.sticky-col { z-index: 6; }
+    .pivot-table tbody td.sticky-col { z-index: 5; background: #fff; }
+
+    .pivot-table thead th.group-head { z-index: 1; }
+
+    /* Posiciones/anchos de las columnas fijas */
+    .pivot-table th.sticky-col-1, .pivot-table td.sticky-col-1 { left: 0px;   min-width: 80px; }
+    .pivot-table th.sticky-col-2, .pivot-table td.sticky-col-2 { left: 80px;  min-width: 80px; }
+    .pivot-table th.sticky-col-3, .pivot-table td.sticky-col-3 { left: 160px; min-width: 140px; }
+    .pivot-table th.sticky-col-4, .pivot-table td.sticky-col-4 { left: 300px; min-width: 70px; }
+    .pivot-table th.sticky-col-5, .pivot-table td.sticky-col-5 { left: 370px; min-width: 70px; }
+    .pivot-table th.sticky-col-6, .pivot-table td.sticky-col-6 { left: 440px; min-width: 70px; }
+    .pivot-table th.sticky-col-7, .pivot-table td.sticky-col-7 { left: 510px; min-width: 70px; }
+    .pivot-table th.sticky-col-8, .pivot-table td.sticky-col-8 { left: 580px; min-width: 70px; }
+
+    /* Inputs más compactos */
+    .pivot-table input[type="number"] { width: 70px; }
+    .pivot-table input[type="submit"] { padding: 1px 6px; font-size: 12px; }
+
+    @media (max-width: 700px) {
+      .kpi-wrap { grid-template-columns: repeat(2, 1fr); }
+      .pivot-table th, .pivot-table td { font-size: 10.5px; padding: 2px 4px; }
+      .pivot-table input[type="number"] { width: 40px; }
+    }
+
     td.stock-cell { background:#fff3cd; }
     td.sug-calc-cell { background:#d4edda; }
-    /* Colores pastel por almacén */
     th.group-head.alm-0 { background:#fdebd3; }
     th.group-head.alm-1 { background:#e8f6f3; }
     th.group-head.alm-2 { background:#eaf2f8; }
@@ -38,6 +104,32 @@
     .ms-hidden { display:none; }
     .ms-modal-backdrop.show { display:flex; }
   </style>
+
+  <!-- Calcula el alto real de la primera fila del thead y sincroniza el offset de la segunda -->
+  <script>
+    (function () {
+      function syncHeaderOffset() {
+        const thead = document.querySelector('.pivot-table thead');
+        if (!thead || !thead.rows || !thead.rows.length) return;
+        const h = thead.rows[0].getBoundingClientRect().height;
+        if (h && h > 0) {
+          document.documentElement.style.setProperty('--thead-row1-h', Math.round(h) + 'px');
+        }
+      }
+      window.addEventListener('load', syncHeaderOffset);
+      window.addEventListener('resize', syncHeaderOffset);
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(syncHeaderOffset);
+      }
+      // Por si cambia el zoom/escala del dispositivo
+      let lastW = window.innerWidth, lastH = window.innerHeight;
+      setInterval(function(){
+        if (lastW !== window.innerWidth || lastH !== window.innerHeight) {
+          lastW = window.innerWidth; lastH = window.innerHeight; syncHeaderOffset();
+        }
+      }, 600);
+    })();
+  </script>
 
   {% if kpis %}
   <div class="kpi-wrap">
@@ -148,14 +240,14 @@
       <table class="pivot-table">
         <thead>
           <tr>
-            <th>Código</th>
-            <th>Referencia</th>
-            <th>Descripción</th>
-            <th>Embalaje</th>
-            <th>Último costo</th>
-            <th>Desc. 1 %</th>
-            <th>Desc. 2 %</th>
-            <th>Desc. 3 %</th>
+            <th class="sticky-col sticky-col-1">Código</th>
+            <th class="sticky-col sticky-col-2">Referencia</th>
+            <th class="sticky-col sticky-col-3">Descripción</th>
+            <th class="sticky-col sticky-col-4">Embalaje</th>
+            <th class="sticky-col sticky-col-5">Último costo</th>
+            <th class="sticky-col sticky-col-6">Desc. 1 %</th>
+            <th class="sticky-col sticky-col-7">Desc. 2 %</th>
+            <th class="sticky-col sticky-col-8">Desc. 3 %</th>
             {% for alm in almacenes_list %}
               <th class="group-head alm-{{ forloop.counter0 }}" colspan="9">{{ alm }}</th>
             {% endfor %}
@@ -164,8 +256,14 @@
             <th>Observaciones prov</th>
           </tr>
           <tr>
-            <th></th><th></th><th></th>
-            <th></th><th></th><th></th><th></th><th></th>
+            <th class="sticky-col sticky-col-1"></th>
+            <th class="sticky-col sticky-col-2"></th>
+            <th class="sticky-col sticky-col-3"></th>
+            <th class="sticky-col sticky-col-4"></th>
+            <th class="sticky-col sticky-col-5"></th>
+            <th class="sticky-col sticky-col-6"></th>
+            <th class="sticky-col sticky-col-7"></th>
+            <th class="sticky-col sticky-col-8"></th>
             {% for alm in almacenes_list %}
               <th>Clasif.</th>
               <th>Stock</th>
@@ -183,12 +281,12 @@
         <tbody>
           {% for codigo, almacenes_dict in articulos_pivot.items %}
           <tr>
-            <td>{{ codigo }}</td>
-            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
-            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
-            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.embalaje }}{% endif %}{% endfor %}</td>
-            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
-            <td>
+            <td class="sticky-col sticky-col-1">{{ codigo }}</td>
+            <td class="sticky-col sticky-col-2">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-3">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-4">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.embalaje }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-5">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-6">
               {% if es_proveedor %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
@@ -197,7 +295,7 @@
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
-            <td>
+            <td class="sticky-col sticky-col-7">
               {% if es_proveedor %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
@@ -206,7 +304,7 @@
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_2|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
-            <td>
+            <td class="sticky-col sticky-col-8">
               {% if es_proveedor %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
@@ -218,7 +316,20 @@
             {% for alm in almacenes_list %}
               {% with linea=almacenes_dict|dict_get:alm %}
               {% if linea %}
-                <td>{{ linea.clasificacion }}</td>
+                <td>
+                  {% if not es_proveedor %}
+                    <input
+                      type="text"
+                      name="clasificacion_{{ linea.pk }}"
+                      value="{{ linea.clasificacion|default_if_none:'' }}"
+                      maxlength="2"
+                      style="width:50px;text-transform:uppercase;"
+                      {% if inputs_disabled %}disabled{% endif %}
+                    />
+                  {% else %}
+                    {{ linea.clasificacion }}
+                  {% endif %}
+                </td>
                 <td class="stock-cell">{{ linea.stock_actual }}</td>
                 <td>{{ linea.stock_minimo }}</td>
                 <td>{{ linea.stock_maximo }}</td>

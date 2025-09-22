@@ -978,13 +978,22 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
         original_editable = self.list_editable
         if request.method == 'POST':
             from django.db import transaction
-            # Recolectar IDs desde cualquier campo enviado
             ids = set()
             for k in request.POST.keys():
                 if k.startswith('linea_id_'):
                     try: ids.add(int(k.split('_')[-1]))
                     except: pass
-                elif k.startswith(('sugerido_interno_','nuevo_sugerido_prov_','descuento_prov_pct_','descuento_prov_pct_2_','descuento_prov_pct_3_','continuidad_activo_','nuevo_nombre_prov_','observaciones_prov_')):
+                elif k.startswith((
+                    'sugerido_interno_',
+                    'nuevo_sugerido_prov_',
+                    'descuento_prov_pct_',
+                    'descuento_prov_pct_2_',
+                    'descuento_prov_pct_3_',
+                    'continuidad_activo_',
+                    'nuevo_nombre_prov_',
+                    'observaciones_prov_',
+                    'clasificacion_',           # <-- NUEVO
+                )):
                     try: ids.add(int(k.split('_')[-1]))
                     except: pass
             lineas = self.model.objects.filter(pk__in=ids).select_related('lote')
@@ -1050,6 +1059,7 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                         if cla == 'I' or estado_linea == 'ORDENADA' or estado_lote in {'CONFIRMADO','COMPLETADO'}:
                             continue
                         pid = ln.pk
+                        # sugerido_interno
                         m_si = request.POST.get(f'sugerido_interno_{pid}')
                         if m_si is not None:
                             try:
@@ -1057,8 +1067,20 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                                 if v_si != ln.sugerido_interno:
                                     ln.sugerido_interno = v_si; cambio = True
                             except: pass
+                        # clasificacion (texto, solo internos)
+                        m_clas = request.POST.get(f'clasificacion_{pid}')
+                        if m_clas is not None:
+                            v_clas = (m_clas or '').strip().upper()
+                            if v_clas != (ln.clasificacion or '').strip().upper():
+                                ln.clasificacion = v_clas; cambio = True
                     if cambio:
-                        ln.save(update_fields=[f for f in ['nuevo_sugerido_prov','descuento_prov_pct','descuento_prov_pct_2','descuento_prov_pct_3','continuidad_activo','nuevo_nombre_prov','observaciones_prov','sugerido_interno'] if f in ln.get_deferred_fields() or True])
+                        ln.save(update_fields=[
+                            'clasificacion',                      # <-- NUEVO
+                            'nuevo_sugerido_prov','descuento_prov_pct',
+                            'descuento_prov_pct_2','descuento_prov_pct_3',
+                            'continuidad_activo','nuevo_nombre_prov',
+                            'observaciones_prov','sugerido_interno'
+                        ])
                         actualizados += 1
             if actualizados:
                 self.message_user(request, f"{actualizados} línea(s) actualizada(s).", level=messages.SUCCESS)
@@ -1112,7 +1134,17 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                     articulos_pivot[key] = {}
                 articulos_pivot[key][ln.nombre_almacen] = ln
                 almacenes_set.add(ln.nombre_almacen)
-            almacenes_list = sorted(almacenes_set)
+            # Orden personalizado de almacenes
+            orden_almacenes = [
+                "MERCASUR CALDAS",
+                "MERCASUR CENTRO",
+                "MERCASUR CABECERA",
+                "MERCASUR SOTOMAYOR"
+            ]
+            almacenes_list = sorted(
+                almacenes_set,
+                key=lambda x: orden_almacenes.index(x) if x in orden_almacenes else 99
+            )
             response.context_data["articulos_pivot"] = articulos_pivot
             response.context_data["almacenes_list"] = almacenes_list
             # Después de response.context_data["es_proveedor"] = es_proveedor (ya abajo) añadimos lote_id_actual
