@@ -149,6 +149,285 @@ class SugeridoLineaInline(admin.TabularInline):
 # Admin Lote (con link a "ver líneas del lote")
 # ─────────────────────────────────────────────────────────────────────
 
+@admin.register(SugeridoLote)
+class SugeridoLoteAdmin(admin.ModelAdmin):
+    form = SugeridoLoteAdminForm
+    change_form_template = "admin/compras/sugeridolote/change_form.html"
+    list_display = ("id", "nombre", "fecha_extraccion", "estado",
+                    "total_lineas", "total_costo", "creado_por", "ver_lineas")
+    list_filter = ("estado", "creado_por",)
+    search_fields = ("nombre", "id", "creado_por__username")
+    date_hierarchy = "fecha_extraccion"
+    readonly_fields = ("total_lineas","total_costo", "fecha_extraccion", "estado", 
+                       "clasificacion_filtro","numserie","numpedido","subserie","pedidos_icg","creado_por",)
+    fields = ("nombre", "proveedor", "marca", "observaciones")  # Orden específico: proveedor primero, luego marca
+    actions = [
+        "accion_enviar_a_proveedor",
+        "accion_marcar_confirmado",
+        "accion_marcar_completado",
+        "accion_exportar_xlsx",
+        "accion_recalcular_totales",
+        "accion_anular_lote",
+        "accion_reabrir_proveedor",
+    ]
+
+    @admin.display(description="Ver líneas")
+    def ver_lineas(self, obj: SugeridoLote):
+        url = reverse("admin:sugeridolinea_por_lote", args=[obj.id])
+        return format_html(
+            '<a class="button" style="background-color: #28a745; color: white; padding: 5px 10px; '
+            'border-radius: 5px; text-decoration: none;" href="{}">Abrir Detalle</a>',
+            url
+        )
+
+    @admin.action(description="Enviar a proveedor")
+    def accion_enviar_a_proveedor(self, request, qs):
+        from ..models import SugeridoLote  # importar para evitar problemas de circular import
+        enviados = 0
+        for lote in qs:
+            if lote.estado == SugeridoLote.Estado.BORRADOR:
+                lote.estado = SugeridoLote.Estado.ENVIADO
+                lote.save(update_fields=['estado'])
+                # Notificar por email
+                try:
+                    notificar_proveedor_lote_enviado(lote)
+                except Exception as e:
+                    messages.warning(request, f"Error al enviar notificación para lote {lote.id}: {e}")
+                enviados += 1
+        if enviados:
+            self.message_user(request, f"{enviados} lote(s) enviado(s) a proveedor.", messages.SUCCESS)
+        else:
+            self.message_user(request, "No hay lotes en BORRADOR para enviar.", messages.INFO)
+    
+    @admin.action(description="Marcar como CONFIRMADO")
+    def accion_marcar_confirmado(self, request, qs):
+        n = qs.update(estado=SugeridoLote.Estado.CONFIRMADO)
+        self.message_user(request, f"{n} lote(s) marcados como CONFIRMADO.", messages.SUCCESS)
+
+    @admin.action(description="Marcar como COMPLETADO")
+    def accion_marcar_completado(self, request, qs):
+        n = qs.update(estado=SugeridoLote.Estado.COMPLETADO)
+        self.message_user(request, f"{n} lote(s) marcados como COMPLETADO.", messages.SUCCESS)
+    
+    @admin.action(description="Anular Lote")
+    def accion_anular_lote(self, request, qs):
+        n = qs.update(estado=SugeridoLote.Estado.ANULADO)
+        self.message_user(request, f"{n} lote(s) anulados.", messages.SUCCESS)
+    
+    @admin.action(description="Reabrir proveedor")
+    def accion_reabrir_proveedor(self, request, qs):
+        bloqueados = qs.filter(estado=SugeridoLote.Estado.COMPLETADO).count()
+        actualizados = qs.exclude(estado=SugeridoLote.Estado.COMPLETADO)\
+                         .update(estado=SugeridoLote.Estado.ENVIADO)
+        if actualizados:
+            self.message_user(request, f"{actualizados} lote(s) reabiertos para proveedor.", messages.SUCCESS)
+        if bloqueados:
+            self.message_user(request, f"{bloqueados} lote(s) no se pueden reabrir porque están en estado COMPLETADO.", messages.WARNING)
+
+    @admin.action(description="Exportar XLSX (lote)")
+    def accion_exportar_xlsx(self, request, qs):
+        if not qs.exists():
+            self.message_user(request, "Selecciona al menos un lote.", messages.WARNING)
+            return
+
+        if qs.count() == 1:
+            lote = qs.first()
+            lineas = SugeridoLinea.objects.filter(lote=lote).select_related("proveedor", "marca", "vendedor")
+            filename = f"sugerido_lote_{lote.id}.xlsx"
+        else:
+            ids = list(qs.values_list("id", flat=True))
+            lineas = SugeridoLinea.objects.filter(lote_id__in=ids).select_related("proveedor", "marca", "vendedor")
+            filename = "sugerido_lotes_" + "_".join(map(str, ids)) + ".xlsx"
+
+        # ✅ No intentes mutar FKs a str aquí; el exportador hace la conversión segura
+        xlsx_bytes, filename = export_lines_to_xlsx(lineas, filename=filename)
+
+        resp = HttpResponse(
+            xlsx_bytes,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
+    @admin.action(description="Recalcular totales")
+    def accion_recalcular_totales(self, request, qs):
+        actualizados = 0
+        for lote in qs:
+            lote.recalcular_totales()
+            actualizados += 1
+        self.message_user(request, f"{actualizados} lote(s) recalculados.", messages.SUCCESS)
+
+    # Nuevo: setear creado_por automáticamente
+    def save_model(self, request, obj, form, change):
+        if not change or not getattr(obj, "creado_por_id", None):
+            obj.creado_por = request.user
+        super().save_model(request, obj, form, change)
+
+    # NUEVO: detección robusta de perfiles
+    def _get_perfil_proveedor_obj(self, request):
+        perfil = getattr(request.user, "perfil_proveedor", None)
+        try:
+            if hasattr(perfil, "all"):
+                return perfil.all().first()
+            if hasattr(perfil, "exists") and hasattr(perfil, "model"):
+                return perfil.first()
+            return perfil
+        except Exception:
+            return None
+    def _get_perfil_vendedor_obj(self, request):
+        perfil = getattr(request.user, "perfil_vendedor", None)
+        try:
+            if hasattr(perfil, "all"):
+                return perfil.all().first()
+            if hasattr(perfil, "exists") and hasattr(perfil, "model"):
+                return perfil.first()
+            return perfil
+        except Exception:
+            return None
+
+    def _es_proveedor(self, request) -> bool:
+        """
+        True si el usuario pertenece al grupo 'perfil_proveedor' o
+        tiene un perfil_proveedor relacionado (aunque también sea interno).
+        """
+        en_grupo = request.user.groups.filter(name='perfil_proveedor').exists()
+        tiene_perfil = self._get_perfil_proveedor_obj(request) is not None
+        return en_grupo or tiene_perfil
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if self._es_proveedor(request):
+            return {k: v for k, v in actions.items() if k == "accion_exportar_xlsx"}
+        return actions
+
+    # NUEVO: detectar vendedor interno
+    def _es_vendedor(self, request) -> bool:
+        return self._get_perfil_vendedor_obj(request) is not None
+
+    # Nuevo: filtrar listado por asignaciones
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        perfil_prov = self._get_perfil_proveedor_obj(request)
+        if perfil_prov:
+            return qs.filter(proveedor=perfil_prov.proveedor)
+        perfil_vend = self._get_perfil_vendedor_obj(request)
+        if perfil_vend:
+            return qs.filter(
+                Exists(
+                    AsignacionMarcaVendedor.objects.filter(
+                        vendedor=perfil_vend,
+                        proveedor_id=OuterRef("proveedor_id"),
+                        marca_id=OuterRef("marca_id"),
+                    )
+                )
+            )
+        return qs
+
+    # Nuevo: filtrar proveedores/marcas según asignaciones del usuario
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "proveedor":
+            perfil_prov = self._get_perfil_proveedor_obj(request)
+            if perfil_prov:
+                kwargs["queryset"] = Proveedor.objects.filter(id=perfil_prov.proveedor.id)
+            else:
+                perfil_vend = self._get_perfil_vendedor_obj(request)
+                if perfil_vend:
+                    kwargs["queryset"] = Proveedor.objects.filter(
+                        asignaciones__vendedor=perfil_vend
+                    ).distinct()
+        elif db_field.name == "marca":
+            perfil_prov = self._get_perfil_proveedor_obj(request)
+            if perfil_prov:
+                kwargs["queryset"] = Marca.objects.filter(
+                    asignaciones__proveedor=perfil_prov.proveedor
+                ).distinct()
+            else:
+                perfil_vend = self._get_perfil_vendedor_obj(request)
+                if perfil_vend:
+                    kwargs["queryset"] = Marca.objects.filter(
+                        asignaciones__vendedor=perfil_vend
+                    ).distinct()
+                else:
+                    kwargs["queryset"] = Marca.objects.filter(
+                        asignaciones__isnull=False
+                    ).distinct()
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+        ]
+        return custom + urls
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Agregar datos de marcas al contexto del template"""
+        extra_context = extra_context or {}
+        
+        # Generar datos de marcas para JavaScript
+        marcas_data = {}
+        asignaciones = AsignacionMarcaVendedor.objects.select_related('proveedor', 'marca').all()
+        
+        for asignacion in asignaciones:
+            proveedor_id = str(asignacion.proveedor.id)
+            if proveedor_id not in marcas_data:
+                marcas_data[proveedor_id] = []
+            
+            marca_data = {
+                'id': asignacion.marca.id,
+                'nombre': asignacion.marca.nombre
+            }
+            if marca_data not in marcas_data[proveedor_id]:
+                marcas_data[proveedor_id].append(marca_data)
+        
+        extra_context['marcas_data_json'] = json.dumps(marcas_data)
+        return super().change_view(request, object_id, form_url, extra_context)
+
+    def add_view(self, request, form_url='', extra_context=None):
+        """Agregar datos de marcas al contexto del template"""
+        extra_context = extra_context or {}
+        
+        # Generar datos de marcas para JavaScript
+        marcas_data = {}
+        asignaciones = AsignacionMarcaVendedor.objects.select_related('proveedor', 'marca').all()
+        
+        for asignacion in asignaciones:
+            proveedor_id = str(asignacion.proveedor.id)
+            if proveedor_id not in marcas_data:
+                marcas_data[proveedor_id] = []
+            
+            marca_data = {
+                'id': asignacion.marca.id,
+                'nombre': asignacion.marca.nombre
+            }
+            if marca_data not in marcas_data[proveedor_id]:
+                marcas_data[proveedor_id].append(marca_data)
+        
+        extra_context['marcas_data_json'] = json.dumps(marcas_data)
+        return super().add_view(request, form_url, extra_context)
+
+    # Nuevo: proteger acceso directo a objetos fuera de las asignaciones
+    def has_view_permission(self, request, obj=None):
+        base = super().has_view_permission(request, obj=obj)
+        if not base:
+            return False
+        if obj is None:
+            return True
+        perfil_prov = self._get_perfil_proveedor_obj(request)
+        if perfil_prov:
+            return obj.proveedor_id == getattr(perfil_prov.proveedor, "id", None)
+        perfil_vend = self._get_perfil_vendedor_obj(request)
+        if perfil_vend:
+            return AsignacionMarcaVendedor.objects.filter(
+                vendedor=perfil_vend,
+                proveedor_id=obj.proveedor_id,
+                marca_id=obj.marca_id,
+            ).exists()
+        return True
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Admin Línea con TARJETAS KPI + filtros + permisos por rol/proveedor
+# ─────────────────────────────────────────────────────────────────────
 @admin.register(SugeridoLinea)
 class SugeridoLineaAdmin(admin.ModelAdmin):
     change_list_template = f"admin/{SugeridoLinea._meta.app_label}/sugeridolinea/change_list.html"
