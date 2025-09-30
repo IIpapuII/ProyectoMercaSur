@@ -69,26 +69,10 @@ def _next_numpedido(cursor, numserie: str) -> int:
 
 def _elegir_cantidad(lin: SugeridoLinea, politica: str, ajuste: str) -> Decimal:
     """
-    politica: 'prefer_proveedor'|'prefer_interno'|'solo_calculado'
+    Nuevo comportamiento: usar solo sugerido_interno.
     ajuste: 'up'|'down'|'nearest'
     """
-    if politica == "prefer_proveedor":
-        if lin.estado_linea == SugeridoLinea.EstadoLinea.APROBADA and lin.nuevo_sugerido_prov > 0:
-            q = lin.nuevo_sugerido_prov
-        elif lin.sugerido_interno and lin.sugerido_interno > 0:
-            q = lin.sugerido_interno
-        else:
-            q = lin.sugerido_base or Decimal("0")
-    elif politica == "prefer_interno":
-        if lin.sugerido_interno and lin.sugerido_interno > 0:
-            q = lin.sugerido_interno
-        elif lin.estado_linea == SugeridoLinea.EstadoLinea.APROBADA and lin.nuevo_sugerido_prov > 0:
-            q = lin.nuevo_sugerido_prov
-        else:
-            q = lin.sugerido_base or Decimal("0")
-    else:
-        q = lin.sugerido_base or Decimal("0")
-
+    q = lin.sugerido_interno or Decimal("0")
     if q <= 0:
         return Decimal("0")
 
@@ -137,14 +121,11 @@ def crear_pedido_compra_desde_lote(
     lote_id: int,
     numserie: str = DEFAULT_NUMSERIE,
     subserie_n: str = DEFAULT_SUBSERIE_N,
-    politica_cantidades: str = "prefer_interno",  # 'prefer_proveedor'|'prefer_interno'|'solo_calculado'
-    ajuste_multiplo: str = "up",                  # 'up'|'down'|'nearest'
+    politica_cantidades: str = "prefer_interno",  # ignorado: ahora solo se usa sugerido_interno
+    ajuste_multiplo: str = "up",
 ):
     """
-    Crea 1..N pedidos de compra (PEDCOMPRACAB + PEDCOMPRALIN) desde un SugeridoLote,
-    agrupando por CODALMACEN. Devuelve la lista de pedidos creados:
-      [{'cod_almacen': '50', 'numserie': '13CP', 'numpedido': 256035, 'subserie': 'B'}, ...]
-    Además, escribe el resultado dentro del SugeridoLote en el campo JSON 'pedidos_icg'.
+    Solo se suben líneas con sugerido_interno > 0. La cantidad se toma exclusivamente de sugerido_interno.
     """
     lote = SugeridoLote.objects.select_related("proveedor").get(pk=lote_id)
     if not lote.proveedor:
@@ -155,10 +136,14 @@ def crear_pedido_compra_desde_lote(
     if codprove in (None, "", 0):
         raise ValueError("El proveedor no tiene código ICG (campo 'cod_icg' o 'codigo').")
 
-    # Agrupar líneas por almacén
-    lineas = list(lote.lineas.select_related("proveedor", "marca").all())
+    # Agrupar líneas por almacén (filtrando solo sugerido_interno > 0)
+    lineas = list(
+        lote.lineas.select_related("proveedor", "marca")
+        .filter(sugerido_interno__gt=0)
+        .all()
+    )
     if not lineas:
-        raise ValueError("El lote no tiene líneas.")
+        raise ValueError("El lote no tiene líneas con sugerido interno > 0.")
 
     grupos = {}
     for lin in lineas:
@@ -180,6 +165,11 @@ def crear_pedido_compra_desde_lote(
         hora_excel = _hora_excel_naive() # HORA (base 1899-12-30)
 
         for cod_almacen, lista in grupos.items():
+            # Validar que existan líneas válidas (cantidad > 0 tras ajustar a múltiplos)
+            lista_validas = [lin for lin in lista if _elegir_cantidad(lin, politica_cantidades, ajuste_multiplo) > 0]
+            if not lista_validas:
+                continue
+
             # Numeración por cada pedido (por almacén)
             numpedido = _next_numpedido(cursor, numserie)
             supedido = f"-{numserie}-{numpedido}"
@@ -212,7 +202,7 @@ def crear_pedido_compra_desde_lote(
 
             # ---------- Líneas de ese pedido ----------
             numlinea = 0
-            for lin in lista:
+            for lin in lista_validas:
                 q = _elegir_cantidad(lin, politica_cantidades, ajuste_multiplo)
                 if q <= 0:
                     continue
@@ -304,4 +294,6 @@ def crear_pedido_compra_desde_lote(
     )
 
     return pedidos_creados
+
+
 

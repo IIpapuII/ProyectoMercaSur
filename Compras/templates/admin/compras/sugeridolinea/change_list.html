@@ -55,7 +55,7 @@
     .pivot-table td.sticky-col {
       position: sticky;
       background: #fff;
-      box-shadow: 2px 0 2px -1px #ccc;
+      border-right: 1px solid #ddd;
     }
     .pivot-table thead th.sticky-col { z-index: 7; background: #f7f7f7; }
     .pivot-table thead tr:nth-child(1) th.sticky-col { z-index: 7; }
@@ -65,14 +65,10 @@
     .pivot-table thead th.group-head { z-index: 1; }
 
     /* Posiciones/anchos de las columnas fijas */
-    .pivot-table th.sticky-col-1, .pivot-table td.sticky-col-1 { left: 0px;   min-width: 80px; }
-    .pivot-table th.sticky-col-2, .pivot-table td.sticky-col-2 { left: 80px;  min-width: 80px; }
-    .pivot-table th.sticky-col-3, .pivot-table td.sticky-col-3 { left: 160px; min-width: 140px; }
-    .pivot-table th.sticky-col-4, .pivot-table td.sticky-col-4 { left: 300px; min-width: 70px; }
-    .pivot-table th.sticky-col-5, .pivot-table td.sticky-col-5 { left: 370px; min-width: 70px; }
-    .pivot-table th.sticky-col-6, .pivot-table td.sticky-col-6 { left: 440px; min-width: 70px; }
-    .pivot-table th.sticky-col-7, .pivot-table td.sticky-col-7 { left: 510px; min-width: 70px; }
-    .pivot-table th.sticky-col-8, .pivot-table td.sticky-col-8 { left: 580px; min-width: 70px; }
+    .pivot-table th.sticky-col-1, .pivot-table td.sticky-col-1 { left: 0px;   min-width: 50px; }
+    .pivot-table th.sticky-col-2, .pivot-table td.sticky-col-2 { left: 50px;  min-width: 60px; }
+    .pivot-table th.sticky-col-3, .pivot-table td.sticky-col-3 { left: 135px; min-width: 140px; }
+    .pivot-table th.sticky-col-4, .pivot-table td.sticky-col-4 { left: 275px; min-width: 80px; border-right: 2px solid #999; }
 
     /* Inputs más compactos */
     .pivot-table input[type="number"] { width: 70px; }
@@ -138,12 +134,11 @@
     <div class="kpi-card"><div class="kpi-title">Cajas totales</div><div class="kpi-value">{{ kpis.total_cajas|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Artículos (filtrados)</div><div class="kpi-value">{{ kpis.total_articulos|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Costo sugerido proveedor</div><div class="kpi-value">${{ kpis.costo_sugerido_prov|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Costo sugerido interno</div><div class="kpi-value">${{ kpis.costo_sugerido_interno|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Gap prov vs calculado</div><div class="kpi-value">${{ kpis.gap_prov_vs_calc|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Gap interno vs calculado</div><div class="kpi-value">${{ kpis.gap_interno_vs_calc|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Presupuesto total</div><div class="kpi-value">${{ kpis.presupuesto_total|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Líneas con algún descuento %</div><div class="kpi-value">{{ kpis.lineas_con_algún_descuento_pct|floatformat:1 }}%</div></div>
-    <div class="kpi-card"><div class="kpi-title">Costo confirmado mes</div><div class="kpi-value">${{ kpis.costo_confirmado_mes|floatformat:0|intcomma }}</div></div>
-    <div class="kpi-card"><div class="kpi-title">Cumpl. presupuesto %</div><div class="kpi-value">{{ kpis.cumplimiento_presupuesto_pct|floatformat:1 }}%</div></div>
   </div>
   {% endif %}
 
@@ -244,10 +239,10 @@
             <th class="sticky-col sticky-col-2">Referencia</th>
             <th class="sticky-col sticky-col-3">Descripción</th>
             <th class="sticky-col sticky-col-4">Embalaje</th>
-            <th class="sticky-col sticky-col-5">Último costo</th>
-            <th class="sticky-col sticky-col-6">Desc. 1 %</th>
-            <th class="sticky-col sticky-col-7">Desc. 2 %</th>
-            <th class="sticky-col sticky-col-8">Desc. 3 %</th>
+            <th>Último costo</th>
+            <th>Desc. 1 %</th>
+            <th>Desc. 2 %</th>
+            <th>Desc. 3 %</th>
             {% for alm in almacenes_list %}
               <th class="group-head alm-{{ forloop.counter0 }}" colspan="9">{{ alm }}</th>
             {% endfor %}
@@ -260,10 +255,10 @@
             <th class="sticky-col sticky-col-2"></th>
             <th class="sticky-col sticky-col-3"></th>
             <th class="sticky-col sticky-col-4"></th>
-            <th class="sticky-col sticky-col-5"></th>
-            <th class="sticky-col sticky-col-6"></th>
-            <th class="sticky-col sticky-col-7"></th>
-            <th class="sticky-col sticky-col-8"></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
             {% for alm in almacenes_list %}
               <th>Clasif.</th>
               <th>Stock</th>
@@ -285,8 +280,8 @@
             <td class="sticky-col sticky-col-2">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
             <td class="sticky-col sticky-col-3">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
             <td class="sticky-col sticky-col-4">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.embalaje }}{% endif %}{% endfor %}</td>
-            <td class="sticky-col sticky-col-5">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
-            <td class="sticky-col sticky-col-6">
+            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
+            <td>
               {% if es_proveedor %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
@@ -295,7 +290,7 @@
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
-            <td class="sticky-col sticky-col-7">
+            <td>
               {% if es_proveedor %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
@@ -304,7 +299,7 @@
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_2|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
-            <td class="sticky-col sticky-col-8">
+            <td>
               {% if es_proveedor %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
@@ -317,7 +312,7 @@
               {% with linea=almacenes_dict|dict_get:alm %}
               {% if linea %}
                 <td>
-                  {% if not es_proveedor %}
+                  {% if es_interno %}
                     <input
                       type="text"
                       name="clasificacion_{{ linea.pk }}"
@@ -344,8 +339,14 @@
                 </td>
 
                 <td>
-                  {% if not es_proveedor %}
-                    <input type="number" name="sugerido_interno_{{ linea.pk }}" value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
+                  {% if es_interno %}
+                    <input
+                      type="number"
+                      name="sugerido_interno_{{ linea.pk }}"
+                      value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}"
+                      step="0.01"
+                      {% if inputs_disabled %}disabled{% elif linea.clasificacion and linea.clasificacion|upper == 'C' and not puede_editar_clasificacion_c %}disabled{% endif %}
+                    />
                   {% else %}
                     {{ linea.sugerido_interno|default_if_none:'' }}
                   {% endif %}

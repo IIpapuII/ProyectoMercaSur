@@ -233,15 +233,16 @@ auditlog.register(AsignacionMarcaVendedor)
 
 class ProveedorUsuario(models.Model):
     """
-    Usuarios externos (proveedores) con acceso restringido a sus líneas.
-    Si el mismo sistema también usa usuarios internos, este perfil identifica a los externos.
+    Relación entre usuarios (externos o internos) y proveedores.
+    Un usuario puede estar vinculado a varios proveedores.
     """
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="perfil_proveedor")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="perfiles_proveedor")
     proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE, related_name="usuarios")
 
     class Meta:
         verbose_name = "Perfil de Proveedor (Usuario)"
         verbose_name_plural = "Perfiles de Proveedor (Usuarios)"
+        unique_together = ("user", "proveedor")  # evita duplicados exactos
 
     def __str__(self):
         return f"{self.user} → {self.proveedor}"
@@ -393,6 +394,8 @@ class SugeridoLinea(models.Model):
     warning_incremento_100 = models.BooleanField(default=False)
     IVA = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"), help_text="IVA aplicable al artículo (%)")
     cod_proveedor = models.CharField(max_length=50, blank=True, null=True, help_text="Código del artículo según el proveedor")
+    es_informativa = models.BooleanField(default=False, help_text="Si la línea es solo informativa (no se ordena)")
+    Proveedor_principal = models.CharField(max_length=5, blank=True, null=True, help_text="Define si el proveedor principal para el artículo (S/N)")
 
     class Meta:
         indexes = [
@@ -400,6 +403,7 @@ class SugeridoLinea(models.Model):
             models.Index(fields=["proveedor", "marca"]),
             models.Index(fields=["clasificacion"]),
         ]
+        
         verbose_name = "Línea de Sugerido"
         verbose_name_plural = "Líneas de Sugerido"
 
@@ -466,6 +470,7 @@ class SugeridoLinea(models.Model):
             self.stock_seguridad = self.stock_minimo or Decimal("0")
 
     def save(self, *args, **kwargs):
+        
         self.clean()
         self.recomputar_costos()
         super().save(*args, **kwargs)

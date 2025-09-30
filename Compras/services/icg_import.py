@@ -155,7 +155,12 @@ def import_data_sugerido_inventario(user_id: int | None = None, marca: str | Non
         return f"Fallo de conexión a ICG en Proceso #{proceso.pk}.{extra}"
 
     consulta = """
-WITH Base AS (
+WITH AlmacenesSel AS (
+    SELECT CODALMACEN, NOMBREALMACEN
+    FROM ALMACEN
+    WHERE CODALMACEN IN ('1','2','3','50')
+),
+Base AS (
     SELECT
         a.CODALMACEN                               AS cod_almacen,
         a.NOMBREALMACEN                            AS nombre_almacen,
@@ -168,9 +173,9 @@ WITH Base AS (
         MC.DESCRIPCION                             AS marca,
         p.NOMPROVEEDOR                             AS proveedor,
         AR.DESCRIPCION                             AS descripcion,
-        S.STOCK                                    AS stock_actual,
-        S.MINIMO                                   AS stock_minimo,
-        S.MAXIMO                                   AS stock_maximo,
+        COALESCE(S.STOCK, 0)                       AS stock_actual,
+        COALESCE(S.MINIMO, 0)                      AS stock_minimo,
+        COALESCE(S.MAXIMO, 0)                      AS stock_maximo,
         AR.UNID1C                                  AS uds_compra_base,
         AR.UNID2C                                  AS uds_compra_mult,
         COALESCE(c.ULTIMOCOSTE, 0)                 AS ultimo_costo,
@@ -182,22 +187,19 @@ WITH Base AS (
             WHEN a.NOMBREALMACEN = 'MERCASUR SOTOMAYOR' THEN ACL.CLASIFICACION5
             ELSE NULL
         END                                         AS clasificacion,
-                (
-    SELECT
-        TOP (1)
-        a2.DTO
-    FROM
-        PEDCOMPRACAB a
-    inner JOIN PEDCOMPRALIN a2 ON
-        a2.NUMPEDIDO = a.NUMPEDIDO
-        AND a2.NUMSERIE = a.NUMSERIE
-    where
-        a2.CODARTICULO = AR.CODARTICULO 
-    ORDER BY
-        TRY_CONVERT(date, a.FECHAPEDIDO, 105) DESC) as ultimodescuento,
-    p.CODPROVEEDOR as CodProveedor,
-	(select i.IVA from IMPUESTOS i where i.TIPOIVA = AR.IMPUESTOCOMPRA ) as iva
-    FROM ARTICULOS AR 
+        (
+            SELECT TOP (1) lin.DTO
+            FROM PEDCOMPRACAB cab
+            INNER JOIN PEDCOMPRALIN lin
+                ON lin.NUMPEDIDO = cab.NUMPEDIDO
+               AND lin.NUMSERIE  = cab.NUMSERIE
+            WHERE lin.CODARTICULO = AR.CODARTICULO
+            ORDER BY TRY_CONVERT(date, cab.FECHAPEDIDO, 105) DESC
+        )                                           AS ultimodescuento,
+        p.CODPROVEEDOR                              AS CodProveedor,
+        (SELECT i.IVA FROM IMPUESTOS i WHERE i.TIPOIVA = AR.IMPUESTOCOMPRA) AS iva,
+        r.PRINCIPAL                                 AS proveedorPrincipal
+    FROM ARTICULOS AR
     INNER JOIN ARTICULOSCAMPOSLIBRES ACL 
         ON AR.CODARTICULO = ACL.CODARTICULO
     LEFT  JOIN DEPARTAMENTO DP 
@@ -210,19 +212,20 @@ WITH Base AS (
         ON AR.DPTO = SF.NUMDPTO AND AR.SECCION = SF.NUMSECCION AND AR.FAMILIA = SF.NUMFAMILIA AND AR.SUBFAMILIA = SF.NUMSUBFAMILIA
     LEFT  JOIN MARCA MC 
         ON AR.MARCA = MC.CODMARCA
+    /* mostrar TODAS las bodegas seleccionadas */
+    CROSS JOIN AlmacenesSel a
     LEFT  JOIN STOCKS S 
         ON AR.CODARTICULO = S.CODARTICULO
-    INNER JOIN ALMACEN a 
-        ON S.CODALMACEN = a.CODALMACEN
-    INNER JOIN COSTESPORALMACEN c 
-        ON c.CODALMACEN = a.CODALMACEN AND c.CODARTICULO = AR.CODARTICULO 
+       AND S.CODALMACEN   = a.CODALMACEN
+    LEFT  JOIN COSTESPORALMACEN c 
+        ON c.CODALMACEN = a.CODALMACEN 
+       AND c.CODARTICULO = AR.CODARTICULO
     INNER JOIN REFERENCIASPROV r 
-        ON r.CODARTICULO = AR.CODARTICULO AND r.PRINCIPAL = 'T'
+        ON r.CODARTICULO = AR.CODARTICULO
     INNER JOIN PROVEEDORES p  
-        ON p.CODPROVEEDOR = r.CODPROVEEDOR 
+        ON p.CODPROVEEDOR = r.CODPROVEEDOR
     WHERE AR.DESCATALOGADO = 'F'
-      AND a.CODALMACEN IN ('1','2','3','50')
-"""
+      """
     if marca:
         consulta += f"      AND MC.DESCRIPCION = '{marca.replace("'", "''")}'\n"
     if provedor:
@@ -231,18 +234,45 @@ WITH Base AS (
 ),
 Calculos AS (
     SELECT
-        *,
-        COALESCE(NULLIF(uds_compra_base, 0), 1) * COALESCE(NULLIF(uds_compra_mult, 0), 1) AS embalaje,
+        b.*,
+        /* embalaje mínimo 1 si vienen ceros */
+        COALESCE(NULLIF(b.uds_compra_base, 0), 1) * COALESCE(NULLIF(b.uds_compra_mult, 0), 1) AS embalaje,
         CASE 
-            WHEN (stock_maximo - stock_actual) < 0 THEN 0
-            ELSE (stock_maximo - stock_actual)
-        END AS sugerido_base,
+            WHEN (b.stock_maximo - b.stock_actual) < 0 THEN CAST(0 AS DECIMAL(18,4))
+            ELSE CAST(b.stock_maximo - b.stock_actual AS DECIMAL(18,4))
+        END AS diff_sin_redondeo,
         CASE 
-            WHEN UPPER(LTRIM(RTRIM(nombre_almacen))) = 'MERCASUR CALDAS' 
+            WHEN UPPER(LTRIM(RTRIM(b.nombre_almacen))) = 'MERCASUR CALDAS' 
                 THEN CAST(1.30 AS DECIMAL(10,4))
             ELSE CAST(1.50 AS DECIMAL(10,4))
         END AS factor_almacen
-    FROM Base
+    FROM Base b
+),
+Redondeo AS (
+    SELECT
+        c.*,
+        CASE WHEN c.embalaje <= 0 THEN 1 ELSE c.embalaje END AS embalaje_safe,
+        FLOOR( c.diff_sin_redondeo / NULLIF(c.embalaje,0) ) AS paquetes_floor,
+        (c.diff_sin_redondeo / NULLIF(c.embalaje,0)) - FLOOR(c.diff_sin_redondeo / NULLIF(c.embalaje,0)) AS fraccion_paquete
+    FROM Calculos c
+),
+Final AS (
+    SELECT
+        r.*,
+        /* reglas de redondeo por bodega para el sugerido_base */
+        CASE 
+            WHEN r.diff_sin_redondeo <= 0 OR r.embalaje_safe <= 0 THEN CAST(0 AS DECIMAL(18,4))
+            WHEN r.cod_almacen IN ('1','2')
+                THEN CEILING( r.diff_sin_redondeo / r.embalaje_safe ) * r.embalaje_safe
+            WHEN r.cod_almacen IN ('3','50')
+                THEN CASE 
+                        WHEN r.fraccion_paquete > 0.3 
+                             THEN (r.paquetes_floor + 1) * r.embalaje_safe
+                        ELSE r.paquetes_floor * r.embalaje_safe
+                     END
+            ELSE r.diff_sin_redondeo
+        END AS sugerido_base
+    FROM Redondeo r
 )
 SELECT
     cod_almacen                                AS CODALMACEN,
@@ -261,35 +291,34 @@ SELECT
     stock_maximo                               AS [StockMaximo],
     uds_compra_base                            AS [UdsCompraBase],
     uds_compra_mult                            AS [UdsCompraMult],
-    embalaje                                   AS [Embalaje],
+    embalaje_safe                              AS [Embalaje],
     ultimo_costo                               AS [UltimoCosto],
     tipo                                       AS [Tipo],
     clasificacion                              AS [Clasificacion],
-    sugerido_base                              AS [SugeridoBase],
+    CAST(sugerido_base AS DECIMAL(18,4))       AS [SugeridoBase],
     factor_almacen                             AS [Factor],
     CASE 
         WHEN sugerido_base <= 0 THEN 0
-        WHEN embalaje <= 0 THEN CEILING(CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen)
-        ELSE CEILING( (CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) 
-                      / CAST(embalaje AS DECIMAL(18,4)) ) * embalaje
+        WHEN embalaje_safe <= 0 THEN CEILING(CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen)
+        ELSE CEILING( (CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) / CAST(embalaje_safe AS DECIMAL(18,4)) ) * embalaje_safe
     END                                         AS [Sugerido],
     CASE 
-        WHEN sugerido_base <= 0 THEN 0
-        WHEN embalaje <= 0 THEN CEILING(CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen)
-        ELSE CEILING( (CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) 
-                      / CAST(embalaje AS DECIMAL(18,4)) ) * embalaje
-    END  / NULLIF(embalaje, 0)				AS [Cajas],
+        WHEN sugerido_base <= 0 OR embalaje_safe = 0 THEN 0
+        ELSE (
+            CEILING( (CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) / CAST(embalaje_safe AS DECIMAL(18,4)) )
+        )
+    END                                         AS [Cajas],
     CASE 
         WHEN sugerido_base <= 0 THEN 0
-        WHEN embalaje <= 0 THEN CEILING(CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) * ultimo_costo
-        ELSE CEILING( (CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) 
-                      / CAST(embalaje AS DECIMAL(18,4)) ) * embalaje * ultimo_costo
+        WHEN embalaje_safe <= 0 THEN CEILING(CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) * ultimo_costo
+        ELSE CEILING( (CAST(sugerido_base AS DECIMAL(18,4)) * factor_almacen) / CAST(embalaje_safe AS DECIMAL(18,4)) ) * embalaje_safe * ultimo_costo
     END                                         AS [CostoLinea],
-    ultimodescuento AS [UltimoDescuentoPedido],
-    CodProveedor as [CodProveedor],
-    iva as [IVA]
-FROM Calculos
-WHERE sugerido_base > 0
+    ultimodescuento                             AS [UltimoDescuentoPedido],
+    CodProveedor                                AS [CodProveedor],
+    iva                                         AS [IVA],
+    CASE WHEN diff_sin_redondeo <= 0 THEN 1 ELSE 0 END AS EsInformativa,
+    proveedorPrincipal
+FROM Final
 ORDER BY nombre_almacen, codigo;
 """
 
@@ -412,6 +441,7 @@ ORDER BY nombre_almacen, codigo;
                 tipo=_safe_str(row.get("Tipo")) or None,
                 clasificacion=_safe_str(row.get("Clasificacion")) or None,
                 sugerido_base=_safe_int(row.get("SugeridoBase")),
+                nuevo_sugerido_prov=_safe_int(row.get("SugeridoBase")),
                 factor_almacen=_safe_float(row.get("Factor"), 1.0),
                 sugerido_calculado=_safe_int(row.get("Sugerido")),
                 cajas_calculadas=_safe_float(row.get("Cajas")),
@@ -419,6 +449,8 @@ ORDER BY nombre_almacen, codigo;
                 descuento_prov_pct=_safe_float(row.get("UltimoDescuentoPedido")),
                 cod_proveedor=_safe_str(row.get("CodProveedor")) or None,
                 IVA=_safe_float(row.get("IVA"), 0.0),
+                es_informativa=bool(_safe_int(row.get("EsInformativa"), 0)),
+                Proveedor_principal=_safe_str(row.get("proveedorPrincipal")),
             )
         )
         insertados += 1

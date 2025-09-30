@@ -1,0 +1,141 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <!-- HTMX opcional -->
+  <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+  <style>
+    .htmx-indicator { opacity: 0; transition: opacity 300ms ease-in; }
+    .htmx-request .htmx-indicator { opacity: 1; }
+    .htmx-request.htmx-indicator { opacity: 1; }
+  </style>
+{% endblock %}
+
+{% block admin_change_form_document_ready %}
+  {{ block.super }}
+  <script>
+    console.log('change_form con consumo de /Compras/api/marcas-por-proveedor/ listo');
+
+    const DEFAULT_API_URL = '/Compras/api/marcas-por-proveedor/';
+
+    function getCSRFToken() {
+      const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+      return csrfInput ? csrfInput.value : '';
+    }
+
+    function safeReinitSelect2(selectEl) {
+      if (window.$ && $.fn.select2) {
+        try { $(selectEl).select2('destroy'); } catch (e) {}
+        $(selectEl).select2();
+      }
+    }
+
+    async function fetchMarcas({ proveedorId, term = '', limit = 100 }) {
+      const proveedorSelect = document.getElementById('id_proveedor') || document.querySelector('select[name="proveedor"]');
+      let apiUrl = (proveedorSelect && proveedorSelect.getAttribute('data-marcas-url')) || DEFAULT_API_URL;
+
+      const url = new URL(apiUrl, window.location.origin);
+      url.searchParams.set('proveedor_id', proveedorId);
+      if (term) url.searchParams.set('q', term);
+      if (limit) url.searchParams.set('limit', limit);
+
+      console.log('GET:', url.toString());
+
+      const resp = await fetch(url.toString(), {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRFToken': getCSRFToken()
+        }
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+      return resp.json();
+    }
+
+    async function actualizarMarcasPorProveedor(proveedorId, { term = '' } = {}) {
+      const marcaSelect = document.getElementById('id_marca') || document.querySelector('select[name="marca"]');
+
+      if (!marcaSelect) {
+        console.error('No se encontró el select de marca con ID "id_marca" ni con name="marca"');
+        return;
+      }
+      if (!marcaSelect.id) marcaSelect.id = 'id_marca';
+
+      // Sin proveedor => limpiar
+      if (!proveedorId) {
+        marcaSelect.innerHTML = '<option value="">---------</option>';
+        safeReinitSelect2(marcaSelect);
+        return;
+      }
+
+      try {
+        const data = await fetchMarcas({ proveedorId, term, limit: 100 });
+
+        // Rellenar
+        marcaSelect.innerHTML = '<option value="">---------</option>';
+        if (Array.isArray(data.marcas) && data.marcas.length) {
+          for (const m of data.marcas) {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.text || m.nombre || '';
+            marcaSelect.appendChild(opt);
+          }
+        } else {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No hay marcas disponibles para este proveedor';
+          marcaSelect.appendChild(opt);
+        }
+
+        safeReinitSelect2(marcaSelect);
+      } catch (err) {
+        console.error('Error cargando marcas:', err);
+        marcaSelect.innerHTML = '<option value="">Error cargando marcas</option>';
+        safeReinitSelect2(marcaSelect);
+      }
+    }
+
+    function waitForElements() {
+      return new Promise((resolve) => {
+        const tick = () => {
+          const proveedorSelect = document.getElementById('id_proveedor') || document.querySelector('select[name="proveedor"]');
+          const marcaSelect = document.getElementById('id_marca') || document.querySelector('select[name="marca"]');
+          if (proveedorSelect && marcaSelect) resolve({ proveedorSelect, marcaSelect });
+          else setTimeout(tick, 100);
+        };
+        tick();
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      waitForElements().then(({ proveedorSelect, marcaSelect }) => {
+        // Garantiza el data attribute para el fallback visual
+        if (!proveedorSelect.getAttribute('data-marcas-url')) {
+          proveedorSelect.setAttribute('data-marcas-url', DEFAULT_API_URL);
+        }
+
+        // Si Select2 está activo en proveedor, escuchar sus eventos (búsqueda incluida)
+        if (window.$ && $.fn.select2) {
+          // Cambio de proveedor
+          $(proveedorSelect).on('select2:select', function(e) {
+            const proveedorId = e?.params?.data?.id ?? this.value;
+            actualizarMarcasPorProveedor(proveedorId);
+          });
+          $(proveedorSelect).on('select2:clear', function() {
+            actualizarMarcasPorProveedor(null);
+          });
+        }
+
+        // Fallback nativo
+        proveedorSelect.addEventListener('change', function() {
+          actualizarMarcasPorProveedor(this.value);
+        });
+        const proveedorInicial = proveedorSelect.value;
+        if (proveedorInicial) {
+          setTimeout(() => actualizarMarcasPorProveedor(proveedorInicial), 500);
+        }
+      });
+    });
+  </script>
+{% endblock %}
