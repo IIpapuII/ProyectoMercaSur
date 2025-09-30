@@ -451,6 +451,7 @@ ORDER BY nombre_almacen, codigo;
                 IVA=_safe_float(row.get("IVA"), 0.0),
                 es_informativa=bool(_safe_int(row.get("EsInformativa"), 0)),
                 Proveedor_principal=_safe_str(row.get("proveedorPrincipal")),
+                clasificacion_original = _safe_str(row.get("Clasificacion")),
             )
         )
         insertados += 1
