@@ -1,0 +1,367 @@
+{% extends "admin/change_list.html" %}
+{% load humanize %}
+{% load pivot_extras %}
+{% load l10n %}
+
+{% block result_list %}
+  <style>
+    :root { --thead-row1-h: 34px; }
+    .kpi-wrap { display:flex; flex-wrap:nowrap; gap:6px; margin:4px 0 8px; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; scrollbar-gutter:stable; }
+    .kpi-card { flex:0 0 auto; min-width:150px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:6px 8px; }
+    .kpi-wrap::-webkit-scrollbar { height:6px; } .kpi-wrap::-webkit-scrollbar-thumb { background:#ccc; border-radius:3px; }
+    .pivot-table-wrap { width:100%; overflow-x:auto; max-height:85vh; overflow-y:auto; }
+    .pivot-table { border-collapse:collapse; width:max-content; min-width:100%; margin-top:12px; }
+    .pivot-table th, .pivot-table td { border:1px solid #ccc; padding:3px 5px; font-size:11.5px; line-height:1.1; white-space:nowrap; }
+    .pivot-table th { background:#f7f7f7; }
+    .pivot-table thead tr:first-child th { position:sticky; top:0; z-index:2; }
+    .pivot-table thead tr:nth-child(2) th { position:sticky; top:var(--thead-row1-h); z-index:1; }
+    .pivot-table th.sticky-col, .pivot-table td.sticky-col { position:sticky; background:#fff; border-right:1px solid #ddd; }
+    .pivot-table thead th.sticky-col { z-index:7; background:#f7f7f7; }
+    .pivot-table thead tr:nth-child(1) th.sticky-col { z-index:7; }
+    .pivot-table thead tr:nth-child(2) th.sticky-col { z-index:6; }
+    .pivot-table tbody td.sticky-col { z-index:5; background:#fff; }
+    .pivot-table thead th.group-head { z-index:1; }
+    .pivot-table th.sticky-col-1, .pivot-table td.sticky-col-1 { left:0px;   min-width:50px; }
+    .pivot-table th.sticky-col-2, .pivot-table td.sticky-col-2 { left:50px;  min-width:60px; }
+    .pivot-table th.sticky-col-3, .pivot-table td.sticky-col-3 { left:135px; min-width:140px; }
+    .pivot-table th.sticky-col-4, .pivot-table td.sticky-col-4 { left:275px; min-width:80px; border-right:2px solid #999; }
+    .pivot-table input[type="number"] { width:70px; }
+    .pivot-table input[type="submit"] { padding:1px 6px; font-size:12px; }
+    @media (max-width: 700px) {
+      .kpi-wrap { grid-template-columns: repeat(2, 1fr); }
+      .pivot-table th, .pivot-table td { font-size:10.5px; padding:2px 4px; }
+      .pivot-table input[type="number"] { width:40px; }
+    }
+    td.stock-cell { background:#fff3cd; }
+    td.sug-calc-cell { background:#d4edda; }
+    th.group-head.alm-0 { background:#fdebd3; }
+    th.group-head.alm-1 { background:#e8f6f3; }
+    th.group-head.alm-2 { background:#eaf2f8; }
+    th.group-head.alm-3 { background:#f5eef8; }
+    th.group-head.alm-4 { background:#fef9e7; }
+
+    /* Modal */
+    .ms-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:9999; }
+    .ms-modal { background:#fff; border-radius:10px; width:min(520px, 92%); box-shadow:0 8px 24px rgba(0,0,0,.2); overflow:hidden; }
+    .ms-modal__head { padding:14px 16px; background:#ffc107; color:#333; font-weight:600; }
+    .ms-modal__body { padding:16px; color:#333; }
+    .ms-modal__foot { padding:12px 16px; display:flex; gap:8px; justify-content:flex-end; background:#f7f7f7; }
+    .ms-btn { padding:6px 12px; border-radius:6px; text-decoration:none; border:1px solid transparent; cursor:pointer; }
+    .ms-btn--cancel { background:#fff; border-color:#ccc; color:#333; }
+    .ms-btn--danger { background:#dc3545; color:#fff; }
+    .ms-hidden { display:none; }
+    .ms-modal-backdrop.show { display:flex; }
+  </style>
+
+  <script>
+    (function () {
+      function syncHeaderOffset() {
+        const thead = document.querySelector('.pivot-table thead');
+        if (!thead || !thead.rows || !thead.rows.length) return;
+        const h = thead.rows[0].getBoundingClientRect().height;
+        if (h && h > 0) {
+          document.documentElement.style.setProperty('--thead-row1-h', Math.round(h) + 'px');
+        }
+      }
+      window.addEventListener('load', syncHeaderOffset);
+      window.addEventListener('resize', syncHeaderOffset);
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(syncHeaderOffset);
+      }
+      let lastW = window.innerWidth, lastH = window.innerHeight;
+      setInterval(function(){
+        if (lastW !== window.innerWidth || lastH !== window.innerHeight) {
+          lastW = window.innerWidth; lastH = window.innerHeight; syncHeaderOffset();
+        }
+      }, 600);
+    })();
+  </script>
+
+  {% if kpis %}
+  <div class="kpi-wrap">
+    <div class="kpi-card"><div class="kpi-title">Costo total</div><div class="kpi-value">${{ kpis.costo_total|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Unidades totales a pedir</div><div class="kpi-value">{{ kpis.total_unidades|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Cajas totales</div><div class="kpi-value">{{ kpis.total_cajas|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Artículos (filtrados)</div><div class="kpi-value">{{ kpis.total_articulos|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Costo sugerido proveedor</div><div class="kpi-value">${{ kpis.costo_sugerido_prov|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Costo sugerido interno</div><div class="kpi-value">${{ kpis.costo_sugerido_interno|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Gap prov vs calculado</div><div class="kpi-value">${{ kpis.gap_prov_vs_calc|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Gap interno vs calculado</div><div class="kpi-value">${{ kpis.gap_interno_vs_calc|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Presupuesto total</div><div class="kpi-value">${{ kpis.presupuesto_total|floatformat:0|intcomma }}</div></div>
+    <div class="kpi-card"><div class="kpi-title">Líneas con algún descuento %</div><div class="kpi-value">{{ kpis.lineas_con_algún_descuento_pct|floatformat:1 }}%</div></div>
+  </div>
+  {% endif %}
+
+  {% if lote_id_actual %}
+    {% if not inputs_disabled %}
+      <div style="margin:10px 0; display:flex; gap:8px; flex-wrap:wrap;">
+        {% if es_proveedor and not ocultar_boton_confirmar_proveedor %}
+          <a
+            class="button"
+            style="background:#007bff;color:#fff;padding:6px 12px;border-radius:4px;"
+            href="{% url 'admin:confirmar_lote_proveedor' lote_id_actual %}"
+            data-confirm="Al confirmar el sugerido no se puede deshacer. ¿Desea continuar?">
+            Confirmar Sugerido
+          </a>
+        {% elif not es_proveedor %}
+          <a
+            class="button"
+            style="background:#17a2b8;color:#fff;padding:6px 12px;border-radius:4px;"
+            href="{% url 'admin:importar_a_icg' lote_id_actual %}"
+            data-confirm="Importar a ICG generará la orden de pedido. Esta acción no se puede deshacer. ¿Desea continuar?">
+            Importar a ICG
+          </a>
+          <a
+            class="button"
+            style="background:#6c757d;color:#fff;padding:6px 12px;border-radius:4px;"
+            href="{% url 'admin:confirmar_pedido_icg' lote_id_actual %}"
+            data-confirm="Marcar como COMPLETADO no se puede deshacer. ¿Desea continuar?">
+            Confirmar Pedido ICG (Info)
+          </a>
+        {% endif %}
+      </div>
+
+      <div id="ms-confirm" class="ms-modal-backdrop">
+        <div class="ms-modal">
+          <div class="ms-modal__head">Confirmación requerida</div>
+          <div class="ms-modal__body">
+            <p id="ms-confirm-text" style="margin:0;"></p>
+          </div>
+          <div class="ms-modal__foot">
+            <button type="button" class="ms-btn ms-btn--cancel" data-ms-cancel>Cancelar</button>
+            <button type="button" class="ms-btn ms-btn--danger" data-ms-accept>Continuar</button>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function() {
+          const modal = document.getElementById('ms-confirm');
+          if (!modal) return;
+          const txt = modal.querySelector('#ms-confirm-text');
+          const btnCancel = modal.querySelector('[data-ms-cancel]');
+          const btnAccept = modal.querySelector('[data-ms-accept]');
+          let targetHref = null;
+
+          function openModal(message, href) {
+            targetHref = href;
+            txt.textContent = message || '¿Desea continuar?';
+            modal.classList.add('show');
+          }
+          function closeModal() {
+            modal.classList.remove('show');
+            targetHref = null;
+          }
+
+          document.addEventListener('click', function(ev) {
+            const link = ev.target.closest('a[data-confirm]');
+            if (!link) return;
+            ev.preventDefault();
+            openModal(link.getAttribute('data-confirm'), link.getAttribute('href'));
+          }, true);
+
+          btnCancel && btnCancel.addEventListener('click', closeModal);
+          btnAccept && btnAccept.addEventListener('click', function() {
+            if (targetHref) window.location.assign(targetHref);
+          });
+          modal.addEventListener('click', function(ev) {
+            if (ev.target === modal) closeModal();
+          });
+          document.addEventListener('keydown', function(ev) {
+            if (ev.key === 'Escape') closeModal();
+          });
+        })();
+      </script>
+    {% endif %}
+  {% endif %}
+
+  <form method="post" action="">
+    {% csrf_token %}
+    <div class="pivot-table-wrap">
+      <table class="pivot-table">
+        <thead>
+          <tr>
+            <th class="sticky-col sticky-col-1">Código</th>
+            <th class="sticky-col sticky-col-2">Referencia</th>
+            <th class="sticky-col sticky-col-3">Descripción</th>
+            <th class="sticky-col sticky-col-4">Embalaje</th>
+            <th>Último costo</th>
+            <th>Desc. 1 %</th>
+            <th>Desc. 2 %</th>
+            <th>Desc. 3 %</th>
+            {% for alm in almacenes_list %}
+              <th class="group-head alm-{{ forloop.counter0 }}" colspan="9">{{ alm }}</th>
+            {% endfor %}
+            <th>Continuidad</th>
+            <th>Nuevo nombre prov</th>
+            <th>Observaciones prov</th>
+          </tr>
+          <tr>
+            <th class="sticky-col sticky-col-1"></th>
+            <th class="sticky-col sticky-col-2"></th>
+            <th class="sticky-col sticky-col-3"></th>
+            <th class="sticky-col sticky-col-4"></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            {% for alm in almacenes_list %}
+              <th>Clasif.</th>
+              <th>Stock</th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Sug. calc</th>
+              <th>Cajas</th>
+              <th>Sug. prov</th>
+              <th>Sug. interno</th>
+              <th>Costo línea</th>
+            {% endfor %}
+            <th></th><th></th><th></th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for codigo, almacenes_dict in articulos_pivot.items %}
+          <tr>
+            <td class="sticky-col sticky-col-1">{{ codigo }}</td>
+            <td class="sticky-col sticky-col-2">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-3">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-4">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.embalaje }}{% endif %}{% endfor %}</td>
+            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
+            <td>
+              {% if es_proveedor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
+              {% else %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct|default_if_none:'' }}{% endif %}{% endfor %}
+              {% endif %}
+            </td>
+            <td>
+              {% if es_proveedor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
+              {% else %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_2|default_if_none:'' }}{% endif %}{% endfor %}
+              {% endif %}
+            </td>
+            <td>
+              {% if es_proveedor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
+              {% else %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_3|default_if_none:'' }}{% endif %}{% endfor %}
+              {% endif %}
+            </td>
+
+            {% for alm in almacenes_list %}
+              {% with linea=almacenes_dict|dict_get:alm %}
+                {% if linea %}
+                  {# ========= CLASIFICACIÓN ========= #}
+                  <td>
+                    {% if es_interno %}
+                      <input
+                        type="text"
+                        name="clasificacion_{{ linea.pk }}"
+                        value="{{ linea.clasificacion|default_if_none:'' }}"
+                        maxlength="2"
+                        style="width:50px;text-transform:uppercase;"
+                        {% if inputs_disabled %}disabled{% endif %}
+                      />
+                    {% else %}
+                      {{ linea.clasificacion }}
+                    {% endif %}
+                  </td>
+
+                  {# ========= CAMPOS FIJOS ========= #}
+                  <td class="stock-cell">{{ linea.stock_actual }}</td>
+                  <td>{{ linea.stock_minimo }}</td>
+                  <td>{{ linea.stock_maximo }}</td>
+                  <td class="sug-calc-cell">{{ linea.sugerido_base }}</td>
+                  <td>{{ linea.cajas_calculadas }}</td>
+
+                  {# ========= SUGERIDO PROVEEDOR: solo editable si A/B ========= #}
+                  <td>
+                    {% if es_proveedor %}
+                      {% with cls=linea.clasificacion|default_if_none:'' %}
+                        {% if cls|upper == 'A' or cls|upper == 'B' %}
+                          <input
+                            type="number"
+                            name="nuevo_sugerido_prov_{{ linea.pk }}"
+                            value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}"
+                            step="0.01"
+                            {% if inputs_disabled %}disabled{% endif %}
+                          />
+                        {% else %}
+                          <input
+                            type="number"
+                            name="nuevo_sugerido_prov_{{ linea.pk }}"
+                            value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}"
+                            step="0.01"
+                            disabled
+                          />
+                        {% endif %}
+                      {% endwith %}
+                    {% else %}
+                      {{ linea.nuevo_sugerido_prov|default_if_none:'' }}
+                    {% endif %}
+                  </td>
+
+                  {# ========= SUGERIDO INTERNO (igual que tenías) ========= #}
+                  <td>
+                    {% if es_interno %}
+                      <input
+                        type="number"
+                        name="sugerido_interno_{{ linea.pk }}"
+                        value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}"
+                        step="0.01"
+                        {% if inputs_disabled %}disabled{% elif linea.clasificacion and linea.clasificacion|upper == 'C' and not puede_editar_clasificacion_c %}disabled{% endif %}
+                      />
+                    {% else %}
+                      {{ linea.sugerido_interno|default_if_none:'' }}
+                    {% endif %}
+                    <input type="hidden" name="linea_id_{{ linea.pk }}" value="{{ linea.pk }}" />
+                  </td>
+
+                  <td>{{ linea.costo_linea }}</td>
+                {% else %}
+                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                {% endif %}
+              {% endwith %}
+            {% endfor %}
+
+            <td>
+              {% if es_proveedor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="checkbox" name="continuidad_activo_{{ ln.pk }}" {% if ln.continuidad_activo %}checked{% endif %} {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
+              {% else %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.continuidad_activo }}{% endif %}{% endfor %}
+              {% endif %}
+            </td>
+            <td>
+              {% if es_proveedor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="text" name="nuevo_nombre_prov_{{ ln.pk }}" value="{{ ln.nuevo_nombre_prov|default_if_none:'' }}" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
+              {% else %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.nuevo_nombre_prov|default_if_none:'' }}{% endif %}{% endfor %}
+              {% endif %}
+            </td>
+            <td>
+              {% if es_proveedor %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                  <input type="text" name="observaciones_prov_{{ ln.pk }}" value="{{ ln.observaciones_prov|default_if_none:'' }}" {% if inputs_disabled %}disabled{% endif %} />
+                {% endif %}{% endfor %}
+              {% else %}
+                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.observaciones_prov|default_if_none:'' }}{% endif %}{% endfor %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+{% endblock %}

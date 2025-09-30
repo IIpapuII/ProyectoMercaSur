@@ -1,0 +1,7 @@
+
+<option value="">---------</option>
+{% for m in marcas %}
+  <option value="{{ m.pk }}">{{ m }}</option>
+{% empty %}
+  <option value="">No hay marcas disponibles</option>
+{% endfor %}
