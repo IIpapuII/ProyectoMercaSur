@@ -256,5 +256,7 @@ def actualizar_clasificaciones_en_icg(proceso_id):
             art.mensaje_accion = str(e)
             art.save(update_fields=["estado_accion", "mensaje_accion"])
             errores.append(f"{art.codigo}: {e}")
+    proceso.estado = 'actualizado'
+    proceso.save()
     notificar_proceso_con_excel(proceso, count)
     return count, "<br>".join(errores)

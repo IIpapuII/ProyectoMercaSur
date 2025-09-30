@@ -62,6 +62,8 @@ JAZZMIN_SETTINGS = {
         "auditlog.logentry": "fas fa-history",
         "Compras.ProcesoClasificacion": "fas fa-tasks",
         "Compras.ReglaClasificacion": "fas fa-cogs",
+        "Compras.Proveedor": "fas fa-truck",
+        "Compras.SugeridoLote": "fas fa-boxes",
         # Íconos de las apps (carpetas principales del menú)
         "admin": "fas fa-th-large",               # Panel de control
         "auditlog": "fas fa-clipboard-check",     # Audit log

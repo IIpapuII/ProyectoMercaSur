@@ -28,6 +28,7 @@ urlpatterns = [
     path('api/', include('clientes.urls')),
     path('', include('presupuesto.urls')),
     path('admin/', include('SoporteTI.urls')),
+    path('Compras/', include('Compras.urls')),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

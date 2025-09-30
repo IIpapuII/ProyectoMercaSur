@@ -34,6 +34,7 @@ ALLOWED_HOSTS = ["notificaciones.mercasur.com.co","localhost","127.0.0.1","192.1
 CSRF_TRUSTED_ORIGINS = ['https://notificaciones.mercasur.com.co:9180']
 VUE_LOGIN_URL = 'https://notificaciones.mercasur.com.co:9180/inicio-sesion'
 
+
 SERVERICG = os.getenv("SERVERICG")
 DBICG = os.getenv("DATABASEICG")
 USERICG = os.getenv("USERICG")
@@ -312,3 +313,6 @@ CELERY_ROUTES = {
          'queue': 'codigo_temporal', 'routing_key': 'codigo_temporal'
     }
 }
+
+# Aumentar límite de campos en formularios masivos (vista pivot sugeridos)
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 20000  # antes valor por defecto (~1000)
