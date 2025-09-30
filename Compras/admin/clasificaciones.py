@@ -255,7 +255,7 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
             codigos_nuevos = set(ArticuloClasificacionTemporal.objects.filter(proceso=proceso, estado_nuevo='NUEVO').values_list('codigo', flat=True))
             for art in articulos:
                 # Si el artículo es nuevo, resultado_validacion=False; si no, lógica original
-                if art.codigo in codigos_nuevos:
+                if art.codigo in codigos_nuevos and art.clasificacion_actual not in {"R", "T"}:
                     resultado_validacion = True
                 else:
                     resultado_validacion = (art.clasificacion_actual == art.nueva_clasificacion)

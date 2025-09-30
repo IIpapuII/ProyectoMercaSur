@@ -19,17 +19,23 @@ class ProcesoClasificacionAdmin(admin.ModelAdmin):
     list_display = ('proceso_display', 'estado', 'fecha_inicio', 'lanzar_wizard')
     actions = ['ejecutar_carga']
 
-    # NUEVO: helper para detectar proveedor
-    def _es_proveedor(self, request) -> bool:
-        return bool(getattr(request.user, "perfil_proveedor", None))
+    from django.contrib.auth.models import Group
 
-    # NUEVO: ocultar módulo del índice para proveedores
+    def _es_proveedor(self, request) -> bool:
+        """
+        Retorna True si el usuario pertenece al grupo 'perfil_proveedor'
+        y NO pertenece al grupo 'perfil_interno' (para dar prioridad a internos).
+        """
+        user = request.user
+        if user.groups.filter(name="perfil_interno").exists():
+            return False
+        return user.groups.filter(name="perfil_proveedor").exists()
+
     def has_module_permission(self, request):
         if self._es_proveedor(request):
             return False
         return super().has_module_permission(request)
 
-    # NUEVO: bloquear permiso de vista para proveedores
     def has_view_permission(self, request, obj=None):
         if self._es_proveedor(request):
             return False

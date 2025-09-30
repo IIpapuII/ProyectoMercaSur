@@ -5,81 +5,33 @@
 
 {% block result_list %}
   <style>
-    /* Altura de la primera fila del thead (fallback inicial) */
     :root { --thead-row1-h: 34px; }
-
-    .kpi-wrap {
-      /* antes: display:grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); */
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 6px;
-      margin: 4px 0 8px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-gutter: stable;
-    }
-    .kpi-card {
-      /* antes no tenía flex */
-      flex: 0 0 auto;
-      min-width: 150px;
-      background: #fff; border: 1px solid #ddd; border-radius: 8px;
-      padding: 6px 8px;
-    }
-    /* Opcional: tamaño de scrollbar horizontal */
-    .kpi-wrap::-webkit-scrollbar { height: 6px; }
-    .kpi-wrap::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
-    @media (max-width: 1100px) {
-      /* Ya no se usa grid, se mantiene una sola fila con scroll */
-      .kpi-wrap { gap: 6px; }
-    }
-    .pivot-table-wrap { width: 100%; overflow-x: auto; max-height: 85vh; overflow-y: auto; }
-    .pivot-table { border-collapse: collapse; width: max-content; min-width: 100%; margin-top: 12px; }
-    .pivot-table th, .pivot-table td { border: 1px solid #ccc; padding: 3px 5px; font-size: 11.5px; line-height: 1.1; white-space: nowrap; }
-    .pivot-table th { background: #f7f7f7; }
-
-    /* Sticky header */
-    .pivot-table thead tr:first-child th {
-      position: sticky;
-      top: 0;
-      z-index: 2; /* base para headers */
-    }
-    .pivot-table thead tr:nth-child(2) th {
-      position: sticky;
-      top: var(--thead-row1-h);
-      z-index: 1;
-    }
-
-    /* Sticky columns */
-    .pivot-table th.sticky-col,
-    .pivot-table td.sticky-col {
-      position: sticky;
-      background: #fff;
-      border-right: 1px solid #ddd;
-    }
-    .pivot-table thead th.sticky-col { z-index: 7; background: #f7f7f7; }
-    .pivot-table thead tr:nth-child(1) th.sticky-col { z-index: 7; }
-    .pivot-table thead tr:nth-child(2) th.sticky-col { z-index: 6; }
-    .pivot-table tbody td.sticky-col { z-index: 5; background: #fff; }
-
-    .pivot-table thead th.group-head { z-index: 1; }
-
-    /* Posiciones/anchos de las columnas fijas */
-    .pivot-table th.sticky-col-1, .pivot-table td.sticky-col-1 { left: 0px;   min-width: 50px; }
-    .pivot-table th.sticky-col-2, .pivot-table td.sticky-col-2 { left: 50px;  min-width: 60px; }
-    .pivot-table th.sticky-col-3, .pivot-table td.sticky-col-3 { left: 135px; min-width: 140px; }
-    .pivot-table th.sticky-col-4, .pivot-table td.sticky-col-4 { left: 275px; min-width: 80px; border-right: 2px solid #999; }
-
-    /* Inputs más compactos */
-    .pivot-table input[type="number"] { width: 70px; }
-    .pivot-table input[type="submit"] { padding: 1px 6px; font-size: 12px; }
-
+    .kpi-wrap { display:flex; flex-wrap:nowrap; gap:6px; margin:4px 0 8px; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; scrollbar-gutter:stable; }
+    .kpi-card { flex:0 0 auto; min-width:150px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:6px 8px; }
+    .kpi-wrap::-webkit-scrollbar { height:6px; } .kpi-wrap::-webkit-scrollbar-thumb { background:#ccc; border-radius:3px; }
+    .pivot-table-wrap { width:100%; overflow-x:auto; max-height:85vh; overflow-y:auto; }
+    .pivot-table { border-collapse:collapse; width:max-content; min-width:100%; margin-top:12px; }
+    .pivot-table th, .pivot-table td { border:1px solid #ccc; padding:3px 5px; font-size:11.5px; line-height:1.1; white-space:nowrap; }
+    .pivot-table th { background:#f7f7f7; }
+    .pivot-table thead tr:first-child th { position:sticky; top:0; z-index:2; }
+    .pivot-table thead tr:nth-child(2) th { position:sticky; top:var(--thead-row1-h); z-index:1; }
+    .pivot-table th.sticky-col, .pivot-table td.sticky-col { position:sticky; background:#fff; border-right:1px solid #ddd; }
+    .pivot-table thead th.sticky-col { z-index:7; background:#f7f7f7; }
+    .pivot-table thead tr:nth-child(1) th.sticky-col { z-index:7; }
+    .pivot-table thead tr:nth-child(2) th.sticky-col { z-index:6; }
+    .pivot-table tbody td.sticky-col { z-index:5; background:#fff; }
+    .pivot-table thead th.group-head { z-index:1; }
+    .pivot-table th.sticky-col-1, .pivot-table td.sticky-col-1 { left:0px;   min-width:50px; }
+    .pivot-table th.sticky-col-2, .pivot-table td.sticky-col-2 { left:50px;  min-width:60px; }
+    .pivot-table th.sticky-col-3, .pivot-table td.sticky-col-3 { left:135px; min-width:140px; }
+    .pivot-table th.sticky-col-4, .pivot-table td.sticky-col-4 { left:275px; min-width:80px; border-right:2px solid #999; }
+    .pivot-table input[type="number"] { width:70px; }
+    .pivot-table input[type="submit"] { padding:1px 6px; font-size:12px; }
     @media (max-width: 700px) {
       .kpi-wrap { grid-template-columns: repeat(2, 1fr); }
-      .pivot-table th, .pivot-table td { font-size: 10.5px; padding: 2px 4px; }
-      .pivot-table input[type="number"] { width: 40px; }
+      .pivot-table th, .pivot-table td { font-size:10.5px; padding:2px 4px; }
+      .pivot-table input[type="number"] { width:40px; }
     }
-
     td.stock-cell { background:#fff3cd; }
     td.sug-calc-cell { background:#d4edda; }
     th.group-head.alm-0 { background:#fdebd3; }
@@ -88,7 +40,7 @@
     th.group-head.alm-3 { background:#f5eef8; }
     th.group-head.alm-4 { background:#fef9e7; }
 
-    /* Modal de confirmación (nuevo) */
+    /* Modal */
     .ms-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:9999; }
     .ms-modal { background:#fff; border-radius:10px; width:min(520px, 92%); box-shadow:0 8px 24px rgba(0,0,0,.2); overflow:hidden; }
     .ms-modal__head { padding:14px 16px; background:#ffc107; color:#333; font-weight:600; }
@@ -101,7 +53,6 @@
     .ms-modal-backdrop.show { display:flex; }
   </style>
 
-  <!-- Calcula el alto real de la primera fila del thead y sincroniza el offset de la segunda -->
   <script>
     (function () {
       function syncHeaderOffset() {
@@ -117,7 +68,6 @@
       if (document.fonts && document.fonts.ready) {
         document.fonts.ready.then(syncHeaderOffset);
       }
-      // Por si cambia el zoom/escala del dispositivo
       let lastW = window.innerWidth, lastH = window.innerHeight;
       setInterval(function(){
         if (lastW !== window.innerWidth || lastH !== window.innerHeight) {
@@ -143,7 +93,6 @@
   {% endif %}
 
   {% if lote_id_actual %}
-    {# Ocultar botones si el lote está COMPLETADO #}
     {% if not inputs_disabled %}
       <div style="margin:10px 0; display:flex; gap:8px; flex-wrap:wrap;">
         {% if es_proveedor and not ocultar_boton_confirmar_proveedor %}
@@ -172,7 +121,6 @@
         {% endif %}
       </div>
 
-      <!-- Modal de confirmación solo si hay botones -->
       <div id="ms-confirm" class="ms-modal-backdrop">
         <div class="ms-modal">
           <div class="ms-modal__head">Confirmación requerida</div>
@@ -216,11 +164,9 @@
           btnAccept && btnAccept.addEventListener('click', function() {
             if (targetHref) window.location.assign(targetHref);
           });
-          // Cerrar al hacer click fuera del cuadro
           modal.addEventListener('click', function(ev) {
             if (ev.target === modal) closeModal();
           });
-          // ESC para cerrar
           document.addEventListener('keydown', function(ev) {
             if (ev.key === 'Escape') closeModal();
           });
@@ -308,56 +254,83 @@
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_3|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
+
             {% for alm in almacenes_list %}
               {% with linea=almacenes_dict|dict_get:alm %}
-              {% if linea %}
-                <td>
-                  {% if es_interno %}
-                    <input
-                      type="text"
-                      name="clasificacion_{{ linea.pk }}"
-                      value="{{ linea.clasificacion|default_if_none:'' }}"
-                      maxlength="2"
-                      style="width:50px;text-transform:uppercase;"
-                      {% if inputs_disabled %}disabled{% endif %}
-                    />
-                  {% else %}
-                    {{ linea.clasificacion }}
-                  {% endif %}
-                </td>
-                <td class="stock-cell">{{ linea.stock_actual }}</td>
-                <td>{{ linea.stock_minimo }}</td>
-                <td>{{ linea.stock_maximo }}</td>
-                <td class="sug-calc-cell">{{ linea.sugerido_base }}</td>
-                <td>{{ linea.cajas_calculadas }}</td>
-                <td>
-                  {% if es_proveedor %}
-                    <input type="number" name="nuevo_sugerido_prov_{{ linea.pk }}" value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
-                  {% else %}
-                    {{ linea.nuevo_sugerido_prov|default_if_none:'' }}
-                  {% endif %}
-                </td>
+                {% if linea %}
+                  {# ========= CLASIFICACIÓN ========= #}
+                  <td>
+                    {% if es_interno %}
+                      <input
+                        type="text"
+                        name="clasificacion_{{ linea.pk }}"
+                        value="{{ linea.clasificacion|default_if_none:'' }}"
+                        maxlength="2"
+                        style="width:50px;text-transform:uppercase;"
+                        {% if inputs_disabled %}disabled{% endif %}
+                      />
+                    {% else %}
+                      {{ linea.clasificacion }}
+                    {% endif %}
+                  </td>
 
-                <td>
-                  {% if es_interno %}
-                    <input
-                      type="number"
-                      name="sugerido_interno_{{ linea.pk }}"
-                      value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}"
-                      step="0.01"
-                      {% if inputs_disabled %}disabled{% elif linea.clasificacion and linea.clasificacion|upper == 'C' and not puede_editar_clasificacion_c %}disabled{% endif %}
-                    />
-                  {% else %}
-                    {{ linea.sugerido_interno|default_if_none:'' }}
-                  {% endif %}
-                  <input type="hidden" name="linea_id_{{ linea.pk }}" value="{{ linea.pk }}" />
-                </td>
-                <td>{{ linea.costo_linea }}</td>
-              {% else %}
-                <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-              {% endif %}
+                  {# ========= CAMPOS FIJOS ========= #}
+                  <td class="stock-cell">{{ linea.stock_actual }}</td>
+                  <td>{{ linea.stock_minimo }}</td>
+                  <td>{{ linea.stock_maximo }}</td>
+                  <td class="sug-calc-cell">{{ linea.sugerido_base }}</td>
+                  <td>{{ linea.cajas_calculadas }}</td>
+
+                  {# ========= SUGERIDO PROVEEDOR: solo editable si A/B ========= #}
+                  <td>
+                    {% if es_proveedor %}
+                      {% with cls=linea.clasificacion|default_if_none:'' %}
+                        {% if cls|upper == 'A' or cls|upper == 'B' %}
+                          <input
+                            type="number"
+                            name="nuevo_sugerido_prov_{{ linea.pk }}"
+                            value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}"
+                            step="0.01"
+                            {% if inputs_disabled %}disabled{% endif %}
+                          />
+                        {% else %}
+                          <input
+                            type="number"
+                            name="nuevo_sugerido_prov_{{ linea.pk }}"
+                            value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}"
+                            step="0.01"
+                            disabled
+                          />
+                        {% endif %}
+                      {% endwith %}
+                    {% else %}
+                      {{ linea.nuevo_sugerido_prov|default_if_none:'' }}
+                    {% endif %}
+                  </td>
+
+                  {# ========= SUGERIDO INTERNO (igual que tenías) ========= #}
+                  <td>
+                    {% if es_interno %}
+                      <input
+                        type="number"
+                        name="sugerido_interno_{{ linea.pk }}"
+                        value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}"
+                        step="0.01"
+                        {% if inputs_disabled %}disabled{% elif linea.clasificacion and linea.clasificacion|upper == 'C' and not puede_editar_clasificacion_c %}disabled{% endif %}
+                      />
+                    {% else %}
+                      {{ linea.sugerido_interno|default_if_none:'' }}
+                    {% endif %}
+                    <input type="hidden" name="linea_id_{{ linea.pk }}" value="{{ linea.pk }}" />
+                  </td>
+
+                  <td>{{ linea.costo_linea }}</td>
+                {% else %}
+                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                {% endif %}
               {% endwith %}
             {% endfor %}
+
             <td>
               {% if es_proveedor %}
                 {% for ln in almacenes_dict.values %}{% if forloop.first %}
