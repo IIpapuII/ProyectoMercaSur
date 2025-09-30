@@ -7,10 +7,9 @@ from Compras.models import SugeridoLote, SugeridoLinea
 from appMercaSur.conect import conectar_sql_server
 
 
-# ----------------- Parámetros por defecto (ajusta a tu ICG) -----------------
-DEFAULT_NUMSERIE = "13CP"       # Serie de pedido
-DEFAULT_SUBSERIE_N = "B"        # Subserie N
-DEFAULT_TIPODOC = 2             # Según tu ejemplo real
+DEFAULT_NUMSERIE = "13CP"
+DEFAULT_SUBSERIE_N = "B"
+DEFAULT_TIPODOC = 2
 DEFAULT_IDESTADO = -1
 DEFAULT_CODMONEDA = 1
 DEFAULT_FACTORMONEDA = Decimal("1.0")
@@ -19,42 +18,34 @@ DEFAULT_PORTESPAG = "T"
 DEFAULT_TODORECIBIDO = "F"
 DEFAULT_NORECIBIDO = "T"
 DEFAULT_FROMPEDVENTACENTRAL = "F"
-DEFAULT_SERIEALBARAN = ""       # N''
+DEFAULT_SERIEALBARAN = ""
 DEFAULT_NUMEROALBARAN = -1
 DEFAULT_NALBARAN = "B"
-DEFAULT_TRANSPORTE = 0          # numérico
+DEFAULT_TRANSPORTE = 0
 DEFAULT_NBULTOS = 0
-DEFAULT_REGIMFACT = "3"         # como tu ejemplo
-DEFAULT_ENVIOPOR = ""           # N''
-DEFAULT_CONTACTO = -1           # numérico
-DEFAULT_CODEMPLEADO = -1        # numérico
-DEFAULT_NUMIMPRESIONES = 0      # si quieres 1, cámbialo
+DEFAULT_REGIMFACT = "3"
+DEFAULT_ENVIOPOR = ""
+DEFAULT_CONTACTO = -1
+DEFAULT_CODEMPLEADO = -1
+DEFAULT_NUMIMPRESIONES = 0
 
 
-# ----------------- Utilidades -----------------
 def _round2(x: Decimal) -> Decimal:
     return (x or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 def _fmt_dtotexto(dto_pct: Decimal) -> str:
-    """Devuelve texto tipo '-1.98967406574881%' si dto>0, vacío si no hay dto."""
     if not dto_pct or dto_pct == 0:
         return ""
     return f"-{dto_pct}%"
 
 def _now_naive() -> datetime:
-    """Fecha/hora local sin tzinfo (SQL Server no acepta tzinfo)."""
     return timezone.localtime().replace(tzinfo=None)
 
 def _date_zero_today() -> datetime:
-    """YYYY-MM-DD 00:00:00.000 (naïve) del día actual."""
     today = timezone.localdate()
     return datetime(today.year, today.month, today.day, 0, 0, 0)
 
 def _hora_excel_naive() -> datetime:
-    """
-    Devuelve datetime con base 1899-12-30 HH:MM:SS.000 como objeto datetime naïve,
-    replicando el patrón de ICG que compartiste.
-    """
     now_local = timezone.localtime()
     return datetime(1899, 12, 30, now_local.hour, now_local.minute, now_local.second)
 
@@ -68,18 +59,12 @@ def _next_numpedido(cursor, numserie: str) -> int:
     return (row[0] or 0) + 1
 
 def _elegir_cantidad(lin: SugeridoLinea, politica: str, ajuste: str) -> Decimal:
-    """
-    Nuevo comportamiento: usar solo sugerido_interno.
-    ajuste: 'up'|'down'|'nearest'
-    """
     q = lin.sugerido_interno or Decimal("0")
     if q <= 0:
         return Decimal("0")
-
     pack = max(int(lin.embalaje or 1), 1)
     if pack <= 1:
         return q
-
     x = Decimal(str(q))
     if ajuste == "down":
         return Decimal(str((floor(x / pack)) * pack))
@@ -87,13 +72,9 @@ def _elegir_cantidad(lin: SugeridoLinea, politica: str, ajuste: str) -> Decimal:
         d = Decimal(str((floor(x / pack)) * pack))
         u = Decimal(str((ceil(x / pack)) * pack))
         return u if (x - d) >= (u - x) else d
-    return Decimal(str((ceil(x / pack)) * pack))  # up
+    return Decimal(str((ceil(x / pack)) * pack))
 
 def _precio_y_descuento(lin: SugeridoLinea) -> tuple[Decimal, Decimal]:
-    """
-    PRECIO: unitario base antes de dto (ej. 7118.0).
-    DTO: porcentaje único equivalente (si tienes 3 descuentos, se combinan).
-    """
     d1 = (lin.descuento_prov_pct or Decimal("0")) / Decimal("100")
     d2 = (lin.descuento_prov_pct_2 or Decimal("0")) / Decimal("100")
     d3 = (lin.descuento_prov_pct_3 or Decimal("0")) / Decimal("100")
@@ -102,12 +83,6 @@ def _precio_y_descuento(lin: SugeridoLinea) -> tuple[Decimal, Decimal]:
     return (_round2(precio_base), comp.quantize(Decimal("0.00000000000001")))
 
 def _impuestos_de_linea(lin: SugeridoLinea) -> tuple[int, Decimal]:
-    """
-    Devuelve (TIPOIMPUESTO, IVA%).
-    Ajusta a tu codificación real. Por defecto:
-    - IVA 0% => TIPOIMPUESTO = 4
-    - IVA >0 => TIPOIMPUESTO = 1
-    """
     iva_val = getattr(lin, "iva", None)
     if iva_val is None:
         iva_val = getattr(lin, "IVA", 0)
@@ -115,28 +90,54 @@ def _impuestos_de_linea(lin: SugeridoLinea) -> tuple[int, Decimal]:
     tipo = 4 if iva_pct == 0 else 1
     return (tipo, iva_pct)
 
+def _get_campo_clasificacion_por_almacen(almacen: str | None) -> str | None:
+    a = (almacen or "").upper().strip()
+    return {
+        "MERCASUR CALDAS":    "CLASIFICACION",
+        "MERCASUR CENTRO":    "CLASIFICACION2",
+        "MERCASUR CABECERA":  "CLASIFICACION3",
+        "MERCASUR SOTOMAYOR": "CLASIFICACION5",
+    }.get(a)
 
-# ----------------- Servicio principal -----------------
+def _actualizar_clasificacion_si_activo(cursor, lin: SugeridoLinea):
+    
+    if getattr(lin, "continuidad_activo", None):
+        return
+    nombre_almacen = getattr(lin, "nombre_almacen", None) or getattr(lin, "almacen", None)
+    campo = _get_campo_clasificacion_por_almacen(nombre_almacen)
+    if not campo:
+        return
+    codart = int(lin.codigo_articulo) if str(lin.codigo_articulo).isdigit() else lin.codigo_articulo
+    print(f"Actualizando clasificación en ICG: artículo {codart}, campo {campo} = 'I'")
+    cursor.execute(f"UPDATE ARTICULOSCAMPOSLIBRES SET CLASIFICACION = 'I', CLASIFICACION2 = 'I', CLASIFICACION3 =  'I', CLASIFICACION5= 'I' WHERE CODARTICULO = ?", ( codart))
+
+def _actualizar_clasificacion_Almacen(cursor, lin: SugeridoLinea):
+    nueva = getattr(lin, "clasificacion", None)
+    original = getattr(lin, "clasificacion_original", None)
+    if nueva is None or original is None or str(nueva) == str(original):
+        return
+    nombre_almacen = getattr(lin, "nombre_almacen", None) or getattr(lin, "almacen", None)
+    campo = _get_campo_clasificacion_por_almacen(nombre_almacen)
+    if not campo:
+        return
+    codart = int(lin.codigo_articulo) if str(lin.codigo_articulo).isdigit() else lin.codigo_articulo
+    cursor.execute(f"UPDATE ARTICULOSCAMPOSLIBRES SET {campo} = ? WHERE CODARTICULO = ?", ('I', codart))
+
 def crear_pedido_compra_desde_lote(
     lote_id: int,
     numserie: str = DEFAULT_NUMSERIE,
     subserie_n: str = DEFAULT_SUBSERIE_N,
-    politica_cantidades: str = "prefer_interno",  # ignorado: ahora solo se usa sugerido_interno
+    politica_cantidades: str = "prefer_interno",
     ajuste_multiplo: str = "up",
 ):
-    """
-    Solo se suben líneas con sugerido_interno > 0. La cantidad se toma exclusivamente de sugerido_interno.
-    """
     lote = SugeridoLote.objects.select_related("proveedor").get(pk=lote_id)
     if not lote.proveedor:
         raise ValueError("El lote no tiene proveedor asignado.")
 
-    # CODPROVEEDOR ICG
     codprove = getattr(lote.proveedor, "cod_icg", None) or getattr(lote.proveedor, "codigo", None)
     if codprove in (None, "", 0):
         raise ValueError("El proveedor no tiene código ICG (campo 'cod_icg' o 'codigo').")
 
-    # Agrupar líneas por almacén (filtrando solo sugerido_interno > 0)
     lineas = list(
         lote.lineas.select_related("proveedor", "marca")
         .filter(sugerido_interno__gt=0)
@@ -152,34 +153,28 @@ def crear_pedido_compra_desde_lote(
     pedidos_creados = []
     lineas_ordenadas_ids = []
 
-    # --- Conexión usando tu utilitario ---
     conexion = conectar_sql_server()
     cursor = conexion.cursor()
 
     try:
         conexion.autocommit = False
 
-        # Fechas/horas como objetos datetime NAÏVE (evita 22007)
-        dt_now = _now_naive()            # FECHAMODIFICADO / FECHACREACION
-        date_zero = _date_zero_today()   # FECHAPEDIDO / FECHAENTREGA
-        hora_excel = _hora_excel_naive() # HORA (base 1899-12-30)
+        dt_now = _now_naive()
+        date_zero = _date_zero_today()
+        hora_excel = _hora_excel_naive()
 
         for cod_almacen, lista in grupos.items():
-            # Validar que existan líneas válidas (cantidad > 0 tras ajustar a múltiplos)
             lista_validas = [lin for lin in lista if _elegir_cantidad(lin, politica_cantidades, ajuste_multiplo) > 0]
             if not lista_validas:
                 continue
 
-            # Numeración por cada pedido (por almacén)
             numpedido = _next_numpedido(cursor, numserie)
             supedido = f"-{numserie}-{numpedido}"
 
-            # Totales por pedido
             tot_bruto = Decimal("0")
             tot_impuestos = Decimal("0")
             tot_neto = Decimal("0")
 
-            # ---------- Encabezado del pedido (por almacén) ----------
             cursor.execute("""
                 INSERT INTO PEDCOMPRACAB (
                     NUMSERIE, NUMPEDIDO, N, CODPROVEEDOR, SERIEALBARAN, NUMEROALBARAN, NALBARAN,
@@ -200,7 +195,6 @@ def crear_pedido_compra_desde_lote(
                 DEFAULT_CODEMPLEADO, DEFAULT_CONTACTO, DEFAULT_FROMPEDVENTACENTRAL, dt_now, DEFAULT_NUMIMPRESIONES, DEFAULT_REGIMFACT
             ))
 
-            # ---------- Líneas de ese pedido ----------
             numlinea = 0
             for lin in lista_validas:
                 q = _elegir_cantidad(lin, politica_cantidades, ajuste_multiplo)
@@ -210,7 +204,6 @@ def crear_pedido_compra_desde_lote(
                 precio_base, dto_pct = _precio_y_descuento(lin)
                 tipoimp, iva_pct = _impuestos_de_linea(lin)
 
-                # Total sin IVA y con IVA (IVA separado en columnas)
                 total_linea_sin_iva = _round2(precio_base * (Decimal("1") - (dto_pct / Decimal("100"))) * q)
                 iva_linea = _round2(total_linea_sin_iva * (iva_pct / Decimal("100"))) if iva_pct else Decimal("0")
                 total_linea = total_linea_sin_iva + iva_linea
@@ -223,7 +216,6 @@ def crear_pedido_compra_desde_lote(
 
                 codart = int(lin.codigo_articulo) if str(lin.codigo_articulo).isdigit() else lin.codigo_articulo
 
-                # 43 columnas => 43 placeholders
                 cursor.execute("""
                     INSERT INTO PEDCOMPRALIN (
                         NUMSERIE, NUMPEDIDO, N, NUMLINEA, CODARTICULO, REFERENCIA, TALLA, COLOR, DESCRIPCION,
@@ -244,9 +236,10 @@ def crear_pedido_compra_desde_lote(
                     0.0, 0.0
                 ))
 
+                _actualizar_clasificacion_si_activo(cursor, lin)
+                _actualizar_clasificacion_Almacen(cursor, lin)
                 lineas_ordenadas_ids.append(lin.id)
 
-            # ---------- Totales del encabezado de ese pedido ----------
             cursor.execute("""
                 UPDATE PEDCOMPRACAB
                 SET TOTBRUTO = ?, TOTIMPUESTOS = ?, TOTNETO = ?
@@ -254,7 +247,6 @@ def crear_pedido_compra_desde_lote(
             """, (float(_round2(tot_bruto)), float(_round2(tot_impuestos)), float(_round2(tot_neto)),
                   numserie, numpedido, subserie_n))
 
-            # Registrar pedido creado por almacén (para devolver/guardar)
             pedidos_creados.append({
                 "cod_almacen": str(cod_almacen),
                 "numserie": numserie,
@@ -266,7 +258,6 @@ def crear_pedido_compra_desde_lote(
                 "totneto": float(_round2(tot_neto)),
             })
 
-        # Commit de todos los pedidos (uno por almacén)
         conexion.commit()
 
     except Exception:
@@ -282,18 +273,13 @@ def crear_pedido_compra_desde_lote(
         except Exception:
             pass
 
-    # ---------------- Post: actualizar estados en Django ----------------
     if lineas_ordenadas_ids:
         SugeridoLinea.objects.filter(id__in=lineas_ordenadas_ids)\
             .update(estado_linea=SugeridoLinea.EstadoLinea.ORDENADA)
 
-    # Guardar resumen de pedidos en el lote SIEMPRE en 'pedidos_icg' (JSONField)
     SugeridoLote.objects.filter(pk=lote_id).update(
         estado=SugeridoLote.Estado.COMPLETADO,
         pedidos_icg=pedidos_creados
     )
 
     return pedidos_creados
-
-
-

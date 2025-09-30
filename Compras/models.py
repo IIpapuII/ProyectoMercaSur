@@ -396,6 +396,7 @@ class SugeridoLinea(models.Model):
     cod_proveedor = models.CharField(max_length=50, blank=True, null=True, help_text="Código del artículo según el proveedor")
     es_informativa = models.BooleanField(default=False, help_text="Si la línea es solo informativa (no se ordena)")
     Proveedor_principal = models.CharField(max_length=5, blank=True, null=True, help_text="Define si el proveedor principal para el artículo (S/N)")
+    clasificacion_original = models.CharField(max_length=20, blank=True, null=True, help_text="Clasificación original al momento de la extracción")
 
     class Meta:
         indexes = [
