@@ -120,6 +120,7 @@ def notificar_vendedor_lote_asignado(*, proveedor, marca, lote, request=None):
     """
     Notifica a los vendedores asignados a la combinación (proveedor, marca) del lote,
     enviando un correo con estructura visual de la marca (logo/color) y botón al admin.
+    Si no hay emails válidos, omite el envío y finaliza silenciosamente.
     """
     try:
         from Compras.models import AsignacionMarcaVendedor
@@ -130,6 +131,17 @@ def notificar_vendedor_lote_asignado(*, proveedor, marca, lote, request=None):
         proveedor=proveedor, marca=marca
     )
     if not asignaciones.exists():
+        return
+
+    # Recolectar emails válidos (no vacíos, con '@')
+    emails = {
+        getattr(a.vendedor.user, "email", "").strip()
+        for a in asignaciones
+    }
+    emails = {e for e in emails if e and "@" in e}
+
+    # Si no hay correos, omitir proceso y finalizar
+    if not emails:
         return
 
     # URL al admin filtrado por el lote
@@ -149,10 +161,6 @@ def notificar_vendedor_lote_asignado(*, proveedor, marca, lote, request=None):
         f"Revisar en el panel: {url}\n\n"
         "Mercasur • Cada día mejor"
     )
-
-    # Destinatarios (fallback si no hay emails)
-    emails = {getattr(a.vendedor.user, "email", "") for a in asignaciones}
-    emails = {e for e in emails if e} or {getattr(settings, "COMPRAS_TEST_EMAIL", "compras@mercasur.com.co")}
 
     # Envío
     msg = EmailMultiAlternatives(

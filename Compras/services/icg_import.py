@@ -442,6 +442,7 @@ ORDER BY nombre_almacen, codigo;
                 clasificacion=_safe_str(row.get("Clasificacion")) or None,
                 sugerido_base=_safe_int(row.get("SugeridoBase")),
                 nuevo_sugerido_prov=_safe_int(row.get("SugeridoBase")),
+                sugerido_interno = _safe_int(row.get("SugeridoBase")),
                 factor_almacen=_safe_float(row.get("Factor"), 1.0),
                 sugerido_calculado=_safe_int(row.get("Sugerido")),
                 cajas_calculadas=_safe_float(row.get("Cajas")),
