@@ -64,90 +64,104 @@ def procesar_clasificacion(proceso: ProcesoClasificacion):
     sobre el total de su sesión (sección+almacén) y el acumulado hasta 100%, y guarda en
     ArticuloClasificacionProcesado.
     """
-    # 1) QuerySet base con anotaciones
+    def _s(val):  # normaliza strings para ordenar/agrup
+        return val or ""
+    def _dec(val):  # convierte a Decimal de forma segura
+        try:
+            return Decimal(str(val)) if val is not None else Decimal("0")
+        except Exception:
+            return Decimal("0")
+
     qs = (
         ArticuloClasificacionTemporal.objects
         .filter(
             proceso=proceso,
             descat='F',
             departamento__isnull=False,
-            almacen__isnull=False
+            almacen__isnull=False,
         )
         .exclude(departamento__in=DEPARTAMENTOS_EXCLUIDOS)
         .exclude(marca__in=MARCAS_EXCLUIDAS)
         .annotate(
             clasificacion_actual=Case(
-                When(almacen__iexact='MERCASUR CALDAS',   then=F('clasificacion')),
-                When(almacen__iexact='MERCASUR CENTRO',   then=F('clasificacion2')),
-                When(almacen__iexact='MERCASUR CABECERA', then=F('clasificacion3')),
-                When(almacen__iexact='MERCASUR SOTOMAYOR',then=F('clasificacion5')),
+                When(almacen__iexact='MERCASUR CALDAS',    then=F('clasificacion')),
+                When(almacen__iexact='MERCASUR CENTRO',    then=F('clasificacion2')),
+                When(almacen__iexact='MERCASUR CABECERA',  then=F('clasificacion3')),
+                When(almacen__iexact='MERCASUR SOTOMAYOR', then=F('clasificacion5')),
                 default=Value(None),
                 output_field=CharField(),
-            )
+            ),
+            importe_clean=Replace(F('importe'), Value(','), Value('')),
+            importe_num=Cast('importe_clean', FloatField()),
         )
-        # 2) Limpiar posibles comas de miles y convertir string a float
-        .annotate(
-            importe_clean=Replace(
-                F('importe'),
-                Value(','),
-                Value('')
-            )
-        )
-        .annotate(
-            importe_num=Cast('importe_clean', FloatField())
-        )
-        .filter(
-            importe_num__gt=0
-        )
-        .exclude(
-            clasificacion_actual__in=CLASIFICACION_EXCLUIDAS
-        )
+        .filter(importe_num__gte=0)
+        .exclude(clasificacion_actual__in=CLASIFICACION_EXCLUIDAS)
     )
 
-    # 2) Convertir a lista y ordenar por sección, almacén y importe descendente
     temporales = list(qs)
-    temporales.sort(key=lambda t: (t.seccion, t.almacen, -Decimal(t.importe_num)))
+    temporales.sort(key=lambda t: (_s(t.seccion), _s(t.almacen), -_dec(t.importe_num)))
 
-    # 3) Agrupar por (sección, almacén) y calcular porcentajes y acumulados
-    for (seccion, almacen), group in groupby(temporales, key=lambda t: (t.seccion, t.almacen)):
-        print(f"Procesando sección: {seccion}, Almacén: {almacen}")
+    for (seccion, almacen), group in groupby(temporales, key=lambda t: (_s(t.seccion), _s(t.almacen))):
         items = list(group)
-        total = sum(Decimal(t.importe_num) for t in items)
+        total = sum(_dec(t.importe_num) for t in items)
         acumulado = Decimal('0')
-        # Reordenar cada grupo internamente por importe_num descendente
-        for temp in sorted(items, key=lambda t: -Decimal(t.importe_num)):
-            importe_val = Decimal(temp.importe_num)
-            print(f"Procesando {temp.codigo} - Importe: {importe_val} - Total: {total}")
-            pct = (importe_val / total * 100) if total > 0 else Decimal('0')
-            print(f"Porcentaje: {pct:.2f}%")
-            acumulado += pct
-            print(f"Acumulado: {acumulado:.2f}%")
-            # Nueva clasificación según unidades y % acumulado
-            nueva_clas = calcular_clasificacion(acumulado, temp.unidades)
-            print(f"Nueva clasificación: {nueva_clas}")
 
-            # 4) Guardar o actualizar
+        # Si TODO el grupo no tiene ventas: todos quedan en E y no hay acumulado
+        if total <= 0:
+            for temp in items:
+                ArticuloClasificacionProcesado.objects.update_or_create(
+                    proceso=proceso,
+                    codigo=_s(temp.codigo),
+                    almacen=_s(temp.almacen),
+                    defaults={
+                        'seccion':               _s(temp.seccion),
+                        'descripcion':           _s(temp.descripcion),
+                        'referencia':            _s(temp.referencia),
+                        'marca':                 _s(temp.marca),
+                        'clasificacion_actual':  _s(temp.clasificacion_actual),
+                        'suma_importe':          Decimal('0'),      # % del ítem
+                        'importe_num':           _dec(temp.importe_num),
+                        'suma_unidades':         int(temp.unidades or 0),
+                        'porcentaje_acumulado':  Decimal('0'),
+                        'nueva_clasificacion':   'E',
+                    }
+                )
+            continue  # siguiente grupo
+
+        # Con total > 0, ordena desc por importe y aplica la regla de importe=0 => E sin acumular
+        for temp in sorted(items, key=lambda t: -_dec(t.importe_num)):
+            importe_val = _dec(temp.importe_num)
+            unidades_val = int(temp.unidades or 0)
+
+            if importe_val <= 0:
+                # No aporta porcentaje; no cambia el acumulado; clasifica como E
+                pct = Decimal('0')
+                porcentaje_acumulado = acumulado
+                nueva_clas = 'E'
+            else:
+                pct = (importe_val / total * Decimal('100'))
+                acumulado += pct
+                porcentaje_acumulado = acumulado
+                nueva_clas = calcular_clasificacion(porcentaje_acumulado, unidades_val)
+
             ArticuloClasificacionProcesado.objects.update_or_create(
                 proceso=proceso,
-                codigo=temp.codigo,
-                almacen=temp.almacen,
+                codigo=_s(temp.codigo),
+                almacen=_s(temp.almacen),
                 defaults={
-                    'seccion':             temp.seccion,
-                    'descripcion':         temp.descripcion,
-                    'referencia':          temp.referencia,
-                    'marca':               temp.marca,
-                    'clasificacion_actual':temp.clasificacion_actual,
-                    # % del artículo sobre el total de la sesión
-                    'suma_importe':        pct,
-                    'importe_num':         importe_val,
-                    'suma_unidades':       temp.unidades,
-                    # acumulado de porcentajes ronda 100 al final
-                    'porcentaje_acumulado':acumulado,
-                    'nueva_clasificacion': nueva_clas,
+                    'seccion':               _s(temp.seccion),
+                    'descripcion':           _s(temp.descripcion),
+                    'referencia':            _s(temp.referencia),
+                    'marca':                 _s(temp.marca),
+                    'clasificacion_actual':  _s(temp.clasificacion_actual),
+                    'suma_importe':          pct,                 # % del ítem
+                    'importe_num':           importe_val,
+                    'suma_unidades':         unidades_val,
+                    'porcentaje_acumulado':  porcentaje_acumulado,
+                    'nueva_clasificacion':   _s(nueva_clas),
                 }
             )
 
-    # 5) Marcar como procesado
     proceso.estado = 'procesado'
     proceso.save(update_fields=['estado'])
 

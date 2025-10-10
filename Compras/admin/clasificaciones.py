@@ -176,6 +176,11 @@ class ArticuloClasificacionProcesadoAdmin(admin.ModelAdmin):
             qs = cl.queryset
         except Exception:
             return response
+        from django.db.models import F
+        qs = qs.annotate(
+            codigo_articulo=F('codigo'),
+            nombre_almacen=F('almacen'),
+        )
 
         # Agrupar por artículo y obtener almacenes únicos
         articulos_pivot = {}

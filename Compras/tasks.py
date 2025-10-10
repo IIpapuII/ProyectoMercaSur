@@ -54,7 +54,7 @@ def cargar_proceso_clasificacion_task( user_id: int | None = None):
 
     # Consulta SQL para extraer datos
     consulta = f"""
-WITH VentasFiltradas AS (
+;WITH VentasFiltradas AS (
     SELECT
         AL.CODALMACEN,
         AL.CODARTICULO,
@@ -63,28 +63,16 @@ WITH VentasFiltradas AS (
         AL.DTO,
         AL.PRECIODEFECTO,
         AL.UNIDADESTOTAL
-      FROM ALBVENTALIN AL
-        INNER JOIN ALBVENTACAB AC
-            ON AL.NUMSERIE = AC.NUMSERIE
-            AND AL.NUMALBARAN = AC.NUMALBARAN
-            AND AL.N = AC.N
-        INNER JOIN ARTICULOS AR
-            ON AL.CODARTICULO = AR.CODARTICULO
-        WHERE TRY_CONVERT(DATE, AC.FECHA, 105) BETWEEN '{fecha_inicio}' AND '{fecha_fin}'
-          AND AC.TIPODOC IN ('13','82','83')
-), -- Ventas previas a la ventana (cualquier almacén)
-VentasPrevias AS (
-    SELECT DISTINCT
-        AL.CODARTICULO
     FROM ALBVENTALIN AL
     INNER JOIN ALBVENTACAB AC
         ON AL.NUMSERIE = AC.NUMSERIE
        AND AL.NUMALBARAN = AC.NUMALBARAN
        AND AL.N = AC.N
-    WHERE TRY_CONVERT(DATE, AC.FECHA, 105) < '{fecha_inicio}'
+    WHERE TRY_CONVERT(date, AC.FECHA, 105)  BETWEEN '{fecha_inicio}' AND '{fecha_fin}'
       AND AC.TIPODOC IN ('13','82','83')
+      AND AL.CODALMACEN IN ('1','2','3','50')
 ),
-VentasDetalle AS (
+VentasDetalle AS (   -- 1 fila por (almacén, artículo)
     SELECT
         CODALMACEN,
         CODARTICULO,
@@ -97,42 +85,67 @@ VentasDetalle AS (
             END) AS Importe
     FROM VentasFiltradas
     GROUP BY CODALMACEN, CODARTICULO
+),
+StockAgg AS (        -- 1 fila por (almacén, artículo)
+    SELECT
+        S.CODALMACEN,
+        S.CODARTICULO,
+        SUM(S.STOCK) AS STOCK
+    FROM STOCKS S
+    WHERE S.CODALMACEN IN ('1','2','3','50')
+    GROUP BY S.CODALMACEN, S.CODARTICULO
+),
+BasePairs AS (       -- conjunto base: donde hay stock o hubo ventas
+    SELECT CODALMACEN, CODARTICULO FROM StockAgg
+    UNION
+    SELECT CODALMACEN, CODARTICULO FROM VentasDetalle
+),
+VentasPrevias AS (   -- si lo necesitas para tu flag NUEVO/EXISTENTE
+    SELECT DISTINCT AL.CODARTICULO
+    FROM ALBVENTALIN AL
+    INNER JOIN ALBVENTACAB AC
+        ON AL.NUMSERIE = AC.NUMSERIE
+       AND AL.NUMALBARAN = AC.NUMALBARAN
+       AND AL.N = AC.N
+    WHERE TRY_CONVERT(date, AC.FECHA, 105)  < '{fecha_inicio}'
+      AND AC.TIPODOC IN ('13','82','83')
 )
 SELECT
-    AR.CODARTICULO AS 'Código',
-    DP.DESCRIPCION  AS 'Departamento',
-    SC.DESCRIPCION  AS 'Sección',
-    FM.DESCRIPCION  AS 'Familia',
-    SF.DESCRIPCION  AS 'SubFamilia',      -- (ojo: antes estabas usando FM aquí)
-    MC.DESCRIPCION  AS 'Marca',
-    AR.DESCRIPCION  AS 'Descripción',
-    AR.DESCATALOGADO AS 'Descat',
-    AR.TIPO         AS 'Tipo',
-    AR.REFPROVEEDOR AS 'Referencia',
+    AR.CODARTICULO                    AS [Código],
+    DP.DESCRIPCION                    AS [Departamento],
+    SC.DESCRIPCION                    AS [Sección],
+    FM.DESCRIPCION                    AS [Familia],
+    SF.DESCRIPCION                    AS [SubFamilia],
+    MC.DESCRIPCION                    AS [Marca],
+    AR.DESCRIPCION                    AS [Descripción],
+    AR.DESCATALOGADO                  AS [Descat],
+    AR.TIPO                           AS [Tipo],
+    AR.REFPROVEEDOR                   AS [Referencia],
     ACL.CLASIFICACION,
     ACL.CLASIFICACION2,
     ACL.CLASIFICACION3,
     ACL.CLASIFICACION5,
-    0               AS 'Unidades-compras',
-    VPA.Unidad      AS 'Unidades',
-    0               AS 'Coste',
-    0               AS 'Beneficio',
-    VPA.Importe     AS 'IMPORTE',
-    0               AS '%S/V',
-    S.STOCK         AS 'StockActual',
-    0               AS 'Valoración Stock Actual',
-    A.NOMBREALMACEN AS 'Almacen',
-    -- Flags de "nuevo"
+    0                                   AS [Unidades-compras],
+   COALESCE(CAST(VPA.Unidad  AS DECIMAL(18,2)), 0) AS [Unidades],       -- 0 si no hay ventas
+    0                                   AS [Coste],
+    0                                   AS [Beneficio],
+    COALESCE(CAST(VPA.Importe AS DECIMAL(18,2)), 0) AS [IMPORTE],        -- 0 si no hay ventas
+    0                                   AS [%S/V],
+    COALESCE(CAST(S.STOCK     AS DECIMAL(18,3)), 0) AS [StockActual],    -- stock real del almacén
+    0                                   AS [Valoración Stock Actual],
+    ISNULL(A.NOMBREALMACEN, '') AS [Almacen],
     CASE 
         WHEN VPA.CODARTICULO IS NOT NULL AND VP.CODARTICULO IS NULL THEN 1
         ELSE 0
-    END             AS EsNuevo,
+    END                                AS EsNuevo,
     CASE 
         WHEN VPA.CODARTICULO IS NOT NULL AND VP.CODARTICULO IS NULL THEN 'NUEVO'
         ELSE 'EXISTENTE'
-    END             AS EstadoNuevo
-FROM ARTICULOS AR 
-INNER JOIN ARTICULOSCAMPOSLIBRES ACL 
+    END                                AS EstadoNuevo
+FROM BasePairs BP
+JOIN ARTICULOS AR 
+    ON AR.CODARTICULO = BP.CODARTICULO
+JOIN ARTICULOSCAMPOSLIBRES ACL 
     ON AR.CODARTICULO = ACL.CODARTICULO
 LEFT JOIN DEPARTAMENTO DP 
     ON AR.DPTO = DP.NUMDPTO
@@ -150,14 +163,16 @@ LEFT JOIN SUBFAMILIAS SF
 LEFT JOIN MARCA MC 
     ON AR.MARCA = MC.CODMARCA
 LEFT JOIN VentasDetalle VPA 
-    ON AR.CODARTICULO  = VPA.CODARTICULO
+    ON BP.CODARTICULO = VPA.CODARTICULO
+   AND BP.CODALMACEN  = VPA.CODALMACEN
+LEFT JOIN StockAgg S 
+    ON BP.CODARTICULO = S.CODARTICULO
+   AND BP.CODALMACEN  = S.CODALMACEN
 LEFT JOIN ALMACEN A 
-    ON A.CODALMACEN = VPA.CODALMACEN
-LEFT JOIN STOCKS S 
-    ON AR.CODARTICULO = S.CODARTICULO  
-   AND A.CODALMACEN  = S.CODALMACEN
+    ON A.CODALMACEN = BP.CODALMACEN
 LEFT JOIN VentasPrevias VP
     ON AR.CODARTICULO = VP.CODARTICULO
+ORDER BY A.NOMBREALMACEN;
 """
 
     # Ejecutar y cargar datos
@@ -185,10 +200,10 @@ LEFT JOIN VentasPrevias VP
             clasificacion3=row['CLASIFICACION3'],
             clasificacion5=row['CLASIFICACION5'],
             unidades_compras=0,
-            unidades=row['Unidades'],
+            unidades=row['Unidades'] or 0,
             coste='0',
             beneficio='0',
-            importe=row['IMPORTE'],
+            importe=row['IMPORTE'] or 0 ,
             porcentaje_sv='0',
             stock_actual=row['StockActual'],
             valoracion_stock_actual='0',

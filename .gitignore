@@ -183,3 +183,11 @@ cython_debug/
 #.idea/
 
 # End of https://www.toptal.com/developers/gitignore/api/django
+clientes/management/commands/Usuario proveedores.xlsx
+clientes/management/commands/limpiar_datos_proveedores.py
+clientes/management/commands/limpiar_correos_invalidos.py
+clientes/management/commands/cargar_proveedores.py
+clientes/management/commands/cargar_proveedores_completo.py
+clientes/management/commands/asignar_proveedores_definidos.py
+clientes/management/commands/Articulos_Proveedores.csv
+productos_basicos_12_offsets.xlsx
