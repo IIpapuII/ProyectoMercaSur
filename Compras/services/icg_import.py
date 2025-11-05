@@ -51,7 +51,7 @@ def import_data_sugerido_inventario(user_id: int | None = None, marca: str | Non
             if val is None:
                 return default
             str_val = str(val).strip()
-            if str_val.lower() in ['nan', 'null', 'none']:
+            if str_val.lower() in ['nan', 'null', 'none', '']:
                 return default
             return str_val
         except Exception:
@@ -443,6 +443,9 @@ ORDER BY nombre_almacen, codigo;
         factor_almacen = _safe_float(row.get("Factor"), 1.0)
         
         try:
+            # Garantizar que descripcion nunca sea None o vacía
+            descripcion = _safe_str(row.get("Descripción")) or "SIN DESCRIPCIÓN"
+            
             registro = SugeridoLinea(
                 lote=proceso,
                 cod_almacen=cod_alm,
@@ -455,7 +458,7 @@ ORDER BY nombre_almacen, codigo;
                 subfamilia=_safe_str(row.get("SubFamilia")) or None,
                 proveedor_id=proveedor_id,
                 marca_id=marca_id,
-                descripcion=_safe_str(row.get("Descripción")) or None,
+                descripcion=descripcion,
                 stock_actual=_safe_int(row.get("StockActual")),
                 stock_minimo=_safe_int(row.get("StockMinimo")),
                 stock_maximo=_safe_int(row.get("StockMaximo")),
