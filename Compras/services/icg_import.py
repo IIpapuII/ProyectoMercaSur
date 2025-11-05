@@ -21,16 +21,28 @@ def import_data_sugerido_inventario(user_id: int | None = None, marca: str | Non
                 return default
             if isinstance(val, bool):
                 return int(val)
+            # Convertir a string primero para detectar 'nan'
+            str_val = str(val).lower().strip()
+            if str_val in ['nan', 'null', 'none', '', 'inf', '-inf']:
+                return default
             return int(float(val))
-        except Exception:
+        except (ValueError, TypeError, OverflowError):
             return default
 
     def _safe_float(val, default=0.0):
         try:
             if val is None:
                 return default
-            return float(val)
-        except Exception:
+            # Convertir a string primero para detectar 'nan'
+            str_val = str(val).lower().strip()
+            if str_val in ['nan', 'null', 'none', '', 'inf', '-inf']:
+                return default
+            converted = float(val)
+            # Verificar si es NaN usando math.isnan o comparación consigo mismo
+            if converted != converted:  # NaN != NaN es True
+                return default
+            return converted
+        except (ValueError, TypeError, OverflowError):
             return default
 
     # NUEVO: asegurar cast a string con strip sin fallar en int/None
@@ -38,7 +50,10 @@ def import_data_sugerido_inventario(user_id: int | None = None, marca: str | Non
         try:
             if val is None:
                 return default
-            return str(val).strip()
+            str_val = str(val).strip()
+            if str_val.lower() in ['nan', 'null', 'none']:
+                return default
+            return str_val
         except Exception:
             return default
 
@@ -401,10 +416,16 @@ ORDER BY nombre_almacen, codigo;
     registros = []
     insertados = 0
     omitidos = 0
+    errores = 0
 
     for _, row in df.iterrows():
         cod_alm = _safe_str(row.get("CODALMACEN"))
         cod_art = _safe_str(row.get("Código"))
+
+        # Validar que los campos esenciales no estén vacíos
+        if not cod_alm or not cod_art:
+            errores += 1
+            continue
 
         if (cod_alm, cod_art) in existentes:
             omitidos += 1
@@ -417,8 +438,12 @@ ORDER BY nombre_almacen, codigo;
         proveedor_id = prov_map.get(prov_name) or default_prov_id
         marca_id = marca_map.get(marca_name) if marca_name else None
 
-        registros.append(
-            SugeridoLinea(
+        # Validar campos numéricos críticos
+        ultimo_costo = _safe_float(row.get("UltimoCosto"))
+        factor_almacen = _safe_float(row.get("Factor"), 1.0)
+        
+        try:
+            registro = SugeridoLinea(
                 lote=proceso,
                 cod_almacen=cod_alm,
                 nombre_almacen=_safe_str(row.get("Almacen")) or None,
@@ -437,13 +462,13 @@ ORDER BY nombre_almacen, codigo;
                 uds_compra_base=_safe_int(row.get("UdsCompraBase"), 1),
                 uds_compra_mult=_safe_int(row.get("UdsCompraMult"), 1),
                 embalaje=_safe_int(row.get("Embalaje"), 1),
-                ultimo_costo=_safe_float(row.get("UltimoCosto")),
+                ultimo_costo=ultimo_costo,
                 tipo=_safe_str(row.get("Tipo")) or None,
                 clasificacion=_safe_str(row.get("Clasificacion")) or None,
                 sugerido_base=_safe_int(row.get("SugeridoBase")),
                 nuevo_sugerido_prov=_safe_int(row.get("SugeridoBase")),
                 sugerido_interno = _safe_int(row.get("SugeridoBase")),
-                factor_almacen=_safe_float(row.get("Factor"), 1.0),
+                factor_almacen=factor_almacen,
                 sugerido_calculado=_safe_int(row.get("Sugerido")),
                 cajas_calculadas=_safe_float(row.get("Cajas")),
                 costo_linea=_safe_float(row.get("CostoLinea")),
@@ -454,17 +479,22 @@ ORDER BY nombre_almacen, codigo;
                 Proveedor_principal=_safe_str(row.get("proveedorPrincipal")),
                 clasificacion_original = _safe_str(row.get("Clasificacion")),
             )
-        )
-        insertados += 1
+            registros.append(registro)
+            insertados += 1
+        except Exception as e:
+            print(f"Error creando registro para {cod_alm}-{cod_art}: {e}")
+            errores += 1
+            continue
 
     with transaction.atomic():
         if registros:
             SugeridoLinea.objects.bulk_create(registros, batch_size=1000)
-        # Evitar poner estado 'PROCESADO' en SugeridoLote desde este servicio
-        # ...existing code...
-    # ...existing code...
 
-    return (
+    mensaje_final = (
         f"Proceso #{proceso.pk} -> líneas nuevas: {insertados}, "
-        f"omitidas (duplicadas en lote): {omitidos}."
+        f"omitidas (duplicadas en lote): {omitidos}"
     )
+    if errores > 0:
+        mensaje_final += f", errores: {errores}"
+    
+    return mensaje_final + "."
