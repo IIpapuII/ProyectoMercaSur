@@ -52,7 +52,7 @@ RAPPI_CLIENT_SECRET = os.getenv("RAPPI_CLIENT_SECRET")
 RAPPI_URL_BASE = os.getenv("RAPPI_API_BASE_URL")
 
 ADMINS = [
-    ('Nemesio Serrano', 'desarrollador@mercasur.com.co'),  # <- aquí los que quieren ver el error
+    ('Nemesio Serrano', 'desarrollador@mercasur.com.co', 'soporte', 'soporte@mercasur.com.co'),  # <- aquí los que quieren ver el error
 ]
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com' # Servidor SMTP de tu proveedor

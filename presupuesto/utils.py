@@ -398,73 +398,91 @@ def cargasr_ventas_reales_ecenarios(fecha_inicio, fecha_fin):
         AR.DPTO,
         AR.MARCA,
         AR.LINEA,
-        -- Cálculos básicos
-        AL.PRECIO * (1 - AL.DTO / 100.0) * AL.UNID1 AS ImporteNeto,
-        AL.COSTE * AL.UNID1 AS CosteLinea,
-        AL.PRECIOIVA * (AL.DTO / 100.0) * AL.UNID1
-          + CASE
+        -- clamp DTO a [0..100] y castea a DECIMAL
+        CAST(
+            AL.PRECIO * (1 - (
+                CASE 
+                    WHEN COALESCE(AL.DTO,0) < 0 THEN 0
+                    WHEN COALESCE(AL.DTO,0) > 100 THEN 100
+                    ELSE COALESCE(AL.DTO,0)
+                END
+            ) / 100.0) * AL.UNID1
+        AS DECIMAL(18,2)) AS ImporteNeto,
+        CAST(AL.COSTE * AL.UNID1 AS DECIMAL(18,2)) AS CosteLinea,
+        CAST(
+            (AL.PRECIOIVA * (
+                CASE 
+                    WHEN COALESCE(AL.DTO,0) < 0 THEN 0
+                    WHEN COALESCE(AL.DTO,0) > 100 THEN 100
+                    ELSE COALESCE(AL.DTO,0)
+                END
+            ) / 100.0) * AL.UNID1
+            + CASE
                 WHEN AL.PRECIO = 0 AND AL.PRECIODEFECTO > 0
                 THEN AL.PRECIODEFECTO * AL.UNID1
                 ELSE 0
-            END AS POS
-    FROM
-        ALBVENTALIN AL
+              END
+        AS DECIMAL(18,2)) AS POS
+    FROM ALBVENTALIN AL
     JOIN ALBVENTACAB AC
-        ON AC.NUMSERIE = AL.NUMSERIE AND AC.NUMALBARAN = AL.NUMALBARAN
+      ON AC.NUMSERIE = AL.NUMSERIE AND AC.NUMALBARAN = AL.NUMALBARAN
     JOIN ARTICULOS AR
-        ON AR.CODARTICULO = AL.CODARTICULO
+      ON AR.CODARTICULO = AL.CODARTICULO
     WHERE
         CAST(AC.FECHA AS DATE) BETWEEN ? AND ?
         AND AC.TIPODOC IN (13, 82, 83)
         AND AR.DPTO <> 103
 ),
 Categorias AS (
-    -- ECENARIO (todo lo que no sea TIPO=2)
+    -- ESCENARIOS
     SELECT
         VD.CODALMACEN,
         VD.fechaVenta,
         'ESCENARIOS' AS CATEGORIA,
-        SUM(ImporteNeto) AS VENTA_NETA,
-        SUM(POS) AS VALOR_POS,
-        SUM(CosteLinea) AS COSTE
+        CAST(COALESCE(SUM(ImporteNeto), 0) AS DECIMAL(18,2)) AS VENTA_NETA,
+        CAST(COALESCE(SUM(POS), 0)        AS DECIMAL(18,2)) AS VALOR_POS,
+        CAST(COALESCE(SUM(CosteLinea), 0) AS DECIMAL(18,2)) AS COSTE
     FROM VentasDetalle VD
     WHERE VD.TIPO <> 2
     GROUP BY VD.CODALMACEN, VD.fechaVenta
+
     UNION ALL
     -- FRUVER
     SELECT
         VD.CODALMACEN,
         VD.fechaVenta,
-        'FRUVER' AS CATEGORIA,
-        SUM(ImporteNeto) AS VENTA_NETA,
-        SUM(POS) AS VALOR_POS,
-        SUM(CosteLinea) AS COSTE
+        'FRUVER',
+        CAST(COALESCE(SUM(ImporteNeto), 0) AS DECIMAL(18,2)),
+        CAST(COALESCE(SUM(POS), 0)        AS DECIMAL(18,2)),
+        CAST(COALESCE(SUM(CosteLinea), 0) AS DECIMAL(18,2))
     FROM VentasDetalle VD
     WHERE VD.TIPO <> 2 AND VD.DPTO = 5
     GROUP BY VD.CODALMACEN, VD.fechaVenta
+
     UNION ALL
     -- PANADERIA
     SELECT
         VD.CODALMACEN,
         VD.fechaVenta,
-        'PANADERIA' AS CATEGORIA,
-        SUM(ImporteNeto) AS VENTA_NETA,
-        SUM(POS) AS VALOR_POS,
-        SUM(CosteLinea) AS COSTE
+        'PANADERIA',
+        CAST(COALESCE(SUM(ImporteNeto), 0) AS DECIMAL(18,2)),
+        CAST(COALESCE(SUM(POS), 0)        AS DECIMAL(18,2)),
+        CAST(COALESCE(SUM(CosteLinea), 0) AS DECIMAL(18,2))
     FROM VentasDetalle VD
     WHERE VD.MARCA = 4
     GROUP BY VD.CODALMACEN, VD.fechaVenta
-    --marca Mercasur
+
     UNION ALL
-        SELECT
+    -- MARCA MERCASUR
+    SELECT
         VD.CODALMACEN,
         VD.fechaVenta,
-        'MARCA mercasur' AS CATEGORIA,
-        SUM(ImporteNeto) AS VENTA_NETA,
-        SUM(POS) AS VALOR_POS,
-        SUM(CosteLinea) AS COSTE
+        'MARCA MERCASUR',
+        CAST(COALESCE(SUM(ImporteNeto), 0) AS DECIMAL(18,2)),
+        CAST(COALESCE(SUM(POS), 0)        AS DECIMAL(18,2)),
+        CAST(COALESCE(SUM(CosteLinea), 0) AS DECIMAL(18,2))
     FROM VentasDetalle VD
-    WHERE VD.LINEA = '1' AND VD.TIPO != 9
+    WHERE VD.LINEA = '1' AND VD.TIPO <> 9
     GROUP BY VD.CODALMACEN, VD.fechaVenta
 ),
 AlmacenesInfo AS (
@@ -476,16 +494,13 @@ AlmacenesInfo AS (
 SELECT
     AI.Nombre AS ALMACEN,
     C.CATEGORIA,
-    (C.VENTA_NETA + C.VALOR_POS) AS VALOR,
+    CAST(C.VENTA_NETA + C.VALOR_POS AS DECIMAL(18,2)) AS VALOR,
     CASE WHEN C.VENTA_NETA = 0 THEN 0
-         ELSE 100.0 * (C.VENTA_NETA - C.COSTE) / C.VENTA_NETA
-    END AS PCT_MARGEN_SIN_POS,
+         ELSE (100.0 * (C.VENTA_NETA - C.COSTE) / NULLIF(C.VENTA_NETA, 0)) END AS PCT_MARGEN_SIN_POS,
     CASE WHEN (C.VENTA_NETA + C.VALOR_POS) = 0 THEN 0
-         ELSE 100.0 * (C.VENTA_NETA + C.VALOR_POS - C.COSTE) / (C.VENTA_NETA + C.VALOR_POS)
-    END AS PCT_MARGEN_CON_POS,
+         ELSE (100.0 * ((C.VENTA_NETA + C.VALOR_POS) - C.COSTE) / NULLIF((C.VENTA_NETA + C.VALOR_POS), 0)) END AS PCT_MARGEN_CON_POS,
     C.fechaVenta
-FROM
-    AlmacenesInfo AI
+FROM AlmacenesInfo AI
 LEFT JOIN Categorias C ON AI.Cod = C.CODALMACEN
 WHERE C.fechaVenta IS NOT NULL
 ORDER BY AI.Nombre, C.fechaVenta, C.CATEGORIA
