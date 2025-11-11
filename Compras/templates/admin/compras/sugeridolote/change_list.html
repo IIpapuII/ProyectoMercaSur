@@ -1,0 +1,152 @@
+{% extends "admin/change_list.html" %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <style>
+    /* Modal */
+    .ms-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:9999; }
+    .ms-modal { background:#fff; border-radius:10px; width:min(800px, 92%); box-shadow:0 8px 24px rgba(0,0,0,.2); overflow:hidden; }
+    .ms-modal__head { padding:14px 16px; background:#28a745; color:#fff; font-weight:600; }
+    .ms-modal__body { padding:16px; color:#333; max-height:70vh; overflow-y:auto; line-height:1.6; }
+    .ms-modal__body h3 { margin-top:0; color:#28a745; }
+    .ms-modal__body h4 { margin-top:20px; margin-bottom:8px; color:#333; }
+    .ms-modal__body ul, .ms-modal__body ol { margin:8px 0; padding-left:24px; }
+    .ms-modal__body li { margin:4px 0; }
+    .ms-modal__foot { padding:12px 16px; display:flex; gap:8px; justify-content:flex-end; background:#f7f7f7; }
+    .ms-btn { padding:8px 16px; border-radius:6px; text-decoration:none; border:1px solid transparent; cursor:pointer; font-size:14px; }
+    .ms-btn--cancel { background:#fff; border-color:#ccc; color:#333; }
+    .ms-modal-backdrop.show { display:flex; }
+    
+    /* Botón de manual integrado con Jazzmin */
+    .manual-btn {
+      background: #28a745;
+      color: #fff !important;
+      padding: 8px 16px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .manual-btn:hover {
+      background: #218838;
+      color: #fff !important;
+      text-decoration: none;
+    }
+  </style>
+{% endblock %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  
+  <li>
+    <a href="#" class="manual-btn" onclick="event.preventDefault(); document.getElementById('manual-modal').classList.add('show');">
+      <i class="fas fa-book"></i> Manual de Usuario
+    </a>
+  </li>
+  
+  <!-- Modal del Manual -->
+  <div id="manual-modal" class="ms-modal-backdrop">
+    <div class="ms-modal">
+      <div class="ms-modal__head">Manual de Usuario - Sistema de Sugeridos</div>
+      <div class="ms-modal__body">
+        <h3>Bienvenido al Sistema de Sugeridos</h3>
+        
+        <h4>1. Visión General</h4>
+        <p>Este sistema le permite revisar y modificar los sugeridos de compra para los artículos organizados por lotes.</p>
+        
+        <h4>2. Lista de Lotes</h4>
+        <p>En esta pantalla verá todos los lotes de sugerido. Cada lote contiene:</p>
+        <ul>
+          <li><strong>ID:</strong> Identificador único del lote</li>
+          <li><strong>Nombre:</strong> Descripción del lote</li>
+          <li><strong>Fecha extracción:</strong> Cuándo se generó el lote</li>
+          <li><strong>Estado:</strong> Estado actual del lote (Pendiente, Enviado, Confirmado, Completado)</li>
+          <li><strong>Total líneas:</strong> Cantidad de artículos en el lote</li>
+          <li><strong>Total costo:</strong> Costo total del lote</li>
+          <li><strong>Botón "Abrir Detalle":</strong> Acceso a las líneas del lote</li>
+        </ul>
+        
+        <h4>3. Clasificación de Artículos</h4>
+        <ul>
+          <li><strong>Clase A y B:</strong> Artículos de alta rotación - editables según permisos</li>
+          <li><strong>Clase C:</strong> Artículos de rotación media - edición restringida</li>
+          <li><strong>Clase I:</strong> Artículos inactivos - no editables</li>
+        </ul>
+        
+        <h4>4. Cómo Trabajar con un Lote</h4>
+        <ol>
+          <li>Ubique el lote que desea revisar en la lista</li>
+          <li>Haga clic en el botón verde "Abrir Detalle"</li>
+          <li>Revise todos los artículos en la tabla detallada</li>
+          <li>Modifique las cantidades y descuentos según sus permisos</li>
+          <li>Los cambios se guardan automáticamente al enviar el formulario</li>
+          <li>Confirme el sugerido cuando termine (si tiene permisos)</li>
+        </ol>
+        
+        <h4>5. Campos del Detalle del Lote</h4>
+        <ul>
+          <li><strong>Desc. 1%, 2%, 3%:</strong> Porcentajes de descuento (se propagan a todos los almacenes del artículo)</li>
+          <li><strong>Sug. calc:</strong> Cantidad calculada automáticamente (Stock - Máximo)</li>
+          <li><strong>Sug. prov:</strong> Cantidad sugerida por el proveedor</li>
+          <li><strong>Sug. interno:</strong> Cantidad final ajustada internamente</li>
+          <li><strong>Continuidad:</strong> Si el artículo continúa activo</li>
+          <li><strong>Costo línea total:</strong> Suma del costo de todos los almacenes del artículo</li>
+        </ul>
+        
+        <h4>6. Estados del Lote</h4>
+        <ul>
+          <li><strong>Pendiente:</strong> Lote recién creado sin líneas</li>
+          <li><strong>Enviado:</strong> Lote con líneas listo para revisión</li>
+          <li><strong>Confirmado:</strong> Sugerido confirmado por el proveedor</li>
+          <li><strong>Completado:</strong> Pedido generado en el sistema</li>
+          <li><strong>Anulado:</strong> Lote cancelado</li>
+        </ul>
+        
+        <h4>7. Notas Importantes</h4>
+        <ul>
+          <li>Los descuentos se propagan automáticamente a todas las líneas del mismo artículo</li>
+          <li>Las modificaciones dependen de sus permisos de usuario y la clasificación del artículo</li>
+          <li>Los lotes completados no se pueden modificar</li>
+          <li>Puede exportar los lotes a Excel usando la acción "Exportar XLSX"</li>
+          <li>El sugerido interno solo acepta números enteros (sin decimales)</li>
+        </ul>
+        
+        <h4>8. Acciones Disponibles</h4>
+        <ul>
+          <li><strong>Exportar XLSX:</strong> Descarga el lote en formato Excel</li>
+          <li><strong>Abrir Detalle:</strong> Accede a la tabla de artículos del lote</li>
+          <li><strong>Recalcular totales:</strong> Actualiza los totales del lote</li>
+          <li><strong>Otras acciones:</strong> Según su rol (confirmar, anular, etc.)</li>
+        </ul>
+      </div>
+      <div class="ms-modal__foot">
+        <button type="button" class="ms-btn ms-btn--cancel" onclick="document.getElementById('manual-modal').classList.remove('show')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const manualModal = document.getElementById('manual-modal');
+      if (!manualModal) return;
+      
+      manualModal.addEventListener('click', function(ev) {
+        if (ev.target === manualModal) {
+          manualModal.classList.remove('show');
+        }
+      });
+      
+      document.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Escape' && manualModal.classList.contains('show')) {
+          manualModal.classList.remove('show');
+        }
+      });
+    })();
+  </script>
+{% endblock %}

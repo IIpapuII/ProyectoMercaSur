@@ -14,6 +14,14 @@ from datetime import datetime
 import csv
 import json
 from django.template.loader import render_to_string
+from ..filters import (
+    MarcaEnLoteFilter,
+    NombreAlmacenEnLoteFilter,
+    FamiliaEnLoteFilter,
+    SubfamiliaEnLoteFilter,
+    ClasificacionEnLoteFilter,
+    EstadoLineaEnLoteFilter
+)
 
 # Importaciones locales
 from ..models import (
@@ -34,83 +42,6 @@ from ..services.icg_integration import  enviar_orden_a_icg
 from ..services.icg_pedidos import crear_pedido_compra_desde_lote
 from ..forms import SugeridoLoteAdminForm
 
-
-# ─────────────────────────────────────────────────────────────────────
-# Filtros personalizados
-# ─────────────────────────────────────────────────────────────────────
-class MarcaEnLoteFilter(admin.SimpleListFilter):
-    title = "Marca"
-    parameter_name = "marca__id__exact"
-
-    def lookups(self, request, model_admin):
-        lote_id = request.GET.get("lote__id__exact")
-        if lote_id:
-            rows = (
-                SugeridoLinea.objects
-                .filter(lote_id=lote_id, marca__isnull=False)
-                .values_list("marca_id", "marca__nombre")
-                .distinct()
-                .order_by("marca__nombre")
-            )
-        else:
-            # Fallback: limitar a lo presente en el queryset actual del admin
-            qs = model_admin.get_queryset(request).filter(marca__isnull=False)
-            rows = qs.values_list("marca_id", "marca__nombre").distinct().order_by("marca__nombre")
-        return [(mid, name) for mid, name in rows]
-
-    def queryset(self, request, qs):
-        val = self.value()
-        if val:
-            return qs.filter(marca_id=val)
-        return qs
-
-
-# NUEVO: base para filtros de valores distintos dentro del lote
-class _BaseEnLoteDistinctFilter(admin.SimpleListFilter):
-    title = ""
-    parameter_name = ""
-    field_name = ""
-
-    def lookups(self, request, model_admin):
-        qs = model_admin.get_queryset(request)
-        lote_id = request.GET.get("lote__id__exact")
-        if lote_id:
-            qs = qs.filter(lote_id=lote_id)
-        # excluir null/vacío
-        qs = qs.exclude(**{f"{self.field_name}__isnull": True}).exclude(**{self.field_name: ""})
-        vals = qs.values_list(self.field_name, flat=True).distinct().order_by(self.field_name)
-        return [(v, v) for v in vals]
-
-    def queryset(self, request, queryset):
-        val = self.value()
-        if val:
-            return queryset.filter(**{self.field_name: val})
-        return queryset
-
-class NombreAlmacenEnLoteFilter(_BaseEnLoteDistinctFilter):
-    title = "Almacén"
-    parameter_name = "nombre_almacen__exact"
-    field_name = "nombre_almacen"
-
-class FamiliaEnLoteFilter(_BaseEnLoteDistinctFilter):
-    title = "Familia"
-    parameter_name = "familia__exact"
-    field_name = "familia"
-
-class SubfamiliaEnLoteFilter(_BaseEnLoteDistinctFilter):
-    title = "Subfamilia"
-    parameter_name = "subfamilia__exact"
-    field_name = "subfamilia"
-
-class ClasificacionEnLoteFilter(_BaseEnLoteDistinctFilter):
-    title = "Clasificación"
-    parameter_name = "clasificacion__exact"
-    field_name = "clasificacion"
-
-class EstadoLineaEnLoteFilter(_BaseEnLoteDistinctFilter):
-    title = "Estado línea"
-    parameter_name = "estado_linea__exact"
-    field_name = "estado_linea"
 
 
 # ─────────────────────────────
@@ -407,7 +338,7 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
 
     # Nuevo: proteger acceso directo a objetos fuera de las asignaciones
     def has_view_permission(self, request, obj=None):
-        base = super().has_view_permission(request, obj=obj)
+        base = super().has_view_permission(request, obj)
         if not base:
             return False
         if obj is None:
@@ -440,7 +371,7 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
     )
     list_display_links = ("codigo_articulo",)
     list_editable = ("sugerido_interno",)
-    ordering = ("-lote__fecha_extraccion", "proveedor", "marca", "codigo_articulo")
+    ordering = ("descripcion",)  # Ordenar por descripción A-Z
 
     list_filter = (
         NombreAlmacenEnLoteFilter,
@@ -509,10 +440,10 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
         print("[SugeridoLineaAdmin]", *args)
 
     def has_module_permission(self, request):
-        return not self._es_proveedor(request) and super().has_module_permission(request)
+        return False  # Ocultar completamente del menú de módulos
 
     def has_add_permission(self, request):
-        return not self._es_proveedor(request) and super().has_add_permission(request)
+        return False  # Desabilitar completamente el botón de añadir
 
     def _get_perfil_proveedor_obj(self, request):
         perfil = getattr(request.user, "perfil_proveedor", None)
@@ -663,14 +594,7 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
             self.message_user(request, f'Error al generar pedido en ICG: {e}', level=messages.ERROR)
         return redirect(back)
 
-    def accion_exportar_xlsx(self, request, qs):
-        xlsx_bytes, filename = export_lines_to_xlsx(qs)
-        resp = HttpResponse(
-            xlsx_bytes,
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return resp
+
 
     @admin.action(description="Enviar respuesta (proveedor)")
     def accion_proveedor_enviar_respuesta(self, request, qs):
@@ -854,14 +778,29 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
                         m_si = request.POST.get(f'sugerido_interno_{pid}')
                         v_si = _dec_local(m_si)
-                        if v_si is not None and editable_interno and v_si != ln.sugerido_interno:
-                            ln.sugerido_interno = v_si; cambio = True; changed_fields.append('sugerido_interno')
+                        
+                        # Si la clasificación es I o C, forzar sugerido_interno a 0
+                        if cla in {'I', 'C'}:
+                            if ln.sugerido_interno != Decimal("0"):
+                                ln.sugerido_interno = Decimal("0")
+                                cambio = True
+                                changed_fields.append('sugerido_interno')
+                        elif v_si is not None and editable_interno and v_si != ln.sugerido_interno:
+                            ln.sugerido_interno = v_si
+                            cambio = True
+                            changed_fields.append('sugerido_interno')
 
                         m_clas = request.POST.get(f'clasificacion_{pid}')
                         if m_clas is not None:
                             v_clas = (m_clas or '').strip().upper()
                             if v_clas != (ln.clasificacion or '').strip().upper():
-                                ln.clasificacion = v_clas; cambio = True; changed_fields.append('clasificacion')
+                                ln.clasificacion = v_clas
+                                cambio = True
+                                changed_fields.append('clasificacion')
+                                # Si cambió a I o C, forzar sugerido_interno a 0
+                                if v_clas in {'I', 'C'} and ln.sugerido_interno != Decimal("0"):
+                                    ln.sugerido_interno = Decimal("0")
+                                    changed_fields.append('sugerido_interno')
 
                     if cambio:
                         self._dbg(f"  Cambios en {pid}: {changed_fields}")
@@ -947,8 +886,17 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
             for ln in qs:
                 key = ln.codigo_articulo
                 if key not in articulos_pivot:
-                    articulos_pivot[key] = {}
-                articulos_pivot[key][ln.nombre_almacen] = ln
+                    articulos_pivot[key] = {
+                        'lineas': {},
+                        'costo_total': Decimal("0")
+                    }
+                articulos_pivot[key]['lineas'][ln.nombre_almacen] = ln
+                
+                # Calcular costo basado en sugerido_interno (o sugerido_calculado si no hay interno)
+                cantidad = ln.sugerido_interno if ln.sugerido_interno and ln.sugerido_interno > 0 else (ln.sugerido_calculado or Decimal("0"))
+                costo_linea_calculado = cantidad * (ln.ultimo_costo or Decimal("0"))
+                articulos_pivot[key]['costo_total'] += costo_linea_calculado
+                
                 almacenes_set.add(ln.nombre_almacen)
 
             orden_almacenes = [

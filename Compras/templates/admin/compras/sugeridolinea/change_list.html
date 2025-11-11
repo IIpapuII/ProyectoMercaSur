@@ -190,11 +190,12 @@
             <th>Desc. 2 %</th>
             <th>Desc. 3 %</th>
             {% for alm in almacenes_list %}
-              <th class="group-head alm-{{ forloop.counter0 }}" colspan="9">{{ alm }}</th>
+              <th class="group-head alm-{{ forloop.counter0 }}" colspan="7">{{ alm }}</th>
             {% endfor %}
             <th>Continuidad</th>
             <th>Nuevo nombre prov</th>
             <th>Observaciones prov</th>
+            <th>Costo línea total</th>
           </tr>
           <tr>
             <th class="sticky-col sticky-col-1"></th>
@@ -211,64 +212,64 @@
               <th>Min</th>
               <th>Max</th>
               <th>Sug. calc</th>
-              <th>Cajas</th>
               <th>Sug. prov</th>
               <th>Sug. interno</th>
-              <th>Costo línea</th>
             {% endfor %}
             <th></th><th></th><th></th><th></th>
           </tr>
         </thead>
         <tbody>
-          {% for codigo, almacenes_dict in articulos_pivot.items %}
+          {% for codigo, articulo_data in articulos_pivot.items %}
           <tr>
             <td class="sticky-col sticky-col-1">{{ codigo }}</td>
-            <td class="sticky-col sticky-col-2">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
-            <td class="sticky-col sticky-col-3">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
-            <td class="sticky-col sticky-col-4">{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.embalaje }}{% endif %}{% endfor %}</td>
-            <td>{% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-2">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-3">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-4">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.embalaje }}{% endif %}{% endfor %}</td>
+            <td>{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
                 {% endif %}{% endfor %}
               {% else %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct|default_if_none:'' }}{% endif %}{% endfor %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descuento_prov_pct|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
                 {% endif %}{% endfor %}
               {% else %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_2|default_if_none:'' }}{% endif %}{% endfor %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_2|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                   <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
                 {% endif %}{% endfor %}
               {% else %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_3|default_if_none:'' }}{% endif %}{% endfor %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_3|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
 
             {% for alm in almacenes_list %}
-              {% with linea=almacenes_dict|dict_get:alm %}
+              {% with linea=articulo_data.lineas|dict_get:alm %}
                 {% if linea %}
                   {# ========= CLASIFICACIÓN ========= #}
                   <td>
                     {% if es_interno %}
-                      <input
-                        type="text"
-                        name="clasificacion_{{ linea.pk }}"
-                        value="{{ linea.clasificacion|default_if_none:'' }}"
-                        maxlength="2"
-                        style="width:50px;text-transform:uppercase;"
-                        {% if inputs_disabled %}disabled{% endif %}
-                      />
+                      {% with cls=linea.clasificacion|default_if_none:''|upper %}
+                        <input
+                          type="text"
+                          name="clasificacion_{{ linea.pk }}"
+                          value="{{ linea.clasificacion|default_if_none:'' }}"
+                          maxlength="2"
+                          style="width:50px;text-transform:uppercase;"
+                          {% if inputs_disabled or cls == 'C' or cls == 'I' %}disabled{% endif %}
+                        />
+                      {% endwith %}
                     {% else %}
                       {{ linea.clasificacion }}
                     {% endif %}
@@ -278,8 +279,11 @@
                   <td class="stock-cell">{{ linea.stock_actual }}</td>
                   <td>{{ linea.stock_minimo }}</td>
                   <td>{{ linea.stock_maximo }}</td>
-                  <td class="sug-calc-cell">{{ linea.sugerido_base }}</td>
-                  <td>{{ linea.cajas_calculadas }}</td>
+                  <td class="sug-calc-cell">
+                    {% widthratio linea.stock_actual 1 1 as stock %}
+                    {% widthratio linea.stock_maximo 1 -1 as max_neg %}
+                    {{ stock|add:max_neg|floatformat:0 }}
+                  </td>
 
                   {# ========= SUGERIDO PROVEEDOR: solo editable si A/B ========= #}
                   <td>
@@ -308,55 +312,59 @@
                     {% endif %}
                   </td>
 
-                  {# ========= SUGERIDO INTERNO (igual que tenías) ========= #}
+                  {# ========= SUGERIDO INTERNO: deshabilitar para I y C (C solo si no tiene permiso) ========= #}
                   <td>
                     {% if es_interno %}
-                      <input
-                        type="number"
-                        name="sugerido_interno_{{ linea.pk }}"
-                        value="{{ linea.sugerido_interno|default_if_none:''|unlocalize }}"
-                        step="0.01"
-                        {% if inputs_disabled %}disabled{% elif linea.clasificacion and linea.clasificacion|upper == 'C' and not puede_editar_clasificacion_c %}disabled{% endif %}
-                      />
+                      {% with cls=linea.clasificacion|default_if_none:''|upper %}
+                        <input
+                          type="number"
+                          name="sugerido_interno_{{ linea.pk }}"
+                          value="{{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}"
+                          step="1"
+                          min="0"
+                          {% if inputs_disabled or cls == 'I' or cls == 'C' and not puede_editar_clasificacion_c %}disabled{% endif %}
+                        />
+                      {% endwith %}
                     {% else %}
-                      {{ linea.sugerido_interno|default_if_none:'' }}
+                      {{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}
                     {% endif %}
                     <input type="hidden" name="linea_id_{{ linea.pk }}" value="{{ linea.pk }}" />
                   </td>
-
-                  <td>{{ linea.costo_linea }}</td>
                 {% else %}
-                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                  <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
                 {% endif %}
               {% endwith %}
             {% endfor %}
 
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                   <input type="checkbox" name="continuidad_activo_{{ ln.pk }}" {% if ln.continuidad_activo %}checked{% endif %} {% if inputs_disabled %}disabled{% endif %} />
                 {% endif %}{% endfor %}
               {% else %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.continuidad_activo }}{% endif %}{% endfor %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.continuidad_activo }}{% endif %}{% endfor %}
               {% endif %}
             </td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                   <input type="text" name="nuevo_nombre_prov_{{ ln.pk }}" value="{{ ln.nuevo_nombre_prov|default_if_none:'' }}" {% if inputs_disabled %}disabled{% endif %} />
                 {% endif %}{% endfor %}
               {% else %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.nuevo_nombre_prov|default_if_none:'' }}{% endif %}{% endfor %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.nuevo_nombre_prov|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
             </td>
             <td>
               {% if es_proveedor %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                   <input type="text" name="observaciones_prov_{{ ln.pk }}" value="{{ ln.observaciones_prov|default_if_none:'' }}" {% if inputs_disabled %}disabled{% endif %} />
                 {% endif %}{% endfor %}
               {% else %}
-                {% for ln in almacenes_dict.values %}{% if forloop.first %}{{ ln.observaciones_prov|default_if_none:'' }}{% endif %}{% endfor %}
+                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.observaciones_prov|default_if_none:'' }}{% endif %}{% endfor %}
               {% endif %}
+            </td>
+            <td>
+              ${{ articulo_data.costo_total|floatformat:0|intcomma }}
             </td>
           </tr>
           {% endfor %}
