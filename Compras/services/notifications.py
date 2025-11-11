@@ -85,6 +85,9 @@ def _html_email_sugerido(proveedor, marca, lote, url_admin):
     lote_nombre = _safe_get(lote, "nombre", f"Lote #{lote.id}")
     creado = _safe_get(lote, "creado", None)
     creado_str = localtime(creado).strftime("%Y-%m-%d %H:%M") if creado else ""
+    
+    # URL de login de la plataforma
+    url_login = "https://notificaciones.mercasur.com.co:9180/admin/login/?next=/admin/"
 
     html = f"""
     <div style="font-family: Arial, sans-serif; color: #333; line-height:1.5;">
@@ -107,6 +110,14 @@ def _html_email_sugerido(proveedor, marca, lote, url_admin):
         </p>
       </div>
 
+      <div style="text-align:center; margin:24px 0;">
+        <a href="{url_login}" 
+           style="display:inline-block; background-color:{assets['color']}; color:#fff; 
+                  padding:12px 32px; text-decoration:none; border-radius:6px; 
+                  font-weight:bold; font-size:16px;">
+          Ingresar a la Plataforma
+        </a>
+      </div>
 
       <hr style="border:none; border-top:1px solid #eee; margin:24px 0;">
       <p style="font-size:12px; color:#999; text-align:center;">

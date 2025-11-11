@@ -473,6 +473,20 @@ class SugeridoLinea(models.Model):
     def save(self, *args, **kwargs):
         
         self.clean()
+        
+        # Si la clasificación es I o C, forzar sugerido_interno a 0
+        cla_upper = (self.clasificacion or '').strip().upper()
+        if cla_upper in {'I', 'C'}:
+            self.sugerido_interno = Decimal("0")
+        # Si es una línea nueva y no tiene sugerido_interno, calcularlo inteligentemente
+        elif not self.pk and (not self.sugerido_interno or self.sugerido_interno == 0):
+            from Compras.services.calculo_sugerido import calcular_sugerido_inteligente
+            self.sugerido_interno = calcular_sugerido_inteligente(
+                stock_actual=self.stock_actual,
+                stock_maximo=self.stock_maximo,
+                embalaje=self.embalaje
+            )
+        
         self.recomputar_costos()
         super().save(*args, **kwargs)
 auditlog.register(SugeridoLinea)
