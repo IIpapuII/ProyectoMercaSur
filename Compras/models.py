@@ -2,6 +2,7 @@ from django.utils import timezone
 from decimal import Decimal
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from auditlog.registry import auditlog
 
 User = get_user_model()
@@ -449,15 +450,15 @@ class SugeridoLinea(models.Model):
     def clean(self):
         # sugeridos no negativos
         if self.sugerido_interno is not None and self.sugerido_interno < 0:
-            raise models.ValidationError("El sugerido interno no puede ser negativo.")
+            raise ValidationError("El sugerido interno no puede ser negativo.")
         if self.nuevo_sugerido_prov is not None and self.nuevo_sugerido_prov < 0:
-            raise models.ValidationError("El nuevo sugerido del proveedor no puede ser negativo.")
+            raise ValidationError("El nuevo sugerido del proveedor no puede ser negativo.")
         if self.descuento_prov_pct and self.descuento_prov_pct < 0:
-            raise models.ValidationError("El descuento proveedor no puede ser negativo.")
+            raise ValidationError("El descuento proveedor no puede ser negativo.")
         if self.descuento_prov_pct_2 and self.descuento_prov_pct_2 < 0:
-            raise models.ValidationError("El segundo descuento proveedor no puede ser negativo.")
+            raise ValidationError("El segundo descuento proveedor no puede ser negativo.")
         if self.descuento_prov_pct_3 and self.descuento_prov_pct_3 < 0:
-            raise models.ValidationError("El tercer descuento proveedor no puede ser negativo.")
+            raise ValidationError("El tercer descuento proveedor no puede ser negativo.")
 
         # advertencia (no bloqueo) si no múltiplo de embalaje
         self.warning_no_multiplo = False
@@ -474,18 +475,26 @@ class SugeridoLinea(models.Model):
         
         self.clean()
         
-        # Si la clasificación es I o C, forzar sugerido_interno a 0
+        # Si la clasificación es I o C, forzar sugerido_interno y nuevo_sugerido_prov a 0
         cla_upper = (self.clasificacion or '').strip().upper()
         if cla_upper in {'I', 'C'}:
             self.sugerido_interno = Decimal("0")
+            self.nuevo_sugerido_prov = Decimal("0")
         # Si es una línea nueva y no tiene sugerido_interno, calcularlo inteligentemente
         elif not self.pk and (not self.sugerido_interno or self.sugerido_interno == 0):
             from Compras.services.calculo_sugerido import calcular_sugerido_inteligente
-            self.sugerido_interno = calcular_sugerido_inteligente(
+            sugerido_calculado = calcular_sugerido_inteligente(
                 stock_actual=self.stock_actual,
                 stock_maximo=self.stock_maximo,
-                embalaje=self.embalaje
+                embalaje=self.embalaje,
+                clasificacion=self.clasificacion  # Pasar clasificación
             )
+            self.sugerido_interno = sugerido_calculado
+            
+            # Si el sugerido calculado es 0 pero había un sugerido_base > 0, 
+            # marcar como informativa (no se puede pedir por embalaje o clasificación)
+            if sugerido_calculado == 0 and self.sugerido_base > 0:
+                self.es_informativa = True
         
         self.recomputar_costos()
         super().save(*args, **kwargs)

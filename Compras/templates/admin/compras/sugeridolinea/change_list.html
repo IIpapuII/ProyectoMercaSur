@@ -51,6 +51,9 @@
     .ms-btn--danger { background:#dc3545; color:#fff; }
     .ms-hidden { display:none; }
     .ms-modal-backdrop.show { display:flex; }
+5|
+    td.clasificacion-i, td.clasificacion-c { background:#f8d7da; color:#721c24; font-weight:600; }
+    td.sugerido-cero { background:#e2e3e5; color:#6c757d; }
   </style>
 
   <script>
@@ -225,40 +228,34 @@
             <td class="sticky-col sticky-col-2">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
             <td class="sticky-col sticky-col-3">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
             <td class="sticky-col sticky-col-4">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.embalaje }}{% endif %}{% endfor %}</td>
-            <td>{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.ultimo_costo }}{% endif %}{% endfor %}</td>
+            <td>{% for ln in articulo_data.lineas.values %}{% if forloop.first %}<span style="font-family: monospace; color: #2e7d32;">${{ ln.ultimo_costo|floatformat:0|intcomma }}</span>{% endif %}{% endfor %}</td>
             <td>
-              {% if es_proveedor %}
-                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
-                  <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
-                {% endif %}{% endfor %}
-              {% else %}
-                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descuento_prov_pct|default_if_none:'' }}{% endif %}{% endfor %}
-              {% endif %}
+              {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
+                {% with cls=articulo_data.clasificacion|default:'' %}
+                  <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} />
+                {% endwith %}
+              {% endif %}{% endfor %}
             </td>
             <td>
-              {% if es_proveedor %}
-                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
-                  <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
-                {% endif %}{% endfor %}
-              {% else %}
-                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_2|default_if_none:'' }}{% endif %}{% endfor %}
-              {% endif %}
+              {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
+                {% with cls=articulo_data.clasificacion|default:'' %}
+                  <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} />
+                {% endwith %}
+              {% endif %}{% endfor %}
             </td>
             <td>
-              {% if es_proveedor %}
-                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
-                  <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled %}disabled{% endif %} />
-                {% endif %}{% endfor %}
-              {% else %}
-                {% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descuento_prov_pct_3|default_if_none:'' }}{% endif %}{% endfor %}
-              {% endif %}
+              {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
+                {% with cls=articulo_data.clasificacion|default:'' %}
+                  <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} />
+                {% endwith %}
+              {% endif %}{% endfor %}
             </td>
 
             {% for alm in almacenes_list %}
               {% with linea=articulo_data.lineas|dict_get:alm %}
                 {% if linea %}
-                  {# ========= CLASIFICACIÓN ========= #}
-                  <td>
+                  {# ========= CLASIFICACIÓN con estilo especial para I/C ========= #}
+                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' or cls == 'C' %}class="clasificacion-{{ cls|lower }}"{% endif %}{% endwith %}>
                     {% if es_interno %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
                         <input
@@ -285,11 +282,13 @@
                     {{ stock|add:max_neg|floatformat:0 }}
                   </td>
 
-                  {# ========= SUGERIDO PROVEEDOR: solo editable si A/B ========= #}
-                  <td>
+                  {# ========= SUGERIDO PROVEEDOR: 0 si I/C ========= #}
+                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' or cls == 'C' %}class="sugerido-cero"{% endif %}{% endwith %}>
                     {% if es_proveedor %}
-                      {% with cls=linea.clasificacion|default_if_none:'' %}
-                        {% if cls|upper == 'A' or cls|upper == 'B' %}
+                      {% with cls=linea.clasificacion|default_if_none:''|upper %}
+                        {% if cls == 'I' or cls == 'C' %}
+                          <input type="number" name="nuevo_sugerido_prov_{{ linea.pk }}" value="0" step="0.01" disabled />
+                        {% elif cls == 'A' or cls == 'B' %}
                           <input
                             type="number"
                             name="nuevo_sugerido_prov_{{ linea.pk }}"
@@ -308,25 +307,33 @@
                         {% endif %}
                       {% endwith %}
                     {% else %}
-                      {{ linea.nuevo_sugerido_prov|default_if_none:'' }}
+                      {% with cls=linea.clasificacion|default_if_none:''|upper %}
+                        {% if cls == 'I' or cls == 'C' %}0{% else %}{{ linea.nuevo_sugerido_prov|default_if_none:'' }}{% endif %}
+                      {% endwith %}
                     {% endif %}
                   </td>
 
-                  {# ========= SUGERIDO INTERNO: deshabilitar para I y C (C solo si no tiene permiso) ========= #}
-                  <td>
+                  {# ========= SUGERIDO INTERNO: 0 si I/C ========= #}
+                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' or cls == 'C' %}class="sugerido-cero"{% endif %}{% endwith %}>
                     {% if es_interno %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
-                        <input
-                          type="number"
-                          name="sugerido_interno_{{ linea.pk }}"
-                          value="{{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}"
-                          step="1"
-                          min="0"
-                          {% if inputs_disabled or cls == 'I' or cls == 'C' and not puede_editar_clasificacion_c %}disabled{% endif %}
-                        />
+                        {% if cls == 'I' or cls == 'C' %}
+                          <input type="number" name="sugerido_interno_{{ linea.pk }}" value="0" step="1" min="0" disabled />
+                        {% else %}
+                          <input
+                            type="number"
+                            name="sugerido_interno_{{ linea.pk }}"
+                            value="{{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}"
+                            step="1"
+                            min="0"
+                            {% if inputs_disabled %}disabled{% endif %}
+                          />
+                        {% endif %}
                       {% endwith %}
                     {% else %}
-                      {{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}
+                      {% with cls=linea.clasificacion|default_if_none:''|upper %}
+                        {% if cls == 'I' or cls == 'C' %}0{% else %}{{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}{% endif %}
+                      {% endwith %}
                     {% endif %}
                     <input type="hidden" name="linea_id_{{ linea.pk }}" value="{{ linea.pk }}" />
                   </td>

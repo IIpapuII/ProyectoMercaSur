@@ -1,0 +1,54 @@
+{% extends "admin/change_list.html" %}
+{% block extrahead %}
+  {{ block.super }}
+    <style>
+    /* Modal */
+    .ms-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:9999; }
+    .ms-modal { background:#fff; border-radius:10px; width:min(800px, 92%); box-shadow:0 8px 24px rgba(0,0,0,.2); overflow:hidden; }
+    .ms-modal__head { padding:14px 16px; background:#28a745; color:#fff; font-weight:600; }
+    .ms-modal__body { padding:16px; color:#333; max-height:70vh; overflow-y:auto; line-height:1.6; }
+    .ms-modal__body h3 { margin-top:0; color:#28a745; }
+    .ms-modal__body h4 { margin-top:20px; margin-bottom:8px; color:#333; }
+    .ms-modal__body ul, .ms-modal__body ol { margin:8px 0; padding-left:24px; }
+    .ms-modal__body li { margin:4px 0; }
+    .ms-modal__foot { padding:12px 16px; display:flex; gap:8px; justify-content:flex-end; background:#f7f7f7; }
+    .ms-btn { padding:8px 16px; border-radius:6px; text-decoration:none; border:1px solid transparent; cursor:pointer; font-size:14px; }
+    .ms-btn--cancel { background:#fff; border-color:#ccc; color:#333; }
+    .ms-modal-backdrop.show { display:flex; }
+    
+    /* Botón de manual integrado con Jazzmin */
+    .manual-btn {
+      background: #28a745;
+      color: #fff !important;
+      padding: 8px 16px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .manual-btn:hover {
+      background: #218838;
+      color: #fff !important;
+      text-decoration: none;
+    }
+  </style>
+{%endblock%}
+{% block object-tools-items %}
+  {{ block.super }}
+  
+  <li>
+    <form method="post" action="{% url 'admin:compras_proveedor_actualizar' %}" style="display: inline;">
+      {% csrf_token %}
+      <button type="submit" class="manual-btn" onclick="return confirm('¿Desea actualizar proveedores y marcas desde ICG?');">
+        <i class="fas fa-sync-alt"></i> Actualizar proveedores
+      </button>
+    </form>
+  </li>
+
+{%endblock%}

@@ -9,6 +9,7 @@ from django.db.models.functions import Coalesce
 from django.db import transaction
 from django.utils import timezone
 from django import forms
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 from datetime import datetime
 import csv
@@ -41,8 +42,6 @@ from django.http import HttpResponse, HttpResponseBadRequest
 from ..services.icg_integration import  enviar_orden_a_icg
 from ..services.icg_pedidos import crear_pedido_compra_desde_lote
 from ..forms import SugeridoLoteAdminForm
-
-
 
 # ─────────────────────────────
 # Inlines / Admins
@@ -654,6 +653,7 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
             lineas = self.model.objects.filter(pk__in=ids).select_related('lote')
             actualizados = 0
+            errores_validacion = []
 
             def _dec(v):
                 if v in (None, '', 'None'):
@@ -679,21 +679,17 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                         en_grupo = request.user.groups.filter(name='perfil_proveedor').exists()
                         self._dbg(f"  Tiene objeto perfil? {bool(perfil)}; En grupo perfil_proveedor? {en_grupo}")
 
-                        # ===== CAMBIO: validación de proveedor =====
                         if perfil and hasattr(perfil, 'proveedor'):
                             if perfil.proveedor != ln.proveedor:
                                 self._dbg("  -> Skip: perfil existe pero proveedor NO coincide con la línea.")
                                 continue
                         else:
-                            # No hay perfil con proveedor; solo grupo => no bloqueamos por coincidencia
                             self._dbg("  -> Sin objeto perfil con proveedor; permitimos edición por pertenecer al grupo.")
 
-                        # Estados que bloquean
                         if cla == 'I' or estado_lote in {'CONFIRMADO', 'COMPLETADO'} or estado_linea == 'ORDENADA':
                             self._dbg("  -> Skip por estado/clasificación.")
                             continue
 
-                        # === Inputs crudos
                         m_d1  = request.POST.get(f'descuento_prov_pct_{pid}')
                         m_d2  = request.POST.get(f'descuento_prov_pct_2_{pid}')
                         m_d3  = request.POST.get(f'descuento_prov_pct_3_{pid}')
@@ -704,7 +700,6 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
                         self._dbg(f"  Inputs crudos: d1='{m_d1}' d2='{m_d2}' d3='{m_d3}' cont='{m_cont}' nom='{m_nom}' obs='{m_obs}' nsug='{m_nsug}'")
 
-                        # === Parseos
                         v_d1 = _dec(m_d1)
                         v_d2 = _dec(m_d2)
                         v_d3 = _dec(m_d3)
@@ -714,7 +709,6 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                         self._dbg(f"  Parseos: d1={v_d1} d2={v_d2} d3={v_d3} nsug={v_nsug} cont={v_cont}")
                         self._dbg(f"  Valores actuales: d1={ln.descuento_prov_pct} d2={ln.descuento_prov_pct_2} d3={ln.descuento_prov_pct_3} nsug={ln.nuevo_sugerido_prov} cont={ln.continuidad_activo} nom='{ln.nuevo_nombre_prov}' obs='{ln.observaciones_prov}'")
 
-                        # === CABECERA (si vienen y cambian)
                         if v_d1 is not None and v_d1 != ln.descuento_prov_pct:
                             ln.descuento_prov_pct = v_d1; cambio = True; changed_fields.append('descuento_prov_pct')
                         if v_d2 is not None and v_d2 != ln.descuento_prov_pct_2:
@@ -731,7 +725,6 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                         if (m_obs is not None) and (m_obs != ln.observaciones_prov):
                             ln.observaciones_prov = m_obs; cambio = True; changed_fields.append('observaciones_prov')
 
-                        # Propagar descuentos a hermanos (mismo artículo en el lote)
                         if any(x is not None for x in [v_d1, v_d2, v_d3]):
                             self._dbg("  Propagando descuentos a hermanos del mismo código...")
                             hermanos = self.model.objects.filter(
@@ -747,11 +740,14 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                                 if v_d3 is not None and h.descuento_prov_pct_3 != v_d3:
                                     h.descuento_prov_pct_3 = v_d3; h_cambio = True
                                 if h_cambio:
-                                    h.save(update_fields=['descuento_prov_pct', 'descuento_prov_pct_2', 'descuento_prov_pct_3'])
-                                    actualizados += 1
+                                    try:
+                                        h.save(update_fields=['descuento_prov_pct', 'descuento_prov_pct_2', 'descuento_prov_pct_3'])
+                                        actualizados += 1
+                                    except ValidationError as e:
+                                        errores_validacion.append(f"Línea {h.pk} ({h.codigo_articulo}): {'; '.join(e.messages)}")
+                                        self._dbg(f"  Error validación en hermano {h.pk}: {e}")
                             self._dbg("  Propagación terminada.")
 
-                        # POR LÍNEA: sugerido_prov solo A/B
                         proveedor_puede_editar = (cla in {'A', 'B'})
                         self._dbg(f"  Puede editar 'nuevo_sugerido_prov' (A/B)? {proveedor_puede_editar}")
                         if proveedor_puede_editar and (m_nsug is not None):
@@ -776,10 +772,51 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
                         editable_interno = not (cla == 'C' and not puede_editar_clasificacion_c)
 
+                        m_d1  = request.POST.get(f'descuento_prov_pct_{pid}')
+                        m_d2  = request.POST.get(f'descuento_prov_pct_2_{pid}')
+                        m_d3  = request.POST.get(f'descuento_prov_pct_3_{pid}')
+                        
+                        v_d1 = _dec_local(m_d1)
+                        v_d2 = _dec_local(m_d2)
+                        v_d3 = _dec_local(m_d3)
+
+                        if v_d1 is not None and v_d1 != ln.descuento_prov_pct:
+                            ln.descuento_prov_pct = v_d1
+                            cambio = True
+                            changed_fields.append('descuento_prov_pct')
+                        if v_d2 is not None and v_d2 != ln.descuento_prov_pct_2:
+                            ln.descuento_prov_pct_2 = v_d2
+                            cambio = True
+                            changed_fields.append('descuento_prov_pct_2')
+                        if v_d3 is not None and v_d3 != ln.descuento_prov_pct_3:
+                            ln.descuento_prov_pct_3 = v_d3
+                            cambio = True
+                            changed_fields.append('descuento_prov_pct_3')
+
+                        if any(x is not None for x in [v_d1, v_d2, v_d3]):
+                            hermanos = self.model.objects.filter(
+                                lote_id=ln.lote_id,
+                                codigo_articulo=ln.codigo_articulo
+                            ).exclude(pk=ln.pk)
+                            for h in hermanos:
+                                h_cambio = False
+                                if v_d1 is not None and h.descuento_prov_pct != v_d1:
+                                    h.descuento_prov_pct = v_d1; h_cambio = True
+                                if v_d2 is not None and h.descuento_prov_pct_2 != v_d2:
+                                    h.descuento_prov_pct_2 = v_d2; h_cambio = True
+                                if v_d3 is not None and h.descuento_prov_pct_3 != v_d3:
+                                    h.descuento_prov_pct_3 = v_d3; h_cambio = True
+                                if h_cambio:
+                                    try:
+                                        h.save(update_fields=['descuento_prov_pct', 'descuento_prov_pct_2', 'descuento_prov_pct_3'])
+                                        actualizados += 1
+                                    except ValidationError as e:
+                                        errores_validacion.append(f"Línea {h.pk} ({h.codigo_articulo}): {'; '.join(e.messages)}")
+                                        self._dbg(f"  Error validación en hermano {h.pk}: {e}")
+
                         m_si = request.POST.get(f'sugerido_interno_{pid}')
                         v_si = _dec_local(m_si)
                         
-                        # Si la clasificación es I o C, forzar sugerido_interno a 0
                         if cla in {'I', 'C'}:
                             if ln.sugerido_interno != Decimal("0"):
                                 ln.sugerido_interno = Decimal("0")
@@ -797,21 +834,33 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                                 ln.clasificacion = v_clas
                                 cambio = True
                                 changed_fields.append('clasificacion')
-                                # Si cambió a I o C, forzar sugerido_interno a 0
-                                if v_clas in {'I', 'C'} and ln.sugerido_interno != Decimal("0"):
-                                    ln.sugerido_interno = Decimal("0")
-                                    changed_fields.append('sugerido_interno')
+                                if v_clas in {'I', 'C'}:
+                                    if ln.sugerido_interno != Decimal("0"):
+                                        ln.sugerido_interno = Decimal("0")
+                                        if 'sugerido_interno' not in changed_fields:
+                                            changed_fields.append('sugerido_interno')
+                                    if ln.nuevo_sugerido_prov != Decimal("0"):
+                                        ln.nuevo_sugerido_prov = Decimal("0")
+                                        if 'nuevo_sugerido_prov' not in changed_fields:
+                                            changed_fields.append('nuevo_sugerido_prov')
 
                     if cambio:
                         self._dbg(f"  Cambios en {pid}: {changed_fields}")
-                        ln.save(update_fields=list(set(changed_fields)))
-                        actualizados += 1
+                        try:
+                            ln.save(update_fields=list(set(changed_fields)))
+                            actualizados += 1
+                        except ValidationError as e:
+                            errores_validacion.append(f"Línea {pid} ({ln.codigo_articulo}): {'; '.join(e.messages)}")
+                            self._dbg(f"  Error validación en {pid}: {e}")
                     else:
                         self._dbg(f"  Sin cambios aplicables en {pid}.")
 
             if actualizados:
                 self.message_user(request, f"{actualizados} línea(s) actualizada(s).", level=messages.SUCCESS)
-            else:
+            if errores_validacion:
+                for error in errores_validacion:
+                    self.message_user(request, f"Error de validación: {error}", level=messages.WARNING)
+            if not actualizados and not errores_validacion:
                 self.message_user(request, "No hubo cambios aplicables.", level=messages.INFO)
             return redirect(request.get_full_path())
 
@@ -888,9 +937,14 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                 if key not in articulos_pivot:
                     articulos_pivot[key] = {
                         'lineas': {},
-                        'costo_total': Decimal("0")
+                        'costo_total': Decimal("0"),
+                        'clasificacion': None  # Agregar campo para clasificación
                     }
                 articulos_pivot[key]['lineas'][ln.nombre_almacen] = ln
+                
+                # Capturar la primera clasificación no vacía que encontremos
+                if not articulos_pivot[key]['clasificacion'] and ln.clasificacion:
+                    articulos_pivot[key]['clasificacion'] = ln.clasificacion.strip().upper()
                 
                 # Calcular costo basado en sugerido_interno (o sugerido_calculado si no hay interno)
                 cantidad = ln.sugerido_interno if ln.sugerido_interno and ln.sugerido_interno > 0 else (ln.sugerido_calculado or Decimal("0"))
