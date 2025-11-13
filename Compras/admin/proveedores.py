@@ -1,4 +1,8 @@
 from django.contrib import admin
+from django.urls import path
+from django.http import JsonResponse
+from django.contrib import messages
+from django.shortcuts import redirect
 
 # Importaciones locales
 from ..models import (
@@ -8,6 +12,7 @@ from ..models import (
     AsignacionMarcaVendedor,
     ProveedorUsuario
 )
+from ..services.Actualizar_proveedores import actualizar_proveedores_desde_icg
 
 
 # Catálogos
@@ -26,6 +31,7 @@ class ProveedorUsuarioInline(admin.TabularInline):
 
 @admin.register(Proveedor)
 class ProveedorAdmin(admin.ModelAdmin):
+    change_list_template = "admin/compras/proveedor/change_list.html"
     list_display = ("nombre","presupuesto_mensual", "nit", "email_contacto", "activo")
     search_fields = ("nombre", "nit")
     list_filter = ("activo",)
@@ -35,6 +41,27 @@ class ProveedorAdmin(admin.ModelAdmin):
         ("Identificación", {"fields": ("nombre", "nit", "presupuesto_mensual", "activo")}),
         ("Contacto", {"fields": ("email_contacto",)}),
     )
+    
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('actualizar-proveedores/', self.admin_site.admin_view(self.actualizar_proveedores_view), name='compras_proveedor_actualizar'),
+        ]
+        return custom_urls + urls
+    
+    def actualizar_proveedores_view(self, request):
+        """Vista para actualizar proveedores desde ICG"""
+        if request.method == 'POST':
+            resultado = actualizar_proveedores_desde_icg()
+            
+            if resultado['success']:
+                messages.success(request, resultado['mensaje'])
+            else:
+                messages.error(request, resultado['mensaje'])
+            
+            return redirect('admin:Compras_proveedor_changelist')
+        
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
 
 
 @admin.register(Marca)

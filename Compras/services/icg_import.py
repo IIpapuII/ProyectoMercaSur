@@ -193,7 +193,14 @@ Base AS (
         COALESCE(S.MAXIMO, 0)                      AS stock_maximo,
         AR.UNID1C                                  AS uds_compra_base,
         AR.UNID2C                                  AS uds_compra_mult,
-        COALESCE(c.ULTIMOCOSTE, 0)                 AS ultimo_costo,
+                COALESCE(
+            NULLIF(c.ULTIMOCOSTE, 0),
+            (SELECT MAX(c2.ULTIMOCOSTE)
+             FROM COSTESPORALMACEN c2
+             WHERE c2.CODARTICULO = AR.CODARTICULO
+               AND c2.ULTIMOCOSTE IS NOT NULL
+               AND c2.ULTIMOCOSTE <> 0)
+        )                                           AS ultimo_costo,
         AR.TIPO                                    AS tipo,
         CASE 
             WHEN a.NOMBREALMACEN = 'MERCASUR CALDAS'    THEN ACL.CLASIFICACION
@@ -277,6 +284,8 @@ Final AS (
         /* reglas de redondeo por bodega para el sugerido_base */
         CASE 
             WHEN r.diff_sin_redondeo <= 0 OR r.embalaje_safe <= 0 THEN CAST(0 AS DECIMAL(18,4))
+            /* NUEVA REGLA: Si diff_sin_redondeo < embalaje_safe, retornar 0 */
+            WHEN r.diff_sin_redondeo < r.embalaje_safe THEN CAST(0 AS DECIMAL(18,4))
             WHEN r.cod_almacen IN ('1','2')
                 THEN CEILING( r.diff_sin_redondeo / r.embalaje_safe ) * r.embalaje_safe
             WHEN r.cod_almacen IN ('3','50')
@@ -442,6 +451,29 @@ ORDER BY nombre_almacen, codigo;
         ultimo_costo = _safe_float(row.get("UltimoCosto"))
         factor_almacen = _safe_float(row.get("Factor"), 1.0)
         
+        # NUEVA VALIDACIÓN: Obtener clasificación y forzar sugeridos a 0 si es I o C
+        clasificacion_raw = _safe_str(row.get("Clasificacion"))
+        clasificacion_upper = clasificacion_raw.upper() if clasificacion_raw else ""
+        
+        # Si clasificación es I o C, forzar todos los sugeridos a 0
+        if clasificacion_upper in {'I', 'C'}:
+            sugerido_base_val = 0
+            nuevo_sugerido_prov_val = 0
+            sugerido_interno_val = 0
+            sugerido_calculado_val = 0
+            cajas_calculadas_val = 0.0
+            costo_linea_val = 0.0
+            es_informativa_val = True
+        else:
+            sugerido_base_val = _safe_int(row.get("SugeridoBase"))
+            nuevo_sugerido_prov_val = _safe_int(row.get("SugeridoBase"))
+            sugerido_interno_val = _safe_int(row.get("SugeridoBase"))
+            sugerido_calculado_val = _safe_int(row.get("Sugerido"))
+            cajas_calculadas_val = _safe_float(row.get("Cajas"))
+            costo_linea_val = _safe_float(row.get("CostoLinea"))
+            # Marcar como informativa si sugerido_base es 0 pero diff > 0
+            es_informativa_val = bool(_safe_int(row.get("EsInformativa"), 0))
+        
         try:
             # Garantizar que descripcion nunca sea None o vacía
             descripcion = _safe_str(row.get("Descripción")) or "SIN DESCRIPCIÓN"
@@ -467,20 +499,20 @@ ORDER BY nombre_almacen, codigo;
                 embalaje=_safe_int(row.get("Embalaje"), 1),
                 ultimo_costo=ultimo_costo,
                 tipo=_safe_str(row.get("Tipo")) or None,
-                clasificacion=_safe_str(row.get("Clasificacion")) or None,
-                sugerido_base=_safe_int(row.get("SugeridoBase")),
-                nuevo_sugerido_prov=_safe_int(row.get("SugeridoBase")),
-                sugerido_interno = _safe_int(row.get("SugeridoBase")),
+                clasificacion=clasificacion_raw or None,
+                sugerido_base=sugerido_base_val,
+                nuevo_sugerido_prov=nuevo_sugerido_prov_val,
+                sugerido_interno=sugerido_interno_val,
                 factor_almacen=factor_almacen,
-                sugerido_calculado=_safe_int(row.get("Sugerido")),
-                cajas_calculadas=_safe_float(row.get("Cajas")),
-                costo_linea=_safe_float(row.get("CostoLinea")),
+                sugerido_calculado=sugerido_calculado_val,
+                cajas_calculadas=cajas_calculadas_val,
+                costo_linea=costo_linea_val,
                 descuento_prov_pct=_safe_float(row.get("UltimoDescuentoPedido")),
                 cod_proveedor=_safe_str(row.get("CodProveedor")) or None,
                 IVA=_safe_float(row.get("IVA"), 0.0),
-                es_informativa=bool(_safe_int(row.get("EsInformativa"), 0)),
+                es_informativa=es_informativa_val,
                 Proveedor_principal=_safe_str(row.get("proveedorPrincipal")),
-                clasificacion_original = _safe_str(row.get("Clasificacion")),
+                clasificacion_original=clasificacion_raw or None,
             )
             registros.append(registro)
             insertados += 1
