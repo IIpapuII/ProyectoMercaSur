@@ -241,7 +241,7 @@ def _obtener_descuentos_proveedor(cursor, codproveedor: int) -> list[tuple[int, 
     """
     Devuelve lista de (CODIGO, VALOR%) desde CARGOSDTOSPROVEEDOR para el proveedor.
     - Solo retorna filas con VALOR > 0.
-    - VALOR se interpreta como porcentaje.
+    - VALOR se interpreta como porcentaje (ej: 10 para 10%).
     """
     try:
         cursor.execute(
@@ -255,18 +255,23 @@ def _obtener_descuentos_proveedor(cursor, codproveedor: int) -> list[tuple[int, 
         res = []
         for codigo, valor in cursor.fetchall() or []:
             try:
-                v = Decimal(str(valor or 0))
-            except Exception:
+                # VALOR viene como porcentaje directo (ej: 10 para 10%)
+                v = Decimal(str(valor or 0)).quantize(Decimal("0.01"))
+                # Asegurar que sea positivo
+                v = abs(v)
+            except Exception as e:
+                print(f"Error convirtiendo valor de descuento: {valor}, error: {e}")
                 v = Decimal("0")
             if v > 0:
                 try:
                     c = int(codigo)
                 except Exception:
-                    # Si no es convertible a int, intentar como str y dejar que SQL lo rechace si no procede
-                    c = int(str(codigo).strip())  # puede lanzar, y lo dejamos propagar
+                    c = int(str(codigo).strip())
+                print(f"DEBUG: Descuento proveedor - Código: {c}, Valor%: {v}")
                 res.append((c, v))
         return res
-    except Exception:
+    except Exception as e:
+        print(f"Error obteniendo descuentos del proveedor {codproveedor}: {e}")
         return []
 
 

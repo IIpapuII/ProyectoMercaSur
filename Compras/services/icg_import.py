@@ -451,12 +451,12 @@ ORDER BY nombre_almacen, codigo;
         ultimo_costo = _safe_float(row.get("UltimoCosto"))
         factor_almacen = _safe_float(row.get("Factor"), 1.0)
         
-        # NUEVA VALIDACIÓN: Obtener clasificación y forzar sugeridos a 0 si es I o C
+        # NUEVA VALIDACIÓN: Obtener clasificación y forzar sugeridos a 0 SOLO si es I
         clasificacion_raw = _safe_str(row.get("Clasificacion"))
         clasificacion_upper = clasificacion_raw.upper() if clasificacion_raw else ""
         
-        # Si clasificación es I o C, forzar todos los sugeridos a 0
-        if clasificacion_upper in {'I', 'C'}:
+        # CAMBIO: Solo forzar a 0 si clasificación es I (NO C)
+        if clasificacion_upper == 'I':
             sugerido_base_val = 0
             nuevo_sugerido_prov_val = 0
             sugerido_interno_val = 0
