@@ -25,7 +25,8 @@ def cargar_ventas_historicas():
     desde enero de 2024 hasta la fecha actual.
     """
     mes = date.today().month
-    inicio = date(2025, mes, 1)
+    año = date.today().year
+    inicio = date(año, mes, 1)
     fin = date.today()
 
     # Iterar años, meses y días con calendar

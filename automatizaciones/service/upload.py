@@ -213,10 +213,18 @@ def send_modified_articles():
     # Agrupar artículos por store_id
     articles_by_store = defaultdict(list)
     for article in modified_articles:
+        if article.departamento == 'FRUTAS Y VERDURAS':
+            id_value = str(article.ean)
+            ean_value = str(article.id_articulo)
+        else:
+            id_value = str(article.id_articulo)
+            ean_value = str(article.ean)
+
+        # Append con el MISMO orden original
         articles_by_store[article.store_id].append({
-            "id": str(article.id_articulo),
+            "id": id_value,
             "store_id": str(article.store_id),
-            "ean": str(article.ean),
+            "ean": ean_value,
             "name": article.name,
             "trademark": article.trademark,
             "description": article.description,
@@ -225,8 +233,9 @@ def send_modified_articles():
             "stock": int(article.stock),
             "sale_type": article.sale_type,
             "is_available": bool(article.is_available),
-            "image_url":""
+            "image_url": ""
         })
+            
 
     for store_id, records in articles_by_store.items():
         print(f"Enviando {len(records)} artículos para store_id: {store_id}")
@@ -283,10 +292,18 @@ def send_modified_articles_total():
     # Agrupar artículos por store_id
     articles_by_store = defaultdict(list)
     for article in modified_articles:
+        if article.departamento == 'FRUTAS Y VERDURAS':
+            id_value = str(article.ean)
+            ean_value = str(article.id_articulo)
+        else:
+            id_value = str(article.id_articulo)
+            ean_value = str(article.ean)
+
+        # Append con el MISMO orden original
         articles_by_store[article.store_id].append({
-            "id": str(article.id_articulo),
+            "id": id_value,
             "store_id": str(article.store_id),
-            "ean": str(article.ean),
+            "ean": ean_value,
             "name": article.name,
             "trademark": article.trademark,
             "description": article.description,
@@ -295,9 +312,9 @@ def send_modified_articles_total():
             "stock": int(article.stock),
             "sale_type": article.sale_type,
             "is_available": bool(article.is_available),
-            "image_url":""
-        })
-
+            "image_url": ""
+        }) 
+        
     for store_id, records in articles_by_store.items():
         print(f"Enviando {len(records)} artículos para store_id: {store_id}")
 

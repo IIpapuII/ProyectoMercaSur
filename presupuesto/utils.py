@@ -390,7 +390,7 @@ def cargasr_ventas_reales_ecenarios(fecha_inicio, fecha_fin):
     entre fecha_inicio y fecha_fin para TODAS las categorías principales.
     """
     sql = '''
-    WITH VentasDetalle AS (
+    ;WITH VentasDetalle AS (
     SELECT
         AL.CODALMACEN,
         CAST(AC.FECHA AS DATE) AS fechaVenta,
@@ -398,6 +398,7 @@ def cargasr_ventas_reales_ecenarios(fecha_inicio, fecha_fin):
         AR.DPTO,
         AR.MARCA,
         AR.LINEA,
+        I.DESCRIPCION,
         -- clamp DTO a [0..100] y castea a DECIMAL
         CAST(
             AL.PRECIO * (1 - (
@@ -428,10 +429,11 @@ def cargasr_ventas_reales_ecenarios(fecha_inicio, fecha_fin):
       ON AC.NUMSERIE = AL.NUMSERIE AND AC.NUMALBARAN = AL.NUMALBARAN
     JOIN ARTICULOS AR
       ON AR.CODARTICULO = AL.CODARTICULO
+    join LINEA I ON I.CODLINEA = AR.LINEA AND AR.MARCA = I.CODMARCA
     WHERE
         CAST(AC.FECHA AS DATE) BETWEEN ? AND ?
         AND AC.TIPODOC IN (13, 82, 83)
-        AND AR.DPTO <> 103
+        AND AR.DPTO <> 103 
 ),
 Categorias AS (
     -- ESCENARIOS
@@ -445,7 +447,6 @@ Categorias AS (
     FROM VentasDetalle VD
     WHERE VD.TIPO <> 2
     GROUP BY VD.CODALMACEN, VD.fechaVenta
-
     UNION ALL
     -- FRUVER
     SELECT
@@ -458,7 +459,6 @@ Categorias AS (
     FROM VentasDetalle VD
     WHERE VD.TIPO <> 2 AND VD.DPTO = 5
     GROUP BY VD.CODALMACEN, VD.fechaVenta
-
     UNION ALL
     -- PANADERIA
     SELECT
@@ -471,18 +471,18 @@ Categorias AS (
     FROM VentasDetalle VD
     WHERE VD.MARCA = 4
     GROUP BY VD.CODALMACEN, VD.fechaVenta
-
     UNION ALL
     -- MARCA MERCASUR
     SELECT
         VD.CODALMACEN,
         VD.fechaVenta,
-        'MARCA MERCASUR',
+        'MARCA mercasur',
         CAST(COALESCE(SUM(ImporteNeto), 0) AS DECIMAL(18,2)),
         CAST(COALESCE(SUM(POS), 0)        AS DECIMAL(18,2)),
         CAST(COALESCE(SUM(CosteLinea), 0) AS DECIMAL(18,2))
     FROM VentasDetalle VD
-    WHERE VD.LINEA = '1' AND VD.TIPO <> 9
+    --inner join LINEA l on l.CODLINEA = VD.LINEA
+    WHERE VD.DESCRIPCION  in ('MARCA MERCASUR','MARCA BLANCA') AND VD.TIPO <> 9
     GROUP BY VD.CODALMACEN, VD.fechaVenta
 ),
 AlmacenesInfo AS (
@@ -509,7 +509,7 @@ ORDER BY AI.Nombre, C.fechaVenta, C.CATEGORIA
     cursor = conexion.cursor()
     cursor.execute(sql, [fecha_inicio, fecha_fin])
     filas = cursor.fetchall()
-
+    print(filas)
     with transaction.atomic():
         for sede_nombre, categoria_nombre, venta_real, margen_sin, margen_con, fecha_raw,  in filas:
             # Obtener o crear la sede
