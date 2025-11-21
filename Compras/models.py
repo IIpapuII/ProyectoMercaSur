@@ -475,9 +475,9 @@ class SugeridoLinea(models.Model):
         
         self.clean()
         
-        # Si la clasificación es I o C, forzar sugerido_interno y nuevo_sugerido_prov a 0
+        # CAMBIO: Solo forzar a 0 si clasificación es I (NO C)
         cla_upper = (self.clasificacion or '').strip().upper()
-        if cla_upper in {'I', 'C'}:
+        if cla_upper == 'I':
             self.sugerido_interno = Decimal("0")
             self.nuevo_sugerido_prov = Decimal("0")
         # Si es una línea nueva y no tiene sugerido_interno, calcularlo inteligentemente

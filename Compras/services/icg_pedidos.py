@@ -137,6 +137,9 @@ def crear_pedido_compra_desde_lote(
             if not lista_validas:
                 continue
 
+            # Ordenar por descripción del artículo
+            lista_validas.sort(key=lambda x: (x.descripcion or "").strip().upper())
+
             # Obtener REGIMFACT del proveedor
             try:
                 cursor.execute(

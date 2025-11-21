@@ -9,10 +9,11 @@
     .kpi-wrap { display:flex; flex-wrap:nowrap; gap:6px; margin:4px 0 8px; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; scrollbar-gutter:stable; }
     .kpi-card { flex:0 0 auto; min-width:150px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:6px 8px; }
     .kpi-wrap::-webkit-scrollbar { height:6px; } .kpi-wrap::-webkit-scrollbar-thumb { background:#ccc; border-radius:3px; }
-    .pivot-table-wrap { width:100%; overflow-x:auto; max-height:85vh; overflow-y:auto; }
-    .pivot-table { border-collapse:collapse; width:max-content; min-width:100%; margin-top:12px; }
-    .pivot-table th, .pivot-table td { border:1px solid #ccc; padding:3px 5px; font-size:11.5px; line-height:1.1; white-space:nowrap; }
-    .pivot-table th { background:#f7f7f7; }
+    .pivot-table-wrap { width:100%; overflow-x:auto; max-height:85vh; overflow-y:auto; position:relative; }
+    .pivot-table { border-collapse:collapse; width:max-content; min-width:100%; margin-top:12px; table-layout:auto; }
+    .pivot-table th, .pivot-table td { border:1px solid #ccc; padding:3px 5px; font-size:11.5px; line-height:1.1; white-space:nowrap; position:relative; }
+    .pivot-table th { background:#f7f7f7; resize:horizontal; overflow:auto; }
+    .pivot-table th:hover { cursor:col-resize; }
     .pivot-table thead tr:first-child th { position:sticky; top:0; z-index:2; }
     .pivot-table thead tr:nth-child(2) th { position:sticky; top:var(--thead-row1-h); z-index:1; }
     .pivot-table th.sticky-col, .pivot-table td.sticky-col { position:sticky; background:#fff; border-right:1px solid #ddd; }
@@ -25,8 +26,9 @@
     .pivot-table th.sticky-col-2, .pivot-table td.sticky-col-2 { left:50px;  min-width:60px; }
     .pivot-table th.sticky-col-3, .pivot-table td.sticky-col-3 { left:135px; min-width:140px; }
     .pivot-table th.sticky-col-4, .pivot-table td.sticky-col-4 { left:275px; min-width:80px; border-right:2px solid #999; }
-    .pivot-table input[type="number"] { width:70px; }
+    .pivot-table input[type="number"], .pivot-table input[type="text"] { width:70px; padding:2px 4px; }
     .pivot-table input[type="submit"] { padding:1px 6px; font-size:12px; }
+    .pivot-table input:focus { background:#ffffcc; outline:2px solid #007bff; }
     @media (max-width: 700px) {
       .kpi-wrap { grid-template-columns: repeat(2, 1fr); }
       .pivot-table th, .pivot-table td { font-size:10.5px; padding:2px 4px; }
@@ -51,8 +53,9 @@
     .ms-btn--danger { background:#dc3545; color:#fff; }
     .ms-hidden { display:none; }
     .ms-modal-backdrop.show { display:flex; }
-5|
+
     td.clasificacion-i, td.clasificacion-c { background:#f8d7da; color:#721c24; font-weight:600; }
+    td.clasificacion-d { background:#fff3cd; color:#856404; font-weight:600; }
     td.sugerido-cero { background:#e2e3e5; color:#6c757d; }
   </style>
 
@@ -77,6 +80,278 @@
           lastW = window.innerWidth; lastH = window.innerHeight; syncHeaderOffset();
         }
       }, 600);
+
+      // Navegación con teclado mejorada
+      document.addEventListener('DOMContentLoaded', function() {
+        const table = document.querySelector('.pivot-table');
+        if (!table) return;
+
+        // Construir matriz de inputs editables por fila y columna
+        function buildInputMatrix() {
+          const rows = Array.from(table.querySelectorAll('tbody tr'));
+          const matrix = [];
+          
+          rows.forEach(row => {
+            const inputs = Array.from(row.querySelectorAll('input[type="number"]:not([disabled]), input[type="text"]:not([disabled]), input[type="checkbox"]:not([disabled])'));
+            if (inputs.length > 0) {
+              matrix.push(inputs);
+            }
+          });
+          
+          return matrix;
+        }
+
+        // Encontrar posición actual en la matriz
+        function findPosition(input, matrix) {
+          for (let rowIdx = 0; rowIdx < matrix.length; rowIdx++) {
+            const colIdx = matrix[rowIdx].indexOf(input);
+            if (colIdx !== -1) {
+              return { row: rowIdx, col: colIdx };
+            }
+          }
+          return null;
+        }
+
+        // Navegar en la tabla
+        function navigateTable(currentInput, direction) {
+          const matrix = buildInputMatrix();
+          const pos = findPosition(currentInput, matrix);
+          if (!pos) return;
+
+          let targetRow = pos.row;
+          let targetCol = pos.col;
+
+          switch(direction) {
+            case 'right':
+              targetCol++;
+              // Si llegamos al final de la fila, pasar a la siguiente fila, primera columna
+              if (targetCol >= matrix[targetRow].length) {
+                targetRow++;
+                targetCol = 0;
+              }
+              break;
+            case 'left':
+              targetCol--;
+              // Si llegamos al inicio de la fila, pasar a la fila anterior, última columna
+              if (targetCol < 0) {
+                targetRow--;
+                if (targetRow >= 0 && matrix[targetRow]) {
+                  targetCol = matrix[targetRow].length - 1;
+                }
+              }
+              break;
+            case 'down':
+              targetRow++;
+              // Mantener la misma columna, o la más cercana si no existe
+              break;
+            case 'up':
+              targetRow--;
+              // Mantener la misma columna, o la más cercana si no existe
+              break;
+            case 'enter':
+              // Enter avanza a la derecha, como Tab
+              targetCol++;
+              if (targetCol >= matrix[targetRow].length) {
+                targetRow++;
+                targetCol = 0;
+              }
+              break;
+          }
+
+          // Validar que la posición objetivo existe
+          if (targetRow >= 0 && targetRow < matrix.length) {
+            const targetRowInputs = matrix[targetRow];
+            // Ajustar columna si está fuera de rango
+            if (targetCol >= targetRowInputs.length) {
+              targetCol = targetRowInputs.length - 1;
+            }
+            if (targetCol < 0) {
+              targetCol = 0;
+            }
+            
+            const targetInput = targetRowInputs[targetCol];
+            if (targetInput) {
+              targetInput.focus();
+              if (targetInput.type !== 'checkbox') {
+                targetInput.select();
+              }
+              
+              // Scroll suave al elemento
+              targetInput.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+            }
+          }
+        }
+
+        // Event listener para navegación
+        table.addEventListener('keydown', function(e) {
+          const target = e.target;
+          if (!target.matches('input[type="number"], input[type="text"], input[type="checkbox"]')) return;
+          if (target.disabled) return;
+
+          let handled = false;
+          
+          switch(e.key) {
+            case 'ArrowRight':
+              e.preventDefault();
+              navigateTable(target, 'right');
+              handled = true;
+              break;
+            case 'ArrowLeft':
+              e.preventDefault();
+              navigateTable(target, 'left');
+              handled = true;
+              break;
+            case 'ArrowDown':
+              e.preventDefault();
+              navigateTable(target, 'down');
+              handled = true;
+              break;
+            case 'ArrowUp':
+              e.preventDefault();
+              navigateTable(target, 'up');
+              handled = true;
+              break;
+            case 'Enter':
+              e.preventDefault();
+              navigateTable(target, 'enter');
+              handled = true;
+              break;
+            case 'Tab':
+              // Permitir comportamiento nativo de Tab
+              break;
+          }
+        });
+
+        // Seleccionar contenido al hacer foco
+        table.addEventListener('focus', function(e) {
+          if (e.target.matches('input[type="number"], input[type="text"]')) {
+            setTimeout(() => e.target.select(), 0);
+          }
+        }, true);
+      });
+
+      // Sistema de redimensionamiento de columnas
+      document.addEventListener('DOMContentLoaded', function() {
+        const table = document.querySelector('.pivot-table');
+        if (!table) return;
+
+        let isResizing = false;
+        let currentTh = null;
+        let startX = 0;
+        let startWidth = 0;
+
+        table.addEventListener('mousedown', function(e) {
+          const th = e.target.closest('th');
+          if (!th) return;
+
+          const rect = th.getBoundingClientRect();
+          const isRightEdge = e.clientX > rect.right - 10;
+
+          if (isRightEdge) {
+            isResizing = true;
+            currentTh = th;
+            startX = e.clientX;
+            startWidth = rect.width;
+            e.preventDefault();
+          }
+        });
+
+        document.addEventListener('mousemove', function(e) {
+          if (!isResizing) {
+            // Cambiar cursor cuando está cerca del borde
+            const th = e.target.closest('th');
+            if (th) {
+              const rect = th.getBoundingClientRect();
+              const isRightEdge = e.clientX > rect.right - 10;
+              th.style.cursor = isRightEdge ? 'col-resize' : '';
+            }
+            return;
+          }
+
+          const diff = e.clientX - startX;
+          const newWidth = Math.max(50, startWidth + diff);
+          currentTh.style.minWidth = newWidth + 'px';
+          currentTh.style.width = newWidth + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+          if (isResizing) {
+            isResizing = false;
+            currentTh = null;
+          }
+        });
+      });
+
+      // Sistema de protección para clasificación I/C
+      document.addEventListener('DOMContentLoaded', function() {
+        const table = document.querySelector('.pivot-table');
+        if (!table) return;
+
+        // Función para verificar y bloquear campos según clasificación
+        function protegerCamposPorClasificacion() {
+          const filas = table.querySelectorAll('tbody tr');
+          
+          filas.forEach(fila => {
+            // Obtener todos los inputs de clasificación en la fila
+            const inputsClasif = fila.querySelectorAll('input[name^="clasificacion_"]');
+            
+            inputsClasif.forEach(inputClasif => {
+              const clasificacion = (inputClasif.value || '').trim().toUpperCase();
+              const lineaId = inputClasif.name.split('_').pop();
+              
+              // Obtener los campos de descuento para esta línea (buscar en toda la fila)
+              const descuento1 = document.querySelector(`input[name="descuento_prov_pct_${lineaId}"]`);
+              const descuento2 = document.querySelector(`input[name="descuento_prov_pct_2_${lineaId}"]`);
+              const descuento3 = document.querySelector(`input[name="descuento_prov_pct_3_${lineaId}"]`);
+              
+              // Si la clasificación es I o C, deshabilitar y resetear descuentos
+              if (clasificacion === 'I' || clasificacion === 'C') {
+                [descuento1, descuento2, descuento3].forEach(desc => {
+                  if (desc && !desc.disabled) {
+                    desc.disabled = true;
+                    desc.value = '0';
+                    desc.style.backgroundColor = '#e2e3e5';
+                    desc.style.color = '#6c757d';
+                  }
+                });
+              } else {
+                // Si no es I o C, habilitar los campos solo si estaban originalmente habilitados
+                [descuento1, descuento2, descuento3].forEach(desc => {
+                  if (desc && desc.hasAttribute('data-originally-enabled')) {
+                    desc.disabled = false;
+                    desc.style.backgroundColor = '';
+                    desc.style.color = '';
+                  }
+                });
+              }
+            });
+          });
+        }
+
+        // Marcar campos que originalmente estaban habilitados
+        table.querySelectorAll('input[name^="descuento_prov_pct"]').forEach(input => {
+          if (!input.disabled) {
+            input.setAttribute('data-originally-enabled', 'true');
+          }
+        });
+
+        // Ejecutar al cargar
+        protegerCamposPorClasificacion();
+
+        // Ejecutar cuando cambie la clasificación
+        table.addEventListener('change', function(e) {
+          if (e.target.matches('input[name^="clasificacion_"]')) {
+            protegerCamposPorClasificacion();
+          }
+        });
+
+        // Ejecutar cuando se escriba en clasificación (para cambios en tiempo real)
+        table.addEventListener('input', function(e) {
+          if (e.target.matches('input[name^="clasificacion_"]')) {
+            protegerCamposPorClasificacion();
+          }
+        });
+      });
     })();
   </script>
 
@@ -91,7 +366,6 @@
     <div class="kpi-card"><div class="kpi-title">Gap prov vs calculado</div><div class="kpi-value">${{ kpis.gap_prov_vs_calc|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Gap interno vs calculado</div><div class="kpi-value">${{ kpis.gap_interno_vs_calc|floatformat:0|intcomma }}</div></div>
     <div class="kpi-card"><div class="kpi-title">Presupuesto total</div><div class="kpi-value">${{ kpis.presupuesto_total|floatformat:0|intcomma }}</div></div>
-    <div class="kpi-card"><div class="kpi-title">Líneas con algún descuento %</div><div class="kpi-value">{{ kpis.lineas_con_algún_descuento_pct|floatformat:1 }}%</div></div>
   </div>
   {% endif %}
 
@@ -178,7 +452,7 @@
     {% endif %}
   {% endif %}
 
-  <form method="post" action="">
+  <form method="post" action="" id="pivot-form">
     {% csrf_token %}
     <div class="pivot-table-wrap">
       <table class="pivot-table">
@@ -227,26 +501,26 @@
             <td class="sticky-col sticky-col-1">{{ codigo }}</td>
             <td class="sticky-col sticky-col-2">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
             <td class="sticky-col sticky-col-3">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
-            <td class="sticky-col sticky-col-4">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.embalaje }}{% endif %}{% endfor %}</td>
+            <td class="sticky-col sticky-col-4">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.embalaje|floatformat:0 }}{% endif %}{% endfor %}</td>
             <td>{% for ln in articulo_data.lineas.values %}{% if forloop.first %}<span style="font-family: monospace; color: #2e7d32;">${{ ln.ultimo_costo|floatformat:0|intcomma }}</span>{% endif %}{% endfor %}</td>
             <td>
               {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                 {% with cls=articulo_data.clasificacion|default:'' %}
-                  <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} />
+                  <input type="number" name="descuento_prov_pct_{{ ln.pk }}" value="{{ ln.descuento_prov_pct|default_if_none:''|floatformat:0 }}" step="1" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} data-linea-id="{{ ln.pk }}" />
                 {% endwith %}
               {% endif %}{% endfor %}
             </td>
             <td>
               {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                 {% with cls=articulo_data.clasificacion|default:'' %}
-                  <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} />
+                  <input type="number" name="descuento_prov_pct_2_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_2|default_if_none:''|floatformat:0 }}" step="1" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} data-linea-id="{{ ln.pk }}" />
                 {% endwith %}
               {% endif %}{% endfor %}
             </td>
             <td>
               {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                 {% with cls=articulo_data.clasificacion|default:'' %}
-                  <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|unlocalize }}" step="0.01" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} />
+                  <input type="number" name="descuento_prov_pct_3_{{ ln.pk }}" value="{{ ln.descuento_prov_pct_3|default_if_none:''|floatformat:0 }}" step="1" {% if inputs_disabled or cls == 'I' or cls == 'C' %}disabled{% endif %} data-linea-id="{{ ln.pk }}" />
                 {% endwith %}
               {% endif %}{% endfor %}
             </td>
@@ -254,8 +528,8 @@
             {% for alm in almacenes_list %}
               {% with linea=articulo_data.lineas|dict_get:alm %}
                 {% if linea %}
-                  {# ========= CLASIFICACIÓN con estilo especial para I/C ========= #}
-                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' or cls == 'C' %}class="clasificacion-{{ cls|lower }}"{% endif %}{% endwith %}>
+                  {# ========= CLASIFICACIÓN: I y C bloqueadas, C solo editable por interno ========= #}
+                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' or cls == 'C' %}class="clasificacion-{{ cls|lower }}"{% elif cls == 'D' %}class="clasificacion-d"{% endif %}{% endwith %}>
                     {% if es_interno %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
                         <input
@@ -264,7 +538,7 @@
                           value="{{ linea.clasificacion|default_if_none:'' }}"
                           maxlength="2"
                           style="width:50px;text-transform:uppercase;"
-                          {% if inputs_disabled or cls == 'C' or cls == 'I' %}disabled{% endif %}
+                          {% if inputs_disabled or cls == 'I' %}disabled{% endif %}
                         />
                       {% endwith %}
                     {% else %}
@@ -273,51 +547,51 @@
                   </td>
 
                   {# ========= CAMPOS FIJOS ========= #}
-                  <td class="stock-cell">{{ linea.stock_actual }}</td>
-                  <td>{{ linea.stock_minimo }}</td>
-                  <td>{{ linea.stock_maximo }}</td>
-                  <td class="sug-calc-cell">
-                    {% widthratio linea.stock_actual 1 1 as stock %}
-                    {% widthratio linea.stock_maximo 1 -1 as max_neg %}
-                    {{ stock|add:max_neg|floatformat:0 }}
-                  </td>
+                  <td class="stock-cell">{{ linea.stock_actual|floatformat:0 }}</td>
+                  <td>{{ linea.stock_minimo|floatformat:0 }}</td>
+                  <td>{{ linea.stock_maximo|floatformat:0 }}</td>
+                    <td class="sug-calc-cell">
+                    {% widthratio linea.stock_maximo 1 1 as max %}
+                    {% widthratio linea.stock_actual 1 -1 as stock_neg %}
+                    {{ max|add:stock_neg|floatformat:0 }}
+                    </td>
 
-                  {# ========= SUGERIDO PROVEEDOR: 0 si I/C ========= #}
+                  {# ========= SUGERIDO PROVEEDOR: sin decimales ========= #}
                   <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' or cls == 'C' %}class="sugerido-cero"{% endif %}{% endwith %}>
                     {% if es_proveedor %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
                         {% if cls == 'I' or cls == 'C' %}
-                          <input type="number" name="nuevo_sugerido_prov_{{ linea.pk }}" value="0" step="0.01" disabled />
-                        {% elif cls == 'A' or cls == 'B' %}
+                          <input type="number" name="nuevo_sugerido_prov_{{ linea.pk }}" value="0" step="1" disabled />
+                        {% elif cls == 'A' or cls == 'B' or cls == 'D' %}
                           <input
                             type="number"
                             name="nuevo_sugerido_prov_{{ linea.pk }}"
-                            value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}"
-                            step="0.01"
+                            value="{{ linea.nuevo_sugerido_prov|default_if_none:''|floatformat:0 }}"
+                            step="1"
                             {% if inputs_disabled %}disabled{% endif %}
                           />
                         {% else %}
                           <input
                             type="number"
                             name="nuevo_sugerido_prov_{{ linea.pk }}"
-                            value="{{ linea.nuevo_sugerido_prov|default_if_none:''|unlocalize }}"
-                            step="0.01"
+                            value="{{ linea.nuevo_sugerido_prov|default_if_none:''|floatformat:0 }}"
+                            step="1"
                             disabled
                           />
                         {% endif %}
                       {% endwith %}
                     {% else %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
-                        {% if cls == 'I' or cls == 'C' %}0{% else %}{{ linea.nuevo_sugerido_prov|default_if_none:'' }}{% endif %}
+                        {% if cls == 'I' or cls == 'C' %}0{% else %}{{ linea.nuevo_sugerido_prov|default_if_none:''|floatformat:0 }}{% endif %}
                       {% endwith %}
                     {% endif %}
                   </td>
 
-                  {# ========= SUGERIDO INTERNO: 0 si I/C ========= #}
-                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' or cls == 'C' %}class="sugerido-cero"{% endif %}{% endwith %}>
+                  {# ========= SUGERIDO INTERNO: solo I va a 0, C es editable ========= #}
+                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' %}class="sugerido-cero"{% endif %}{% endwith %}>
                     {% if es_interno %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
-                        {% if cls == 'I' or cls == 'C' %}
+                        {% if cls == 'I' %}
                           <input type="number" name="sugerido_interno_{{ linea.pk }}" value="0" step="1" min="0" disabled />
                         {% else %}
                           <input
@@ -332,7 +606,7 @@
                       {% endwith %}
                     {% else %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
-                        {% if cls == 'I' or cls == 'C' %}0{% else %}{{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}{% endif %}
+                        {% if cls == 'I' %}0{% else %}{{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}{% endif %}
                       {% endwith %}
                     {% endif %}
                     <input type="hidden" name="linea_id_{{ linea.pk }}" value="{{ linea.pk }}" />

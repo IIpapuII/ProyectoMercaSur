@@ -6,7 +6,7 @@ def calcular_sugerido_inteligente(stock_actual: Decimal, stock_maximo: Decimal, 
     Calcula el sugerido de compra de manera inteligente según el embalaje y el stock máximo.
     
     Lógica:
-    0. Si clasificación es I o C: retornar 0 (no se debe pedir)
+    0. Si clasificación es I: retornar 0 (no se debe pedir)
     1. Calcular unidades faltantes para llegar al máximo
     2. Si las unidades faltantes < embalaje: retornar 0 (no vale la pena pedir)
     3. Si embalaje <= stock_maximo: comprar múltiplo de embalaje necesario
@@ -19,12 +19,12 @@ def calcular_sugerido_inteligente(stock_actual: Decimal, stock_maximo: Decimal, 
         clasificacion: Clasificación del artículo (A, B, C, I, etc.)
     
     Returns:
-        Cantidad sugerida a pedir (0 si clasificación I/C, o si no alcanza para un embalaje completo)
+        Cantidad sugerida a pedir (0 si clasificación I, o si no alcanza para un embalaje completo)
     """
     # NUEVA VALIDACIÓN: Si clasificación es I o C, retornar 0
     if clasificacion:
         cla_upper = str(clasificacion).strip().upper()
-        if cla_upper in {'I', 'C'}:
+        if cla_upper in {'I',}:
             return Decimal("0")
     
     # Convertir a Decimal para precisión
@@ -101,7 +101,7 @@ def ajustar_sugerido_con_embalaje(sugerido_base: Decimal, embalaje: int, clasifi
     # NUEVA VALIDACIÓN: Si clasificación es I o C, retornar 0
     if clasificacion:
         cla_upper = str(clasificacion).strip().upper()
-        if cla_upper in {'I', 'C'}:
+        if cla_upper in {'I'}:
             return Decimal("0")
     
     if not sugerido_base or sugerido_base <= 0:
