@@ -191,3 +191,4 @@ clientes/management/commands/cargar_proveedores_completo.py
 clientes/management/commands/asignar_proveedores_definidos.py
 clientes/management/commands/Articulos_Proveedores.csv
 productos_basicos_12_offsets.xlsx
+copiadb.bat
