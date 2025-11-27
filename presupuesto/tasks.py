@@ -73,3 +73,48 @@ def calcular_presupuesto_diario_mes_actual():
         "exitosos": exitos,
         "errores": errores
     }
+
+@shared_task
+def calcular_presupuesto_diario_marca_mercasur():
+    """
+    Task para calcular el presupuesto diario de la categoría MARCA mercasur del mes actual.
+    """
+    exitos = 0
+    errores = 0
+    
+    hoy = now().date()
+    anio = hoy.year
+    mes = hoy.month
+
+    categoria = CategoriaVenta.objects.filter(nombre='MARCA mercasur').first()
+    
+    if not categoria:
+        return {
+            "error": "No se encontró la categoría 'MARCA mercasur'",
+            "total": 0,
+            "exitosos": 0,
+            "errores": 0
+        }
+
+    presupuestos = PresupuestoMensualCategoria.objects.filter(
+        anio=anio, 
+        mes=mes, 
+        categoria=categoria
+    )
+
+    for presupuesto in presupuestos:
+        try:
+            resultado = calcular_presupuesto_diario_forecast(presupuesto)
+            print(f"[✔] {presupuesto}: {resultado}")
+            exitos += 1
+        except Exception as e:
+            print(f"[✖] Error en {presupuesto}: {e}")
+            errores += 1
+
+    return {
+        "total": presupuestos.count(),
+        "exitosos": exitos,
+        "errores": errores,
+        "anio": anio,
+        "mes": mes
+    }
