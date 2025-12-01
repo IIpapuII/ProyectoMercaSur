@@ -32,6 +32,7 @@ class Articulos(models.Model):
     secciones = models.CharField(max_length=255, null=True, blank=True)
     familia = models.CharField(max_length=255, null=True, blank=True)
     subfamilia = models.CharField(max_length=255, null=True, blank=True)
+    Linea = models.CharField(max_length=255, null=True, blank=True)
     code = models.CharField(max_length=100, null=True, unique=True)  # Código único
     image = models.ImageField(upload_to='product_images/', null=True, blank=True)
     modificado = models.BooleanField(default=False)
@@ -63,6 +64,7 @@ class DescuentoDiario(models.Model):
     secciones = models.CharField(max_length=200, blank=True, null=True)
     familia = models.CharField(max_length=200, blank=True, null=True)
     Trademark = models.CharField(max_length=200, blank=True, null=True, verbose_name="Marca")
+    Linea = models.CharField(max_length=200, blank=True, null=True)
     ean = models.CharField(max_length=50, blank=True, null=True, unique=True)  # Para descuentos por producto específico
     porcentaje_descuento = models.FloatField(help_text="Ejemplo: 10 para 10% de descuento")
     fecha_inicio = models.DateField(blank=True, null=True, help_text="Fecha desde la cual se aplica el descuento")
