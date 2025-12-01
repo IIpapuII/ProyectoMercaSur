@@ -35,7 +35,7 @@ class ArticulosResource(resources.ModelResource):
         model = Articulos
         formats = [XLS, XLSX]
         import_id_fields = ['code']  
-        fields = ['store_id','ean', 'name', 'trademark', 'price', 'stock', 'sale_type', 'discount_price', 'is_available','tarifa','departamento','secciones','familia','subfamilia','code']
+        fields = ['store_id','ean', 'name', 'trademark', 'price', 'stock', 'sale_type', 'discount_price', 'is_available','tarifa','departamento','secciones','familia','Linea','subfamilia','code']
         export_order = ['store_id','ean', 'name', 'trademark', 'price', 'stock', 'sale_type', 'discount_price', 'is_available','tarifa','departamento','secciones','familia','subfamilia','code']
         skip_unchanged = True  
         report_skipped = True
@@ -44,7 +44,7 @@ class ArticulosResource(resources.ModelResource):
 class ArticulosAdmin(ImportExportModelAdmin):
     resource_class = ArticulosResource
     values = ['id_articulo','store_id','ean','name','trademark','price','stock','sale_type','discount_price','is_available','code']
-    fields = ['id_articulo','store_id','name','trademark','description','price','discount_price','stock','sale_type','is_available','departamento','secciones','familia','subfamilia','code','image']
+    fields = ['id_articulo','store_id','name','trademark','description','price','discount_price','stock','sale_type','is_available','departamento','secciones','familia','Linea','subfamilia','code','image']
     list_display = values
     search_fields = values
     paginate_by = 10
@@ -94,11 +94,11 @@ desactivar_rappi.short_description = "Desactivar para Rappi"
 @admin.register(DescuentoDiario)
 class DescuentoDiarioAdmin(ImportExportModelAdmin):
     resource_class = DescuentoDiarioResource
-    values = ['dia', 'Trademark','departamento', 'secciones', 'familia', 'ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin', 'destacado','maximo_venta', 'activo', 'aplica_en_parze','aplica_en_rappi']
+    values = ['dia', 'Trademark','departamento', 'secciones', 'familia','Linea', 'ean', 'porcentaje_descuento', 'fecha_inicio', 'fecha_fin', 'destacado','maximo_venta', 'activo', 'aplica_en_parze','aplica_en_rappi']
     fields = values  
     list_display = values  
-    search_fields = ['departamento', 'secciones', 'familia', 'ean']  
-    list_filter = ['dia', 'departamento', 'secciones', 'familia', 'fecha_inicio', 'fecha_fin'] 
+    search_fields = ['departamento', 'secciones', 'familia','Linea', 'ean']  
+    list_filter = ['dia', 'departamento', 'secciones', 'familia', 'fecha_inicio','Linea', 'fecha_fin'] 
     ordering = ['fecha_inicio', 'fecha_fin']  
     date_hierarchy = 'fecha_inicio' 
     actions = [activar_rappi, desactivar_rappi]  
