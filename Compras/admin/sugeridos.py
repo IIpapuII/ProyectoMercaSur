@@ -533,26 +533,124 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
     # ==================== Acciones ====================
     def confirmar_lote_proveedor(self, request, lote_id):
+        """Confirmar el lote desde la perspectiva del proveedor"""
         lote = get_object_or_404(SugeridoLote, pk=lote_id)
+        
+        # Debug: verificar permisos del usuario
+        es_proveedor = self._es_proveedor(request)
         perfil = self._get_perfil_proveedor_obj(request)
-        if not perfil:
-            self.message_user(request, 'Solo un usuario proveedor puede confirmar el sugerido.', level=messages.ERROR)
-            return redirect('..')
+        en_grupo = request.user.groups.filter(name='perfil_proveedor').exists()
+        
+        print(f"[DEBUG confirmar_lote_proveedor]")
+        print(f"  Usuario: {request.user.username}")
+        print(f"  Es proveedor (método): {es_proveedor}")
+        print(f"  Perfil objeto: {perfil}")
+        print(f"  En grupo 'perfil_proveedor': {en_grupo}")
+        print(f"  Grupos del usuario: {list(request.user.groups.values_list('name', flat=True))}")
+        
+        # Validación: debe estar en el grupo O tener perfil
+        if not es_proveedor and not en_grupo:
+            messages.error(
+                request, 
+                f'Solo un usuario proveedor puede confirmar el sugerido. '
+                f'Usuario: {request.user.username}, Grupos: {", ".join(request.user.groups.values_list("name", flat=True))}'
+            )
+            return redirect('admin:Compras_sugeridolote_changelist')
+        
+        # Obtener el proveedor del lote
+        proveedor_lote = lote.proveedor
+        
+        if not proveedor_lote:
+            messages.error(request, 'Este lote no tiene un proveedor asignado.')
+            return redirect('admin:sugeridolinea_por_lote', lote_id)
+        
+        # Determinar el proveedor a usar para la confirmación
+        proveedor_validado = None
+        
+        # Caso 1: Usuario tiene perfil de proveedor
+        if perfil and hasattr(perfil, 'proveedor') and perfil.proveedor:
+            if perfil.proveedor.id != proveedor_lote.id:
+                messages.error(
+                    request, 
+                    f'Este lote pertenece a otro proveedor. '
+                    f'Su proveedor: {perfil.proveedor.nombre}, Lote: {proveedor_lote.nombre}'
+                )
+                return redirect('admin:sugeridolinea_por_lote', lote_id)
+            proveedor_validado = perfil.proveedor
+            print(f"  -> Usando proveedor del perfil: {proveedor_validado.nombre}")
+        
+        # Caso 2: Usuario en grupo pero sin perfil - usar proveedor del lote
+        elif en_grupo:
+            proveedor_validado = proveedor_lote
+            print(f"  -> Usuario en grupo sin perfil, usando proveedor del lote: {proveedor_validado.nombre}")
+        
+        # Caso 3: No se puede determinar el proveedor
+        else:
+            messages.error(
+                request, 
+                'No se pudo determinar el proveedor. Contacte al administrador para que le asigne un perfil de proveedor.'
+            )
+            return redirect('admin:sugeridolinea_por_lote', lote_id)
+        
+        # Validar estado del lote
         if lote.estado in {SugeridoLote.Estado.CONFIRMADO, SugeridoLote.Estado.COMPLETADO}:
-            self.message_user(request, 'El lote ya fue confirmado/completado.', level=messages.INFO)
-            return redirect(request.META.get('HTTP_REFERER', '..'))
-        if not lote.lineas.filter(proveedor=perfil.proveedor).exists():
-            self.message_user(request, 'No hay líneas de su proveedor en este lote.', level=messages.WARNING)
-            return redirect(request.META.get('HTTP_REFERER', '..'))
+            messages.info(request, f'El lote ya fue {lote.estado.lower()}.')
+            return redirect('admin:sugeridolinea_por_lote', lote_id)
+        
+        # Validar que existan líneas del proveedor
+        lineas_count = lote.lineas.filter(proveedor=proveedor_validado).count()
+        if lineas_count == 0:
+            messages.warning(
+                request, 
+                f'No hay líneas del proveedor {proveedor_validado.nombre} en este lote.'
+            )
+            return redirect('admin:sugeridolinea_por_lote', lote_id)
 
-        with transaction.atomic():
-            lineas_qs = lote.lineas.filter(proveedor=perfil.proveedor)
-            actualizadas = lineas_qs.update(sugerido_interno=Coalesce(F('nuevo_sugerido_prov'), Decimal('0')))
-            lote.estado = SugeridoLote.Estado.CONFIRMADO
-            lote.save(update_fields=['estado'])
+        print(f"  -> Confirmando {lineas_count} líneas del proveedor {proveedor_validado.nombre}")
 
-        self.message_user(request, f'Lote {lote.id} confirmado correctamente. {actualizadas} línea(s) actualizada(s).', level=messages.SUCCESS)
-        return redirect(request.META.get('HTTP_REFERER', '..'))
+        # Actualizar líneas y estado
+        try:
+            with transaction.atomic():
+                lineas_qs = lote.lineas.filter(proveedor=proveedor_validado)
+                
+                # Copiar nuevo_sugerido_prov a sugerido_interno
+                actualizadas = lineas_qs.update(
+                    sugerido_interno=Coalesce(F('nuevo_sugerido_prov'), Decimal('0'))
+                )
+                
+                print(f"  -> {actualizadas} líneas actualizadas")
+                
+                # Cambiar estado del lote
+                lote.estado = SugeridoLote.Estado.CONFIRMADO
+                lote.save(update_fields=['estado'])
+                
+                print(f"  -> Estado del lote cambiado a CONFIRMADO")
+                
+                # Recalcular totales si el método existe
+                if hasattr(lote, 'recalcular_totales'):
+                    try:
+                        lote.recalcular_totales()
+                        print(f"  -> Totales recalculados")
+                    except Exception as e:
+                        print(f"  -> Advertencia al recalcular totales: {e}")
+                else:
+                    print(f"  -> El modelo SugeridoLote no tiene método recalcular_totales")
+                
+            messages.success(
+                request, 
+                f'✅ Lote {lote.id} confirmado correctamente por {proveedor_validado.nombre}. '
+                f'{actualizadas} línea(s) actualizada(s).'
+            )
+            print(f"  -> Confirmación completada exitosamente")
+            
+        except Exception as e:
+            print(f"  -> ERROR: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            messages.error(request, f'❌ Error al confirmar el lote: {str(e)}')
+        
+        # Redireccionar a la vista de líneas del lote
+        return redirect('admin:sugeridolinea_por_lote', lote_id)
 
     def confirmar_pedido_icg(self, request, lote_id):
         lote = get_object_or_404(SugeridoLote, pk=lote_id)
