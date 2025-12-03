@@ -4,6 +4,8 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from auditlog.registry import auditlog
+from django.db.models import Count, Sum
+from django.db.models.functions import Coalesce
 
 User = get_user_model()
 
@@ -288,13 +290,16 @@ class SugeridoLote(models.Model):
     def __str__(self):
         return f"Lote #{self.pk} · {self.nombre}"
 
-    def recomputar_totales(self):
-        agg = self.lineas.aggregate(
-            n=models.Count("id"),
-            cost=models.Sum(models.F("costo_linea"))
+    def recalcular_totales(self):
+        """Recalcula los totales del lote basándose en sus líneas"""
+        totales = self.lineas.aggregate(
+            total_lineas=Count('id'),
+            total_costo=Coalesce(Sum('costo_linea'), Decimal('0'))
         )
-        self.total_lineas = agg.get("n") or 0
-        self.total_costo = agg.get("cost") or Decimal("0")
+        self.total_lineas = totales['total_lineas']
+        self.total_costo = totales['total_costo']
+        # NO llamar a save() aquí para evitar recursión infinita
+        # El save se hará desde donde se llame este método
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -309,15 +314,15 @@ class SugeridoLote(models.Model):
                     notificar_vendedor_lote_asignado(proveedor=self.proveedor, marca=self.marca, lote=self)
                 except Exception:
                     pass
-        # Recalcula totales luego del import y decide estado inicial
-        self.recomputar_totales()
-        update_fields = ["total_lineas", "total_costo"]
-        if is_new:
+            # Recalcula totales luego del import y decide estado inicial
+            self.recalcular_totales()
+            
             nuevo_estado = self.Estado.ENVIADO if self.total_lineas > 0 else self.Estado.PENDIENTE
             if self.estado != nuevo_estado:
                 self.estado = nuevo_estado
-                update_fields.append("estado")
-        super().save(update_fields=update_fields)
+            
+            # Guardar una última vez solo con los campos calculados
+            super().save(update_fields=["total_lineas", "total_costo", "estado"])
 auditlog.register(SugeridoLote)
 
 class SugeridoLinea(models.Model):

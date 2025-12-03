@@ -430,22 +430,42 @@
             targetHref = null;
           }
 
+          // Capturar clics en enlaces con data-confirm (usar capturing phase)
           document.addEventListener('click', function(ev) {
             const link = ev.target.closest('a[data-confirm]');
             if (!link) return;
+            
             ev.preventDefault();
-            openModal(link.getAttribute('data-confirm'), link.getAttribute('href'));
+            ev.stopPropagation();
+            
+            const message = link.getAttribute('data-confirm');
+            const href = link.getAttribute('href');
+            
+            console.log('Confirmación solicitada:', message, href); // Debug
+            openModal(message, href);
           }, true);
 
-          btnCancel && btnCancel.addEventListener('click', closeModal);
-          btnAccept && btnAccept.addEventListener('click', function() {
-            if (targetHref) window.location.assign(targetHref);
+          btnCancel && btnCancel.addEventListener('click', function(e) {
+            e.preventDefault();
+            closeModal();
           });
+          
+          btnAccept && btnAccept.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (targetHref) {
+              console.log('Navegando a:', targetHref); // Debug
+              window.location.href = targetHref;
+            }
+          });
+          
           modal.addEventListener('click', function(ev) {
             if (ev.target === modal) closeModal();
           });
+          
           document.addEventListener('keydown', function(ev) {
-            if (ev.key === 'Escape') closeModal();
+            if (ev.key === 'Escape' && modal.classList.contains('show')) {
+              closeModal();
+            }
           });
         })();
       </script>
