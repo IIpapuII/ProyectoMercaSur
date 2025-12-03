@@ -577,10 +577,10 @@
                     </td>
 
                   {# ========= SUGERIDO PROVEEDOR: sin decimales ========= #}
-                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' or cls == 'C' %}class="sugerido-cero"{% endif %}{% endwith %}>
+                  <td {% with cls=linea.clasificacion|default_if_none:''|upper %}{% if cls == 'I' %}class="sugerido-cero"{% endif %}{% endwith %}>
                     {% if es_proveedor %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
-                        {% if cls == 'I' or cls == 'C' %}
+                        {% if cls == 'I' %}
                           <input type="number" name="nuevo_sugerido_prov_{{ linea.pk }}" value="0" step="1" disabled />
                         {% elif cls == 'A' or cls == 'B' or cls == 'D' %}
                           <input
@@ -589,6 +589,15 @@
                             value="{{ linea.nuevo_sugerido_prov|default_if_none:''|floatformat:0 }}"
                             step="1"
                             {% if inputs_disabled %}disabled{% endif %}
+                          />
+                        {% elif cls == 'C' %}
+                          {# C muestra el valor del sugerido interno (solo lectura para proveedor) #}
+                          <input
+                            type="number"
+                            name="nuevo_sugerido_prov_{{ linea.pk }}"
+                            value="{{ linea.sugerido_interno|default_if_none:''|floatformat:0 }}"
+                            step="1"
+                            disabled
                           />
                         {% else %}
                           <input
@@ -602,7 +611,7 @@
                       {% endwith %}
                     {% else %}
                       {% with cls=linea.clasificacion|default_if_none:''|upper %}
-                        {% if cls == 'I' or cls == 'C' %}0{% else %}{{ linea.nuevo_sugerido_prov|default_if_none:''|floatformat:0 }}{% endif %}
+                        {% if cls == 'I' %}0{% else %}{{ linea.nuevo_sugerido_prov|default_if_none:''|floatformat:0 }}{% endif %}
                       {% endwith %}
                     {% endif %}
                   </td>

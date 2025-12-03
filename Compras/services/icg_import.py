@@ -473,7 +473,11 @@ ORDER BY nombre_almacen, codigo;
             costo_linea_val = _safe_float(row.get("CostoLinea"))
             # Marcar como informativa si sugerido_base es 0 pero diff > 0
             es_informativa_val = bool(_safe_int(row.get("EsInformativa"), 0))
-        
+            
+            # NUEVO: Para clasificación C, nuevo_sugerido_prov debe ser igual a sugerido_interno
+            if clasificacion_upper == 'C':
+                nuevo_sugerido_prov_val = sugerido_interno_val
+
         try:
             # Garantizar que descripcion nunca sea None o vacía
             descripcion = _safe_str(row.get("Descripción")) or "SIN DESCRIPCIÓN"

@@ -495,11 +495,17 @@ class SugeridoLinea(models.Model):
                 clasificacion=self.clasificacion  # Pasar clasificación
             )
             self.sugerido_interno = sugerido_calculado
+            # NUEVO: Para clasificación C, sincronizar nuevo_sugerido_prov con sugerido_interno
+            if cla_upper == 'C':
+                self.nuevo_sugerido_prov = sugerido_calculado
             
             # Si el sugerido calculado es 0 pero había un sugerido_base > 0, 
             # marcar como informativa (no se puede pedir por embalaje o clasificación)
             if sugerido_calculado == 0 and self.sugerido_base > 0:
                 self.es_informativa = True
+        # Si es clasificación C y se está actualizando, sincronizar nuevo_sugerido_prov con sugerido_interno
+        elif cla_upper == 'C' and self.sugerido_interno:
+            self.nuevo_sugerido_prov = self.sugerido_interno
         
         self.recomputar_costos()
         super().save(*args, **kwargs)
