@@ -757,7 +757,9 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                 if v in (None, '', 'None'):
                     return None
                 try:
-                    return Decimal(str(v).replace(',', '.'))
+                    # Limpiar puntos (separadores de miles) y comas antes de convertir
+                    v_limpio = str(v).replace('.', '').replace(',', '.')
+                    return Decimal(v_limpio)
                 except Exception:
                     return None
 
@@ -782,13 +784,14 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                                 self._dbg("  -> Skip: perfil existe pero proveedor NO coincide con la línea.")
                                 continue
                         else:
-                            self._dbg("  -> Sin objeto perfil con proveedor; permitimos edición por pertenecer al grupo.")
+                            self._dbg("  -> Sin objeto perfil con proveedor; permitimos edición por pertenecer al grupo")
 
                         # PROTECCIÓN: Proveedores NO pueden editar líneas con clasificación I o C
                         if cla in {'I', 'C'} or estado_lote in {'CONFIRMADO', 'COMPLETADO'} or estado_linea == 'ORDENADA':
                             self._dbg(f"  -> Skip por estado/clasificación (cla={cla}).")
                             continue
 
+                        m_ucosto = request.POST.get(f'ultimo_costo_{pid}')
                         m_d1  = request.POST.get(f'descuento_prov_pct_{pid}')
                         m_d2  = request.POST.get(f'descuento_prov_pct_2_{pid}')
                         m_d3  = request.POST.get(f'descuento_prov_pct_3_{pid}')
@@ -797,16 +800,40 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                         m_obs  = request.POST.get(f'observaciones_prov_{pid}')
                         m_nsug = request.POST.get(f'nuevo_sugerido_prov_{pid}')
 
-                        self._dbg(f"  Inputs crudos: d1='{m_d1}' d2='{m_d2}' d3='{m_d3}' cont='{m_cont}' nom='{m_nom}' obs='{m_obs}' nsug='{m_nsug}'")
+                        self._dbg(f"  Inputs crudos: ucosto='{m_ucosto}' d1='{m_d1}' d2='{m_d2}' d3='{m_d3}' cont='{m_cont}' nom='{m_nom}' obs='{m_obs}' nsug='{m_nsug}'")
 
+                        v_ucosto = _dec(m_ucosto)
                         v_d1 = _dec(m_d1)
                         v_d2 = _dec(m_d2)
                         v_d3 = _dec(m_d3)
                         v_nsug = _dec(m_nsug)
                         v_cont = (m_cont is not None)
 
-                        self._dbg(f"  Parseos: d1={v_d1} d2={v_d2} d3={v_d3} nsug={v_nsug} cont={v_cont}")
-                        self._dbg(f"  Valores actuales: d1={ln.descuento_prov_pct} d2={ln.descuento_prov_pct_2} d3={ln.descuento_prov_pct_3} nsug={ln.nuevo_sugerido_prov} cont={ln.continuidad_activo} nom='{ln.nuevo_nombre_prov}' obs='{ln.observaciones_prov}'")
+                        self._dbg(f"  Parseos: ucosto={v_ucosto} d1={v_d1} d2={v_d2} d3={v_d3} nsug={v_nsug} cont={v_cont}")
+                        self._dbg(f"  Valores actuales: ucosto={ln.ultimo_costo} d1={ln.descuento_prov_pct} d2={ln.descuento_prov_pct_2} d3={ln.descuento_prov_pct_3} nsug={ln.nuevo_sugerido_prov} cont={ln.continuidad_activo} nom='{ln.nuevo_nombre_prov}' obs='{ln.observaciones_prov}'")
+
+                        # NUEVO: Procesar último costo (NO permitir edición para clasificación I)
+                        if cla != 'I' and v_ucosto is not None and v_ucosto != ln.ultimo_costo:
+                            ln.ultimo_costo = v_ucosto
+                            cambio = True
+                            changed_fields.append('ultimo_costo')
+                            # Propagar a hermanos del mismo código
+                            hermanos = self.model.objects.filter(
+                                lote_id=ln.lote_id,
+                                codigo_articulo=ln.codigo_articulo
+                            ).exclude(pk=ln.pk)
+                            for h in hermanos:
+                                h_cla = (h.clasificacion or '').strip().upper()
+                                # Solo propagar si el hermano tampoco es I
+                                if h_cla != 'I' and h.ultimo_costo != v_ucosto:
+                                    h.ultimo_costo = v_ucosto
+                                    try:
+                                        h.save(update_fields=['ultimo_costo', 'costo_linea'])
+                                        actualizados += 1
+                                    except ValidationError as e:
+                                        errores_validacion.append(f"Línea {h.pk} ({h.codigo_articulo}): {'; '.join(e.messages)}")
+                        elif cla == 'I' and m_ucosto:
+                            self._dbg(f"  -> último_costo NO editable para clasificación I")
 
                         # PROTECCIÓN: No permitir cambios en descuentos si clasificación es I o C
                         puede_editar_descuentos = cla not in {'I', 'C'}
@@ -875,20 +902,47 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                             if v in (None, '', 'None'):
                                 return None
                             try:
-                                return Decimal(str(v).replace(',', '.'))
+                                # Limpiar puntos (separadores de miles) y comas antes de convertir
+                                v_limpio = str(v).replace('.', '').replace(',', '.')
+                                return Decimal(v_limpio)
                             except Exception:
                                 return None
 
                         # PROTECCIÓN: Solo usuarios con permiso 'clasificacion_c' pueden editar clasificación C
                         editable_interno = not (cla == 'C' and not puede_editar_clasificacion_c)
 
+                        m_ucosto = request.POST.get(f'ultimo_costo_{pid}')
                         m_d1  = request.POST.get(f'descuento_prov_pct_{pid}')
                         m_d2  = request.POST.get(f'descuento_prov_pct_2_{pid}')
                         m_d3  = request.POST.get(f'descuento_prov_pct_3_{pid}')
                         
+                        v_ucosto = _dec_local(m_ucosto)
                         v_d1 = _dec_local(m_d1)
                         v_d2 = _dec_local(m_d2)
                         v_d3 = _dec_local(m_d3)
+
+                        # NUEVO: Procesar último costo para internos (NO permitir edición para clasificación I)
+                        if cla != 'I' and v_ucosto is not None and v_ucosto != ln.ultimo_costo:
+                            ln.ultimo_costo = v_ucosto
+                            cambio = True
+                            changed_fields.append('ultimo_costo')
+                            # Propagar a hermanos
+                            hermanos = self.model.objects.filter(
+                                lote_id=ln.lote_id,
+                                codigo_articulo=ln.codigo_articulo
+                            ).exclude(pk=ln.pk)
+                            for h in hermanos:
+                                h_cla = (h.clasificacion or '').strip().upper()
+                                # Solo propagar si el hermano tampoco es I
+                                if h_cla != 'I' and h.ultimo_costo != v_ucosto:
+                                    h.ultimo_costo = v_ucosto
+                                    try:
+                                        h.save(update_fields=['ultimo_costo', 'costo_linea'])
+                                        actualizados += 1
+                                    except ValidationError as e:
+                                        errores_validacion.append(f"Línea {h.pk} ({h.codigo_articulo}): {'; '.join(e.messages)}")
+                        elif cla == 'I' and m_ucosto:
+                            self._dbg(f"  -> último_costo NO editable para clasificación I en línea {pid}")
 
                         # PROTECCIÓN: No permitir cambios en descuentos si clasificación es I o C
                         puede_editar_descuentos_interno = cla not in {'I', 'C'}
@@ -906,30 +960,6 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                                 ln.descuento_prov_pct_3 = v_d3
                                 cambio = True
                                 changed_fields.append('descuento_prov_pct_3')
-
-                        if puede_editar_descuentos_interno and any(x is not None for x in [v_d1, v_d2, v_d3]):
-                            hermanos = self.model.objects.filter(
-                                lote_id=ln.lote_id,
-                                codigo_articulo=ln.codigo_articulo
-                            ).exclude(pk=ln.pk)
-                            for h in hermanos:
-                                h_cla = (h.clasificacion or '').strip().upper()
-                                # Solo propagar si el hermano tampoco es I o C
-                                if h_cla not in {'I', 'C'}:
-                                    h_cambio = False
-                                    if v_d1 is not None and h.descuento_prov_pct != v_d1:
-                                        h.descuento_prov_pct = v_d1; h_cambio = True
-                                    if v_d2 is not None and h.descuento_prov_pct_2 != v_d2:
-                                        h.descuento_prov_pct_2 = v_d2; h_cambio = True
-                                    if v_d3 is not None and h.descuento_prov_pct_3 != v_d3:
-                                        h.descuento_prov_pct_3 = v_d3; h_cambio = True
-                                    if h_cambio:
-                                        try:
-                                            h.save(update_fields=['descuento_prov_pct', 'descuento_prov_pct_2', 'descuento_prov_pct_3'])
-                                            actualizados += 1
-                                        except ValidationError as e:
-                                            errores_validacion.append(f"Línea {h.pk} ({h.codigo_articulo}): {'; '.join(e.messages)}")
-                                            self._dbg(f"  Error validación en hermano {h.pk}: {e}")
 
                         m_si = request.POST.get(f'sugerido_interno_{pid}')
                         v_si = _dec_local(m_si)

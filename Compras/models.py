@@ -503,11 +503,26 @@ class SugeridoLinea(models.Model):
             # marcar como informativa (no se puede pedir por embalaje o clasificación)
             if sugerido_calculado == 0 and self.sugerido_base > 0:
                 self.es_informativa = True
+                # NUEVO: Si no alcanza el umbral del 50%, agregar observación informativa
+                unidades_faltantes = self.stock_maximo - self.stock_actual
+                umbral_minimo = Decimal(self.embalaje) * Decimal("0.5")
+                if Decimal("0") < unidades_faltantes < umbral_minimo:
+                    self.comentario_interno = f"No se sugiere pedido: faltan {unidades_faltantes} uds (< 50% del embalaje de {self.embalaje})"
         # Si es clasificación C y se está actualizando, sincronizar nuevo_sugerido_prov con sugerido_interno
         elif cla_upper == 'C' and self.sugerido_interno:
             self.nuevo_sugerido_prov = self.sugerido_interno
         
+        # IMPORTANTE: Siempre recalcular costos antes de guardar
         self.recomputar_costos()
+        
+        # Si hay cambios en ultimo_costo, agregarlo a update_fields si existe
+        update_fields = kwargs.get('update_fields')
+        if update_fields and 'ultimo_costo' in update_fields:
+            # Asegurar que costo_linea también se actualice
+            if 'costo_linea' not in update_fields:
+                update_fields.append('costo_linea')
+            kwargs['update_fields'] = list(set(update_fields))
+        
         super().save(*args, **kwargs)
 auditlog.register(SugeridoLinea)
 
