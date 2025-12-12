@@ -8,9 +8,10 @@ def calcular_sugerido_inteligente(stock_actual: Decimal, stock_maximo: Decimal, 
     Lógica:
     0. Si clasificación es I: retornar 0 (no se debe pedir)
     1. Calcular unidades faltantes para llegar al máximo
-    2. Si las unidades faltantes < embalaje: retornar 0 (no vale la pena pedir)
-    3. Si embalaje <= stock_maximo: comprar múltiplo de embalaje necesario
-    4. Si embalaje > stock_maximo: trabajar con fracciones de embalaje
+    2. Si las unidades faltantes < 50% embalaje: retornar 0 (no vale la pena pedir)
+    3. Si las unidades faltantes >= 50% embalaje: redondear al embalaje completo
+    4. Si embalaje <= stock_maximo: comprar múltiplo de embalaje necesario
+    5. Si embalaje > stock_maximo: trabajar con fracciones de embalaje
     
     Args:
         stock_actual: Stock actual en almacén
@@ -19,9 +20,9 @@ def calcular_sugerido_inteligente(stock_actual: Decimal, stock_maximo: Decimal, 
         clasificacion: Clasificación del artículo (A, B, C, I, etc.)
     
     Returns:
-        Cantidad sugerida a pedir (0 si clasificación I, o si no alcanza para un embalaje completo)
+        Cantidad sugerida a pedir (0 si clasificación I, o si no alcanza para 50% del embalaje)
     """
-    # NUEVA VALIDACIÓN: Si clasificación es I o C, retornar 0
+    # VALIDACIÓN: Si clasificación es I, retornar 0
     if clasificacion:
         cla_upper = str(clasificacion).strip().upper()
         if cla_upper in {'I',}:
@@ -39,9 +40,10 @@ def calcular_sugerido_inteligente(stock_actual: Decimal, stock_maximo: Decimal, 
     if unidades_faltantes <= 0:
         return Decimal("0")
     
-    # REGLA CLAVE: Si las unidades faltantes son menores que el embalaje, retornar 0
-    # No tiene sentido pedir una caja completa si solo necesitamos menos de una caja
-    if unidades_faltantes < embalaje:
+    # NUEVA REGLA CLAVE: Si las unidades faltantes son menores que el 50% del embalaje, retornar 0
+    # Esto evita pedidos muy pequeños que no justifican abrir una caja
+    umbral_minimo = Decimal(embalaje) * Decimal("0.5")
+    if unidades_faltantes < umbral_minimo:
         return Decimal("0")
     
     # Caso 1: Embalaje menor o igual al máximo
@@ -87,8 +89,9 @@ def calcular_sugerido_inteligente(stock_actual: Decimal, stock_maximo: Decimal, 
 def ajustar_sugerido_con_embalaje(sugerido_base: Decimal, embalaje: int, clasificacion: str = None) -> Decimal:
     """
     Ajusta un sugerido base para que sea múltiplo del embalaje.
-    Si clasificación es I o C, retorna 0.
-    Si el sugerido base es menor que el embalaje, retorna 0.
+    Si clasificación es I, retorna 0.
+    Si el sugerido base es menor que 50% del embalaje, retorna 0.
+    Si el sugerido base es >= 50% del embalaje, redondea al embalaje completo.
     
     Args:
         sugerido_base: Cantidad sugerida inicial
@@ -96,9 +99,9 @@ def ajustar_sugerido_con_embalaje(sugerido_base: Decimal, embalaje: int, clasifi
         clasificacion: Clasificación del artículo (A, B, C, I, etc.)
     
     Returns:
-        Sugerido ajustado al múltiplo de embalaje (0 si clasificación I/C o no alcanza para una caja)
+        Sugerido ajustado al múltiplo de embalaje (0 si clasificación I o no alcanza para 50% de una caja)
     """
-    # NUEVA VALIDACIÓN: Si clasificación es I o C, retornar 0
+    # VALIDACIÓN: Si clasificación es I, retornar 0
     if clasificacion:
         cla_upper = str(clasificacion).strip().upper()
         if cla_upper in {'I'}:
@@ -109,8 +112,9 @@ def ajustar_sugerido_con_embalaje(sugerido_base: Decimal, embalaje: int, clasifi
     
     embalaje = int(embalaje) if embalaje and embalaje > 0 else 1
     
-    # Si el sugerido es menor que el embalaje, retornar 0
-    if sugerido_base < embalaje:
+    # NUEVA REGLA: Si el sugerido es menor que 50% del embalaje, retornar 0
+    umbral_minimo = Decimal(embalaje) * Decimal("0.5")
+    if sugerido_base < umbral_minimo:
         return Decimal("0")
     
     # Redondear hacia arriba al múltiplo de embalaje

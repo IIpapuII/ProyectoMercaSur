@@ -12,8 +12,7 @@
     .pivot-table-wrap { width:100%; overflow-x:auto; max-height:85vh; overflow-y:auto; position:relative; }
     .pivot-table { border-collapse:collapse; width:max-content; min-width:100%; margin-top:12px; table-layout:auto; }
     .pivot-table th, .pivot-table td { border:1px solid #ccc; padding:3px 5px; font-size:11.5px; line-height:1.1; white-space:nowrap; position:relative; }
-    .pivot-table th { background:#f7f7f7; resize:horizontal; overflow:auto; }
-    .pivot-table th:hover { cursor:col-resize; }
+    .pivot-table th { background:#f7f7f7; }
     .pivot-table thead tr:first-child th { position:sticky; top:0; z-index:2; }
     .pivot-table thead tr:nth-child(2) th { position:sticky; top:var(--thead-row1-h); z-index:1; }
     .pivot-table th.sticky-col, .pivot-table td.sticky-col { position:sticky; background:#fff; border-right:1px solid #ddd; }
@@ -57,6 +56,30 @@
     td.clasificacion-i, td.clasificacion-c { background:#f8d7da; color:#721c24; font-weight:600; }
     td.clasificacion-d { background:#fff3cd; color:#856404; font-weight:600; }
     td.sugerido-cero { background:#e2e3e5; color:#6c757d; }
+
+    /* Spinner para el botón del modal */
+    .ms-btn--loading {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.7;
+      padding-right: 35px;
+    }
+    .ms-btn--loading::after {
+      content: "";
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      top: 50%;
+      right: 10px;
+      margin-top: -7px;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spinner-modal 0.6s linear infinite;
+    }
+    @keyframes spinner-modal {
+      to { transform: rotate(360deg); }
+    }
   </style>
 
   <script>
@@ -81,104 +104,106 @@
         }
       }, 600);
 
-      // Navegación con teclado mejorada
+      // Navegación con teclado SIMPLIFICADA
       document.addEventListener('DOMContentLoaded', function() {
         const table = document.querySelector('.pivot-table');
         if (!table) return;
 
-        // Construir matriz de inputs editables por fila y columna
-        function buildInputMatrix() {
-          const rows = Array.from(table.querySelectorAll('tbody tr'));
-          const matrix = [];
-          
-          rows.forEach(row => {
-            const inputs = Array.from(row.querySelectorAll('input[type="number"]:not([disabled]), input[type="text"]:not([disabled]), input[type="checkbox"]:not([disabled])'));
-            if (inputs.length > 0) {
-              matrix.push(inputs);
-            }
-          });
-          
-          return matrix;
-        }
+        let isNavigating = false;
 
-        // Encontrar posición actual en la matriz
-        function findPosition(input, matrix) {
-          for (let rowIdx = 0; rowIdx < matrix.length; rowIdx++) {
-            const colIdx = matrix[rowIdx].indexOf(input);
-            if (colIdx !== -1) {
-              return { row: rowIdx, col: colIdx };
-            }
-          }
-          return null;
+        // Construir lista plana de todos los inputs editables
+        function getAllInputs() {
+          return Array.from(table.querySelectorAll('tbody input[type="number"]:not([disabled]), tbody input[type="text"]:not([disabled]), tbody input[type="checkbox"]:not([disabled])'));
         }
 
         // Navegar en la tabla
         function navigateTable(currentInput, direction) {
-          const matrix = buildInputMatrix();
-          const pos = findPosition(currentInput, matrix);
-          if (!pos) return;
+          if (isNavigating) return;
+          isNavigating = true;
 
-          let targetRow = pos.row;
-          let targetCol = pos.col;
-
-          switch(direction) {
-            case 'right':
-              targetCol++;
-              // Si llegamos al final de la fila, pasar a la siguiente fila, primera columna
-              if (targetCol >= matrix[targetRow].length) {
-                targetRow++;
-                targetCol = 0;
-              }
-              break;
-            case 'left':
-              targetCol--;
-              // Si llegamos al inicio de la fila, pasar a la fila anterior, última columna
-              if (targetCol < 0) {
-                targetRow--;
-                if (targetRow >= 0 && matrix[targetRow]) {
-                  targetCol = matrix[targetRow].length - 1;
-                }
-              }
-              break;
-            case 'down':
-              targetRow++;
-              // Mantener la misma columna, o la más cercana si no existe
-              break;
-            case 'up':
-              targetRow--;
-              // Mantener la misma columna, o la más cercana si no existe
-              break;
-            case 'enter':
-              // Enter avanza a la derecha, como Tab
-              targetCol++;
-              if (targetCol >= matrix[targetRow].length) {
-                targetRow++;
-                targetCol = 0;
-              }
-              break;
-          }
-
-          // Validar que la posición objetivo existe
-          if (targetRow >= 0 && targetRow < matrix.length) {
-            const targetRowInputs = matrix[targetRow];
-            // Ajustar columna si está fuera de rango
-            if (targetCol >= targetRowInputs.length) {
-              targetCol = targetRowInputs.length - 1;
-            }
-            if (targetCol < 0) {
-              targetCol = 0;
-            }
+          try {
+            const allInputs = getAllInputs();
+            const currentIndex = allInputs.indexOf(currentInput);
             
-            const targetInput = targetRowInputs[targetCol];
-            if (targetInput) {
-              targetInput.focus();
-              if (targetInput.type !== 'checkbox') {
-                targetInput.select();
-              }
-              
-              // Scroll suave al elemento
-              targetInput.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+            if (currentIndex === -1) return;
+
+            let targetIndex = currentIndex;
+
+            switch(direction) {
+              case 'right':
+              case 'enter':
+                targetIndex = currentIndex + 1;
+                if (targetIndex >= allInputs.length) {
+                  targetIndex = allInputs.length - 1; // No saltar fuera del último
+                }
+                break;
+                
+              case 'left':
+                targetIndex = currentIndex - 1;
+                if (targetIndex < 0) {
+                  targetIndex = 0; // No saltar fuera del primero
+                }
+                break;
+                
+              case 'down':
+                // Buscar el siguiente input en una fila diferente
+                const currentRow = currentInput.closest('tr');
+                let found = false;
+                for (let i = currentIndex + 1; i < allInputs.length; i++) {
+                  const testRow = allInputs[i].closest('tr');
+                  if (testRow !== currentRow) {
+                    targetIndex = i;
+                    found = true;
+                    break;
+                  }
+                }
+                if (!found) targetIndex = currentIndex; // Quedarse en el mismo
+                break;
+                
+              case 'up':
+                // Buscar el anterior input en una fila diferente
+                const currentRowUp = currentInput.closest('tr');
+                let foundUp = false;
+                for (let i = currentIndex - 1; i >= 0; i--) {
+                  const testRow = allInputs[i].closest('tr');
+                  if (testRow !== currentRowUp) {
+                    targetIndex = i;
+                    foundUp = true;
+                    break;
+                  }
+                }
+                if (!foundUp) targetIndex = currentIndex; // Quedarse en el mismo
+                break;
             }
+
+            // Solo moverse si el índice cambió
+            if (targetIndex !== currentIndex) {
+              const targetInput = allInputs[targetIndex];
+              
+              if (targetInput) {
+                // Hacer foco
+                targetInput.focus();
+                
+                // Seleccionar texto si no es checkbox
+                if (targetInput.type !== 'checkbox') {
+                  targetInput.select();
+                }
+                
+                // Scroll simple usando scrollIntoView nativo
+                setTimeout(() => {
+                  targetInput.scrollIntoView({ 
+                    behavior: 'auto',  // Cambiar a 'auto' para evitar animaciones que causan problemas
+                    block: 'nearest', 
+                    inline: 'nearest' 
+                  });
+                }, 10);
+              }
+            }
+          } finally {
+            // Liberar el lock rápidamente
+            setTimeout(() => {
+              isNavigating = false;
+            }, 100);
           }
         }
 
@@ -186,7 +211,7 @@
         table.addEventListener('keydown', function(e) {
           const target = e.target;
           if (!target.matches('input[type="number"], input[type="text"], input[type="checkbox"]')) return;
-          if (target.disabled) return;
+          if (target.disabled || isNavigating) return;
 
           let handled = false;
           
@@ -216,70 +241,15 @@
               navigateTable(target, 'enter');
               handled = true;
               break;
-            case 'Tab':
-              // Permitir comportamiento nativo de Tab
-              break;
           }
         });
 
-        // Seleccionar contenido al hacer foco
+        // Seleccionar contenido al hacer foco (más simple)
         table.addEventListener('focus', function(e) {
-          if (e.target.matches('input[type="number"], input[type="text"]')) {
-            setTimeout(() => e.target.select(), 0);
+          if (e.target.matches('input[type="number"], input[type="text"]') && !isNavigating) {
+            e.target.select();
           }
         }, true);
-      });
-
-      // Sistema de redimensionamiento de columnas
-      document.addEventListener('DOMContentLoaded', function() {
-        const table = document.querySelector('.pivot-table');
-        if (!table) return;
-
-        let isResizing = false;
-        let currentTh = null;
-        let startX = 0;
-        let startWidth = 0;
-
-        table.addEventListener('mousedown', function(e) {
-          const th = e.target.closest('th');
-          if (!th) return;
-
-          const rect = th.getBoundingClientRect();
-          const isRightEdge = e.clientX > rect.right - 10;
-
-          if (isRightEdge) {
-            isResizing = true;
-            currentTh = th;
-            startX = e.clientX;
-            startWidth = rect.width;
-            e.preventDefault();
-          }
-        });
-
-        document.addEventListener('mousemove', function(e) {
-          if (!isResizing) {
-            // Cambiar cursor cuando está cerca del borde
-            const th = e.target.closest('th');
-            if (th) {
-              const rect = th.getBoundingClientRect();
-              const isRightEdge = e.clientX > rect.right - 10;
-              th.style.cursor = isRightEdge ? 'col-resize' : '';
-            }
-            return;
-          }
-
-          const diff = e.clientX - startX;
-          const newWidth = Math.max(50, startWidth + diff);
-          currentTh.style.minWidth = newWidth + 'px';
-          currentTh.style.width = newWidth + 'px';
-        });
-
-        document.addEventListener('mouseup', function() {
-          if (isResizing) {
-            isResizing = false;
-            currentTh = null;
-          }
-        });
       });
 
       // Sistema de protección para clasificación I/C
@@ -299,10 +269,11 @@
               const clasificacion = (inputClasif.value || '').trim().toUpperCase();
               const lineaId = inputClasif.name.split('_').pop();
               
-              // Obtener los campos de descuento para esta línea (buscar en toda la fila)
+              // Obtener los campos de descuento y último costo para esta línea
               const descuento1 = document.querySelector(`input[name="descuento_prov_pct_${lineaId}"]`);
               const descuento2 = document.querySelector(`input[name="descuento_prov_pct_2_${lineaId}"]`);
               const descuento3 = document.querySelector(`input[name="descuento_prov_pct_3_${lineaId}"]`);
+              const ultimoCosto = document.querySelector(`input[name^="ultimo_costo_"][data-linea-id="${lineaId}"]`);
               
               // Si la clasificación es I o C, deshabilitar y resetear descuentos
               if (clasificacion === 'I' || clasificacion === 'C') {
@@ -314,6 +285,13 @@
                     desc.style.color = '#6c757d';
                   }
                 });
+                
+                // NUEVO: Bloquear último costo solo para clasificación I
+                if (clasificacion === 'I' && ultimoCosto && !ultimoCosto.disabled) {
+                  ultimoCosto.disabled = true;
+                  ultimoCosto.style.backgroundColor = '#e2e3e5';
+                  ultimoCosto.style.color = '#6c757d';
+                }
               } else {
                 // Si no es I o C, habilitar los campos solo si estaban originalmente habilitados
                 [descuento1, descuento2, descuento3].forEach(desc => {
@@ -323,13 +301,20 @@
                     desc.style.color = '';
                   }
                 });
+                
+                // NUEVO: Habilitar último costo si estaba originalmente habilitado
+                if (ultimoCosto && ultimoCosto.hasAttribute('data-originally-enabled')) {
+                  ultimoCosto.disabled = false;
+                  ultimoCosto.style.backgroundColor = '';
+                  ultimoCosto.style.color = '';
+                }
               }
             });
           });
         }
 
         // Marcar campos que originalmente estaban habilitados
-        table.querySelectorAll('input[name^="descuento_prov_pct"]').forEach(input => {
+        table.querySelectorAll('input[name^="descuento_prov_pct"], input[name^="ultimo_costo_"]').forEach(input => {
           if (!input.disabled) {
             input.setAttribute('data-originally-enabled', 'true');
           }
@@ -351,6 +336,90 @@
             protegerCamposPorClasificacion();
           }
         });
+      });
+
+      // Formateo de moneda para último costo
+      document.addEventListener('DOMContentLoaded', function() {
+        const table = document.querySelector('.pivot-table');
+        if (!table) return;
+
+        // Función para formatear número a moneda sin símbolo
+        function formatearMoneda(valor) {
+          if (!valor || isNaN(valor)) return '';
+          return new Intl.NumberFormat('es-CO', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+          }).format(valor);
+        }
+
+        // Función para limpiar formato y obtener número - MEJORADA
+        function limpiarNumero(texto) {
+          if (!texto) return '';
+          // Eliminar todos los puntos (separadores de miles) y comas
+          return String(texto).replace(/\./g, '').replace(/,/g, '').trim();
+        }
+
+        // Manejar inputs de último costo
+        table.addEventListener('focus', function(e) {
+          if (e.target.matches('input[name^="ultimo_costo_"]')) {
+            const valor = limpiarNumero(e.target.value);
+            if (valor) {
+              e.target.value = valor;
+              // Guardar el valor limpio en un atributo data
+              e.target.setAttribute('data-valor-limpio', valor);
+            }
+            e.target.select();
+          }
+        }, true);
+
+        table.addEventListener('blur', function(e) {
+          if (e.target.matches('input[name^="ultimo_costo_"]')) {
+            const valor = limpiarNumero(e.target.value);
+            if (valor && !isNaN(valor)) {
+              e.target.setAttribute('data-valor-limpio', valor);
+              e.target.value = formatearMoneda(valor);
+            } else if (!valor) {
+              e.target.value = '';
+              e.target.removeAttribute('data-valor-limpio');
+            }
+          }
+        }, true);
+
+        // Permitir solo números mientras se escribe
+        table.addEventListener('input', function(e) {
+          if (e.target.matches('input[name^="ultimo_costo_"]')) {
+            const valor = e.target.value;
+            const limpio = valor.replace(/[^\d]/g, '');
+            if (valor !== limpio) {
+              const cursorPos = e.target.selectionStart;
+              e.target.value = limpio;
+              e.target.setSelectionRange(cursorPos - 1, cursorPos - 1);
+            }
+          }
+        }, true);
+
+        // Formatear todos los inputs al cargar
+        table.querySelectorAll('input[name^="ultimo_costo_"]').forEach(input => {
+          const valor = limpiarNumero(input.value);
+          if (valor && !isNaN(valor)) {
+            input.setAttribute('data-valor-limpio', valor);
+            input.value = formatearMoneda(valor);
+          }
+        });
+
+        // Antes de enviar el formulario, limpiar el formato
+        const form = document.getElementById('pivot-form');
+        if (form) {
+          form.addEventListener('submit', function(e) {
+            // Limpiar TODOS los inputs de ultimo_costo antes del submit
+            table.querySelectorAll('input[name^="ultimo_costo_"]').forEach(input => {
+              const valorLimpio = input.getAttribute('data-valor-limpio') || limpiarNumero(input.value);
+              if (valorLimpio) {
+                input.value = valorLimpio;
+              }
+            });
+          });
+        }
       });
     })();
   </script>
@@ -419,18 +488,25 @@
           const btnCancel = modal.querySelector('[data-ms-cancel]');
           const btnAccept = modal.querySelector('[data-ms-accept]');
           let targetHref = null;
+          let isProcessing = false;
 
           function openModal(message, href) {
             targetHref = href;
             txt.textContent = message || '¿Desea continuar?';
             modal.classList.add('show');
+            isProcessing = false;
+            btnAccept.disabled = false;
+            btnAccept.classList.remove('ms-btn--loading');
+            btnAccept.textContent = 'Continuar';
           }
+          
           function closeModal() {
             modal.classList.remove('show');
             targetHref = null;
+            isProcessing = false;
           }
 
-          // Capturar clics en enlaces con data-confirm (usar capturing phase)
+          // Capturar clics en enlaces con data-confirm
           document.addEventListener('click', function(ev) {
             const link = ev.target.closest('a[data-confirm]');
             if (!link) return;
@@ -441,29 +517,62 @@
             const message = link.getAttribute('data-confirm');
             const href = link.getAttribute('href');
             
-            console.log('Confirmación solicitada:', message, href); // Debug
             openModal(message, href);
           }, true);
 
-          btnCancel && btnCancel.addEventListener('click', function(e) {
-            e.preventDefault();
-            closeModal();
-          });
+          // Botón Cancelar
+          if (btnCancel) {
+            btnCancel.addEventListener('click', function(e) {
+              e.preventDefault();
+              if (!isProcessing) {
+                closeModal();
+              }
+            });
+          }
           
-          btnAccept && btnAccept.addEventListener('click', function(e) {
-            e.preventDefault();
-            if (targetHref) {
-              console.log('Navegando a:', targetHref); // Debug
-              window.location.href = targetHref;
+          // Botón Continuar/Aceptar
+          if (btnAccept) {
+            btnAccept.addEventListener('click', function(e) {
+              e.preventDefault();
+              
+              // Prevenir múltiples clics
+              if (isProcessing) {
+                return;
+              }
+              
+              if (!targetHref) {
+                closeModal();
+                return;
+              }
+              
+              // Marcar como procesando
+              isProcessing = true;
+              
+              // Agregar spinner y deshabilitar botón
+              btnAccept.disabled = true;
+              btnAccept.classList.add('ms-btn--loading');
+              btnAccept.textContent = 'Procesando';
+              
+              // También deshabilitar el botón de cancelar
+              btnCancel.disabled = true;
+              
+              // Navegar después de un pequeño delay
+              setTimeout(function() {
+                window.location.href = targetHref;
+              }, 100);
+            });
+          }
+          
+          // Cerrar al hacer clic fuera del modal (solo si no está procesando)
+          modal.addEventListener('click', function(ev) {
+            if (ev.target === modal && !isProcessing) {
+              closeModal();
             }
           });
           
-          modal.addEventListener('click', function(ev) {
-            if (ev.target === modal) closeModal();
-          });
-          
+          // Cerrar con ESC (solo si no está procesando)
           document.addEventListener('keydown', function(ev) {
-            if (ev.key === 'Escape' && modal.classList.contains('show')) {
+            if (ev.key === 'Escape' && modal.classList.contains('show') && !isProcessing) {
               closeModal();
             }
           });
@@ -522,7 +631,22 @@
             <td class="sticky-col sticky-col-2">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.referencia }}{% endif %}{% endfor %}</td>
             <td class="sticky-col sticky-col-3">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.descripcion }}{% endif %}{% endfor %}</td>
             <td class="sticky-col sticky-col-4">{% for ln in articulo_data.lineas.values %}{% if forloop.first %}{{ ln.embalaje|floatformat:0 }}{% endif %}{% endfor %}</td>
-            <td>{% for ln in articulo_data.lineas.values %}{% if forloop.first %}<span style="font-family: monospace; color: #2e7d32;">${{ ln.ultimo_costo|floatformat:0|intcomma }}</span>{% endif %}{% endfor %}</td>
+            <td>
+              {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
+                {% with cls=articulo_data.clasificacion|default:'' %}
+                  <input 
+                    type="number" 
+                    name="ultimo_costo_{{ ln.pk }}" 
+                    value="{{ ln.ultimo_costo|floatformat:0 }}" 
+                    step="1" 
+                    min="0"
+                    style="width:90px;"
+                    {% if inputs_disabled or cls == 'I' %}disabled{% endif %} 
+                    data-linea-id="{{ ln.pk }}" 
+                  />
+                {% endwith %}
+              {% endif %}{% endfor %}
+            </td>
             <td>
               {% for ln in articulo_data.lineas.values %}{% if forloop.first %}
                 {% with cls=articulo_data.clasificacion|default:'' %}
@@ -679,7 +803,7 @@
           </tr>
           {% endfor %}
         </tbody>
-      </table>
-    </div>
-  </form>
+
+
+    </div>      </table>  </form>
 {% endblock %}
