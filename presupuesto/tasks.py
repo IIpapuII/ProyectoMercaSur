@@ -1,5 +1,5 @@
 from presupuesto.models import CategoriaVenta, PresupuestoMensualCategoria
-from .utils import calcular_presupuesto_diario_forecast, cargar_ventas_reales_carne, cargasr_ventas_reales_ecenarios
+from .utils import calcular_presupuesto_diario_forecast, cargar_ventas_reales_carne, cargasr_ventas_reales_ecenarios, cargar_ventas_reales_marca_mercasur
 from datetime import date, timedelta
 from celery import shared_task
 import calendar
@@ -41,6 +41,7 @@ def cargar_ventas_historicas():
                 fecha_actual = date(año, mes, dia)
                 cargar_ventas_reales_carne(fecha_actual, fecha_actual)
                 cargasr_ventas_reales_ecenarios(fecha_actual, fecha_actual)
+                cargar_ventas_reales_marca_mercasur(fecha_actual, fecha_actual)
     print(f"Ventas cargadas desde {inicio} hasta {fin}.")
 
 

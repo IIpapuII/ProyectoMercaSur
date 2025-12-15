@@ -49,17 +49,21 @@ def calcular_sugerido_inteligente(stock_actual: Decimal, stock_maximo: Decimal, 
     # Caso 1: Embalaje menor o igual al máximo
     # Solo pedimos lo necesario para llegar al máximo (múltiplo del embalaje)
     if embalaje <= stock_maximo:
-        # Redondear hacia arriba al múltiplo de embalaje más cercano
-        cajas_necesarias = math.ceil(float(unidades_faltantes) / embalaje)
+        # Calcular cuántas cajas completas caben y el resto
+        cajas_completas = int(unidades_faltantes // embalaje)
+        resto = float(unidades_faltantes % embalaje)
+        
+        # Si el resto es >= 50% del embalaje, agregar una caja más
+        if resto >= embalaje * 0.5:
+            cajas_necesarias = cajas_completas + 1
+        else:
+            cajas_necesarias = cajas_completas
+        
         sugerido = Decimal(cajas_necesarias * embalaje)
         
-        # Si el sugerido nos pasa mucho del máximo, ajustar
-        if sugerido > unidades_faltantes and cajas_necesarias > 1:
-            # Intentar con una caja menos si es razonable
-            sugerido_alternativo = Decimal((cajas_necesarias - 1) * embalaje)
-            # Solo usar alternativa si cubre al menos 80% de lo necesario
-            if sugerido_alternativo >= unidades_faltantes * Decimal("0.8"):
-                return sugerido_alternativo
+        # Si no hay cajas completas pero el total es >= 50%, dar 1 caja
+        if sugerido == 0 and unidades_faltantes >= umbral_minimo:
+            sugerido = Decimal(embalaje)
         
         return sugerido
     
@@ -74,11 +78,26 @@ def calcular_sugerido_inteligente(stock_actual: Decimal, stock_maximo: Decimal, 
             if medio_embalaje > stock_maximo:
                 cuarto_embalaje = embalaje // 4
                 if cuarto_embalaje > 0 and unidades_faltantes >= cuarto_embalaje:
-                    medio_cajas_necesarias = math.ceil(float(unidades_faltantes) / cuarto_embalaje)
+                    # Aplicar la misma lógica de 50%
+                    umbral_cuarto = Decimal(cuarto_embalaje) * Decimal("0.50")
+                    resto = float(unidades_faltantes) % cuarto_embalaje
+                    
+                    if resto >= float(umbral_cuarto):
+                        medio_cajas_necesarias = math.ceil(float(unidades_faltantes) / cuarto_embalaje)
+                    else:
+                        medio_cajas_necesarias = math.floor(float(unidades_faltantes) / cuarto_embalaje)
+                    
                     return Decimal(medio_cajas_necesarias * cuarto_embalaje)
             
-            # Calcular cuántas "medio cajas" necesitamos
-            medio_cajas_necesarias = math.ceil(float(unidades_faltantes) / medio_embalaje)
+            # Aplicar la misma lógica de 50% para medio embalaje
+            umbral_medio = Decimal(medio_embalaje) * Decimal("0.50")
+            resto = float(unidades_faltantes) % medio_embalaje
+            
+            if resto >= float(umbral_medio):
+                medio_cajas_necesarias = math.ceil(float(unidades_faltantes) / medio_embalaje)
+            else:
+                medio_cajas_necesarias = math.floor(float(unidades_faltantes) / medio_embalaje)
+            
             sugerido = Decimal(medio_cajas_necesarias * medio_embalaje)
             return sugerido
         
@@ -91,7 +110,8 @@ def ajustar_sugerido_con_embalaje(sugerido_base: Decimal, embalaje: int, clasifi
     Ajusta un sugerido base para que sea múltiplo del embalaje.
     Si clasificación es I, retorna 0.
     Si el sugerido base es menor que 50% del embalaje, retorna 0.
-    Si el sugerido base es >= 50% del embalaje, redondea al embalaje completo.
+    Si el resto del sugerido es >= 50% del embalaje, redondea hacia arriba.
+    Si el resto del sugerido es < 50% del embalaje, redondea hacia abajo.
     
     Args:
         sugerido_base: Cantidad sugerida inicial
@@ -117,6 +137,20 @@ def ajustar_sugerido_con_embalaje(sugerido_base: Decimal, embalaje: int, clasifi
     if sugerido_base < umbral_minimo:
         return Decimal("0")
     
-    # Redondear hacia arriba al múltiplo de embalaje
-    cajas = math.ceil(float(sugerido_base) / embalaje)
-    return Decimal(cajas * embalaje)
+    # Calcular cuántas cajas completas caben y el resto
+    cajas_completas = int(sugerido_base // embalaje)
+    resto = float(sugerido_base % embalaje)
+    
+    # Si el resto es >= 50% del embalaje, redondear hacia arriba
+    if resto >= embalaje * 0.5:
+        cajas = cajas_completas + 1
+    else:
+        cajas = cajas_completas
+    
+    sugerido = Decimal(cajas * embalaje)
+    
+    # Si no hay cajas completas pero el total es >= 50%, dar al menos 1 caja
+    if sugerido == 0 and sugerido_base >= umbral_minimo:
+        sugerido = Decimal(embalaje)
+    
+    return sugerido
