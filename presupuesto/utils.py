@@ -697,3 +697,115 @@ def formato_dinero_colombiano(valor):
         return "${:,.2f}".format(valor).replace(',', 'X').replace('.', ',').replace('X', '.')
     except (TypeError, ValueError):
         return "-"
+
+def cargar_ventas_reales_marca_mercasur(fecha_inicio, fecha_fin):
+    """
+    Carga o actualiza las ventas reales para la categoría MARCA mercasur
+    entre fecha_inicio y fecha_fin.
+    """
+    sql = '''
+    ;WITH VentasDetalle AS (
+        SELECT
+            AL.CODALMACEN,
+            CAST(AC.FECHA AS DATE) AS fechaVenta,
+            AR.TIPO,
+            AR.DPTO,
+            AR.MARCA,
+            AR.LINEA,
+            I.DESCRIPCION,
+            CAST(
+                AL.PRECIO * (1 - (
+                    CASE 
+                        WHEN COALESCE(AL.DTO,0) < 0 THEN 0
+                        WHEN COALESCE(AL.DTO,0) > 100 THEN 100
+                        ELSE COALESCE(AL.DTO,0)
+                    END
+                ) / 100.0) * AL.UNID1
+            AS DECIMAL(18,2)) AS ImporteNeto,
+            CAST(AL.COSTE * AL.UNID1 AS DECIMAL(18,2)) AS CosteLinea,
+            CAST(
+                (AL.PRECIOIVA * (
+                    CASE 
+                        WHEN COALESCE(AL.DTO,0) < 0 THEN 0
+                        WHEN COALESCE(AL.DTO,0) > 100 THEN 100
+                        ELSE COALESCE(AL.DTO,0)
+                    END
+                ) / 100.0) * AL.UNID1
+                + CASE
+                    WHEN AL.PRECIO = 0 AND AL.PRECIODEFECTO > 0
+                    THEN AL.PRECIODEFECTO * AL.UNID1
+                    ELSE 0
+                  END
+            AS DECIMAL(18,2)) AS POS
+        FROM ALBVENTALIN AL
+        JOIN ALBVENTACAB AC
+          ON AC.NUMSERIE = AL.NUMSERIE AND AC.NUMALBARAN = AL.NUMALBARAN
+        JOIN ARTICULOS AR
+          ON AR.CODARTICULO = AL.CODARTICULO
+        join LINEA I ON I.CODLINEA = AR.LINEA AND AR.MARCA = I.CODMARCA
+        WHERE
+            CAST(AC.FECHA AS DATE) BETWEEN ? AND ?
+            AND AC.TIPODOC IN (13, 82, 83)
+            AND AR.DPTO <> 103 
+    ),
+    Categorias AS (
+        SELECT
+            VD.CODALMACEN,
+            VD.fechaVenta,
+            'MARCA mercasur' AS CATEGORIA,
+            CAST(COALESCE(SUM(ImporteNeto), 0) AS DECIMAL(18,2)) AS VENTA_NETA,
+            CAST(COALESCE(SUM(POS), 0)        AS DECIMAL(18,2)) AS VALOR_POS,
+            CAST(COALESCE(SUM(CosteLinea), 0) AS DECIMAL(18,2)) AS COSTE
+        FROM VentasDetalle VD
+        WHERE VD.DESCRIPCION IN ('MARCA MERCASUR','MARCA BLANCA') 
+          AND VD.TIPO <> 9
+        GROUP BY VD.CODALMACEN, VD.fechaVenta
+    ),
+    AlmacenesInfo AS (
+        SELECT '1' AS Cod, 'CALDAS' AS Nombre
+        UNION ALL SELECT '2', 'CENTRO'
+        UNION ALL SELECT '3', 'CABECERA'
+        UNION ALL SELECT '50', 'SOTOMAYOR'
+    )
+    SELECT
+        AI.Nombre AS ALMACEN,
+        C.CATEGORIA,
+        CAST(C.VENTA_NETA + C.VALOR_POS AS DECIMAL(18,2)) AS VALOR,
+        CASE WHEN C.VENTA_NETA = 0 THEN 0
+             ELSE (100.0 * (C.VENTA_NETA - C.COSTE) / NULLIF(C.VENTA_NETA, 0)) END AS PCT_MARGEN_SIN_POS,
+        CASE WHEN (C.VENTA_NETA + C.VALOR_POS) = 0 THEN 0
+             ELSE (100.0 * ((C.VENTA_NETA + C.VALOR_POS) - C.COSTE) / NULLIF((C.VENTA_NETA + C.VALOR_POS), 0)) END AS PCT_MARGEN_CON_POS,
+        C.fechaVenta
+    FROM AlmacenesInfo AI
+    LEFT JOIN Categorias C ON AI.Cod = C.CODALMACEN
+    WHERE C.fechaVenta IS NOT NULL
+    ORDER BY AI.Nombre, C.fechaVenta, C.CATEGORIA
+    '''
+    conexion = conectar_sql_server()
+    cursor = conexion.cursor()
+    cursor.execute(sql, [fecha_inicio, fecha_fin])
+    filas = cursor.fetchall()
+
+    # Asegura existencia de la categoría
+    categoria_obj, _ = CategoriaVenta.objects.get_or_create(nombre='MARCA mercasur')
+
+    with transaction.atomic():
+        for sede_nombre, categoria_nombre, venta_real, margen_sin, margen_con, fecha_raw in filas:
+            sede_obj = Sede.objects.get(nombre=sede_nombre)
+            fecha = fecha_raw or fecha_inicio
+            obj, created = VentaDiariaReal.objects.update_or_create(
+                sede=sede_obj,
+                categoria=categoria_obj,
+                fecha=fecha,
+                defaults={
+                    'venta_real': Decimal(venta_real),
+                    'margen_sin_post_pct': Decimal(margen_sin),
+                    'margen_con_post_pct': Decimal(margen_con),
+                }
+            )
+            if not created:
+                obj.venta_real = Decimal(venta_real)
+                obj.margen_sin_post_pct = Decimal(margen_sin)
+                obj.margen_con_post_pct = Decimal(margen_con)
+                obj.save()
+    print(f"Cargadas {len(filas)} filas de ventas MARCA mercasur entre {fecha_inicio} y {fecha_fin}.")

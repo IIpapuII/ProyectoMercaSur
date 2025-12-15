@@ -275,3 +275,31 @@ def actualizar_clasificaciones_en_icg(proceso_id):
     proceso.save()
     notificar_proceso_con_excel(proceso, count)
     return count, "<br>".join(errores)
+
+
+"""
+select  a.CODARTICULO,
+a.REFPROVEEDOR,
+a2.CLASIFICACION,
+a2.CLASIFICACION2,
+a2.CLASIFICACION3,
+a2.CLASIFICACION5,
+a.DESCATALOGADO,
+sum(s.STOCK)
+from ARTICULOS a 
+inner join ARTICULOSCAMPOSLIBRES a2  on a2.CODARTICULO = a.CODARTICULO
+inner join STOCKS s on s.CODARTICULO = a.CODARTICULO and s.CODALMACEN in ('1','2','3','50')
+where a2.CLASIFICACION = 'I' AND
+a2.CLASIFICACION2 = 'I' AND
+a2.CLASIFICACION3 = 'I' AND
+a2.CLASIFICACION5 = 'I' AND
+a.DESCATALOGADO  = 'F' and
+(s.STOCK < 0  or s.STOCK = 0)
+GROUP by a.CODARTICULO,
+a.REFPROVEEDOR,
+a2.CLASIFICACION,
+a2.CLASIFICACION2,
+a2.CLASIFICACION3,
+a2.CLASIFICACION5,
+a.DESCATALOGADO
+"""
