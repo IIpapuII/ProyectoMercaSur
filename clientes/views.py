@@ -44,14 +44,23 @@ class RegistroFormularioAPIView(APIView):
             serializer = RegistroClienteSerializer(data=request.data)
             print(request.data)
             if serializer.is_valid():
-                serializer.save()
+                # Guardar una sola vez y capturar la instancia
                 cliente = serializer.save()
+                
                 if cliente.creado_desde_fisico == True:
                     mensaje = 'Cliente registrado exitosamente de forma local'
-                    print("Cliente Creado  localmente de forma exitosa")
+                    print("Cliente Creado localmente de forma exitosa")
                 else:
-                    crearClienteICG(cliente)
-                    mensaje = 'Cliente registrado exitosamente'
+                    try:
+                        resultado = crearClienteICG(cliente)
+                        if resultado == 'ok':
+                            mensaje = 'Cliente registrado exitosamente en ICG'
+                        else:
+                            mensaje = f'Cliente creado localmente, pero hubo un error en ICG: {resultado}'
+                    except Exception as e:
+                        print(f"Error al crear cliente en ICG: {e}")
+                        mensaje = f'Cliente creado localmente, pero falló la sincronización con ICG: {str(e)}'
+                
                 return Response({'mensaje': mensaje}, status=status.HTTP_201_CREATED)
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

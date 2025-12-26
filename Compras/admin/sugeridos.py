@@ -40,7 +40,11 @@ from ..services.exports import export_lines_to_xlsx
 from ..services.kpi_proveedores import calcular_cumplimiento_presupuesto
 from django.http import HttpResponse, HttpResponseBadRequest
 from ..services.icg_integration import  enviar_orden_a_icg
+
 from ..services.icg_pedidos import crear_pedido_compra_desde_lote
+from ..services.kpi_utils import obtener_kpis_por_lote
+from ..services.icg_import import actualizar_kpis_lote
+from datetime import timedelta
 from ..forms import SugeridoLoteAdminForm
 
 # ─────────────────────────────
@@ -90,7 +94,7 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
     date_hierarchy = "fecha_extraccion"
     readonly_fields = ("total_lineas","total_costo", "fecha_extraccion", "estado", 
                        "clasificacion_filtro","numserie","numpedido","subserie","pedidos_icg","creado_por",)
-    fields = ("nombre", "proveedor", "marca", "observaciones")  # Orden específico: proveedor primero, luego marca
+    fields = ("nombre", "proveedor", "marcas", "observaciones")  # Orden específico: proveedor primero, luego marcas
     actions = [
         "accion_enviar_a_proveedor",
         "accion_marcar_confirmado",
@@ -242,15 +246,12 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
             return qs.filter(proveedor=perfil_prov.proveedor)
         perfil_vend = self._get_perfil_vendedor_obj(request)
         if perfil_vend:
+            # Filtrar lotes que tengan al menos una marca asignada al vendedor
             return qs.filter(
-                Exists(
-                    AsignacionMarcaVendedor.objects.filter(
-                        vendedor=perfil_vend,
-                        proveedor_id=OuterRef("proveedor_id"),
-                        marca_id=OuterRef("marca_id"),
-                    )
+                marcas__in=Marca.objects.filter(
+                    asignaciones__vendedor=perfil_vend
                 )
-            )
+            ).distinct()
         return qs
 
     # Nuevo: filtrar proveedores/marcas según asignaciones del usuario
@@ -265,7 +266,10 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
                     kwargs["queryset"] = Proveedor.objects.filter(
                         asignaciones__vendedor=perfil_vend
                     ).distinct()
-        elif db_field.name == "marca":
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+    
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        if db_field.name == "marcas":
             perfil_prov = self._get_perfil_proveedor_obj(request)
             if perfil_prov:
                 kwargs["queryset"] = Marca.objects.filter(
@@ -281,7 +285,7 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
                     kwargs["queryset"] = Marca.objects.filter(
                         asignaciones__isnull=False
                     ).distinct()
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -347,10 +351,14 @@ class SugeridoLoteAdmin(admin.ModelAdmin):
             return obj.proveedor_id == getattr(perfil_prov.proveedor, "id", None)
         perfil_vend = self._get_perfil_vendedor_obj(request)
         if perfil_vend:
+            # Verificar si al menos una de las marcas del lote está asignada al vendedor
+            marcas_lote = obj.marcas.all()
+            if not marcas_lote.exists():
+                return True  # Si no hay marcas, permitir ver
             return AsignacionMarcaVendedor.objects.filter(
                 vendedor=perfil_vend,
                 proveedor_id=obj.proveedor_id,
-                marca_id=obj.marca_id,
+                marca__in=marcas_lote,
             ).exists()
         return True
 
@@ -741,6 +749,7 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                     'nuevo_nombre_prov_',
                     'observaciones_prov_',
                     'clasificacion_',
+                    'ultimo_costo_',
                 )):
                     try:
                         ids.add(int(k.split('_')[-1]))
@@ -748,6 +757,8 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                         pass
 
             self._dbg("POST ids detectados:", sorted(list(ids))[:10], "... total:", len(ids))
+            self._dbg("POST keys completo:", list(request.POST.keys())[:20])
+            self._dbg("Usuario es_interno:", es_interno, "es_proveedor:", es_proveedor)
 
             lineas = self.model.objects.filter(pk__in=ids).select_related('lote')
             actualizados = 0
@@ -892,10 +903,18 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                                 self._dbg("  nsug sin cambio o no parseable (None).")
 
                     else:
+                        # Bloque de procesamiento para usuarios INTERNOS/COMPRAS
+                        self._dbg(f"  -> Entrando en bloque de USUARIOS INTERNOS (es_interno={es_interno})")
                         if not es_interno:
+                            self._dbg(f"  -> Skip: usuario no es proveedor ni interno")
                             continue
-                        # PROTECCIÓN: Internos solo pueden saltar I en el skip inicial
-                        if cla == 'I' or estado_linea == 'ORDENADA' or estado_lote in {'CONFIRMADO', 'COMPLETADO'}:
+                        
+                        # USUARIOS INTERNOS: Pueden editar todas las clasificaciones
+                        # Solo bloquear si la línea ya fue ordenada o el lote está completado
+                        puede_editar_en_confirmado = estado_lote == 'CONFIRMADO'
+                        
+                        if estado_linea == 'ORDENADA' or estado_lote == 'COMPLETADO':
+                            self._dbg(f"  -> Skip por estado_linea={estado_linea}, estado_lote={estado_lote}")
                             continue
 
                         def _dec_local(v):
@@ -911,18 +930,40 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                         # PROTECCIÓN: Solo usuarios con permiso 'clasificacion_c' pueden editar clasificación C
                         editable_interno = not (cla == 'C' and not puede_editar_clasificacion_c)
 
+                        # USUARIOS INTERNOS: Pueden editar en estado CONFIRMADO
+                        # Ya no limitamos solo a sugerido_interno, permitimos editar costos y descuentos también
+                        if puede_editar_en_confirmado:
+                            m_si = request.POST.get(f'sugerido_interno_{pid}')
+                            v_si = _dec_local(m_si)
+                            
+                            # USUARIOS INTERNOS: Pueden editar sugerido_interno sin restricciones de clasificación
+                            if v_si is not None and editable_interno and v_si != ln.sugerido_interno:
+                                ln.sugerido_interno = v_si
+                                cambio = True
+                                changed_fields.append('sugerido_interno')
+                            
+                            # Procesar también costos y descuentos en estado CONFIRMADO
+                            # (no hacer continue, seguir procesando los demás campos)
+
                         m_ucosto = request.POST.get(f'ultimo_costo_{pid}')
                         m_d1  = request.POST.get(f'descuento_prov_pct_{pid}')
                         m_d2  = request.POST.get(f'descuento_prov_pct_2_{pid}')
                         m_d3  = request.POST.get(f'descuento_prov_pct_3_{pid}')
                         
+                        self._dbg(f"  Valores POST - ucosto:'{m_ucosto}' d1:'{m_d1}' d2:'{m_d2}' d3:'{m_d3}'")
+                        
                         v_ucosto = _dec_local(m_ucosto)
                         v_d1 = _dec_local(m_d1)
                         v_d2 = _dec_local(m_d2)
                         v_d3 = _dec_local(m_d3)
+                        
+                        self._dbg(f"  Valores parseados - ucosto:{v_ucosto} d1:{v_d1} d2:{v_d2} d3:{v_d3}")
+                        self._dbg(f"  Valores actuales DB - ucosto:{ln.ultimo_costo} d1:{ln.descuento_prov_pct} d2:{ln.descuento_prov_pct_2} d3:{ln.descuento_prov_pct_3}")
 
-                        # NUEVO: Procesar último costo para internos (NO permitir edición para clasificación I)
-                        if cla != 'I' and v_ucosto is not None and v_ucosto != ln.ultimo_costo:
+                        # NUEVO: Procesar último costo para internos (usuarios internos SÍ pueden editar)
+                        self._dbg(f"  Procesando ultimo_costo: cla={cla}, v_ucosto={v_ucosto}, ln.ultimo_costo={ln.ultimo_costo}")
+                        if v_ucosto is not None and v_ucosto != ln.ultimo_costo:
+                            self._dbg(f"  -> CAMBIANDO ultimo_costo de {ln.ultimo_costo} a {v_ucosto}")
                             ln.ultimo_costo = v_ucosto
                             cambio = True
                             changed_fields.append('ultimo_costo')
@@ -932,46 +973,42 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                                 codigo_articulo=ln.codigo_articulo
                             ).exclude(pk=ln.pk)
                             for h in hermanos:
-                                h_cla = (h.clasificacion or '').strip().upper()
-                                # Solo propagar si el hermano tampoco es I
-                                if h_cla != 'I' and h.ultimo_costo != v_ucosto:
+                                if h.ultimo_costo != v_ucosto:
                                     h.ultimo_costo = v_ucosto
                                     try:
                                         h.save(update_fields=['ultimo_costo', 'costo_linea'])
                                         actualizados += 1
                                     except ValidationError as e:
                                         errores_validacion.append(f"Línea {h.pk} ({h.codigo_articulo}): {'; '.join(e.messages)}")
-                        elif cla == 'I' and m_ucosto:
-                            self._dbg(f"  -> último_costo NO editable para clasificación I en línea {pid}")
 
-                        # PROTECCIÓN: No permitir cambios en descuentos si clasificación es I o C
-                        puede_editar_descuentos_interno = cla not in {'I', 'C'}
+                        # USUARIOS INTERNOS: Pueden editar descuentos sin restricciones de clasificación
+                        self._dbg(f"  Usuario interno puede editar descuentos (cla={cla})")
+                        self._dbg(f"  Comparando descuentos:")
+                        self._dbg(f"    d1: {v_d1} vs {ln.descuento_prov_pct} -> cambio={v_d1 is not None and v_d1 != ln.descuento_prov_pct}")
+                        self._dbg(f"    d2: {v_d2} vs {ln.descuento_prov_pct_2} -> cambio={v_d2 is not None and v_d2 != ln.descuento_prov_pct_2}")
+                        self._dbg(f"    d3: {v_d3} vs {ln.descuento_prov_pct_3} -> cambio={v_d3 is not None and v_d3 != ln.descuento_prov_pct_3}")
                         
-                        if puede_editar_descuentos_interno:
-                            if v_d1 is not None and v_d1 != ln.descuento_prov_pct:
-                                ln.descuento_prov_pct = v_d1
-                                cambio = True
-                                changed_fields.append('descuento_prov_pct')
-                            if v_d2 is not None and v_d2 != ln.descuento_prov_pct_2:
-                                ln.descuento_prov_pct_2 = v_d2
-                                cambio = True
-                                changed_fields.append('descuento_prov_pct_2')
-                            if v_d3 is not None and v_d3 != ln.descuento_prov_pct_3:
-                                ln.descuento_prov_pct_3 = v_d3
-                                cambio = True
-                                changed_fields.append('descuento_prov_pct_3')
+                        if v_d1 is not None and v_d1 != ln.descuento_prov_pct:
+                            self._dbg(f"  -> CAMBIANDO d1 de {ln.descuento_prov_pct} a {v_d1}")
+                            ln.descuento_prov_pct = v_d1
+                            cambio = True
+                            changed_fields.append('descuento_prov_pct')
+                        if v_d2 is not None and v_d2 != ln.descuento_prov_pct_2:
+                            self._dbg(f"  -> CAMBIANDO d2 de {ln.descuento_prov_pct_2} a {v_d2}")
+                            ln.descuento_prov_pct_2 = v_d2
+                            cambio = True
+                            changed_fields.append('descuento_prov_pct_2')
+                        if v_d3 is not None and v_d3 != ln.descuento_prov_pct_3:
+                            self._dbg(f"  -> CAMBIANDO d3 de {ln.descuento_prov_pct_3} a {v_d3}")
+                            ln.descuento_prov_pct_3 = v_d3
+                            cambio = True
+                            changed_fields.append('descuento_prov_pct_3')
 
                         m_si = request.POST.get(f'sugerido_interno_{pid}')
                         v_si = _dec_local(m_si)
                         
-                        # CAMBIO: Solo forzar a 0 si es clasificación I (NO C)
-                        if cla == 'I':
-                            if ln.sugerido_interno != Decimal("0"):
-                                ln.sugerido_interno = Decimal("0")
-                                cambio = True
-                                changed_fields.append('sugerido_interno')
-                        elif v_si is not None and editable_interno and v_si != ln.sugerido_interno:
-                            # Para clasificación C, permitir edición si tiene permiso
+                        # USUARIOS INTERNOS: Pueden editar sugerido_interno sin restricciones de clasificación
+                        if v_si is not None and editable_interno and v_si != ln.sugerido_interno:
                             ln.sugerido_interno = v_si
                             cambio = True
                             changed_fields.append('sugerido_interno')
@@ -1087,6 +1124,39 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
             kpis["cumplimiento_presupuesto_pct"] = cumplimiento_presupuesto_pct
             kpis["lineas_con_algún_descuento_pct"] = (qs.filter(Q(descuento_prov_pct__gt=0) | Q(descuento_prov_pct_2__gt=0) | Q(descuento_prov_pct_3__gt=0)).count() / (kpis["total_articulos"] or 1)) * 100
+
+            # Integración de KPIs de inventario (kpi_utils)
+            # Integración de KPIs de inventario (kpi_utils)
+            if lote_id:
+                try:
+                    # VERIFICACIÓN DE ANTIGÜEDAD DE KPIs
+                    # Si la última actualización fue hace más de 1 día, refrescar desde ICG
+                    if not request.GET.get('no_refresh'): # Flag por si queremos evitar bucle
+                        lote_obj_kpi = SugeridoLote.objects.only('fecha_actualizacion_kpis').get(pk=lote_id)
+                        last_update = lote_obj_kpi.fecha_actualizacion_kpis
+                        
+                        should_update = False
+                        if not last_update:
+                            should_update = True
+                        else:
+                            # timezone.now() utiliza la zona horaria activa si USE_TZ=True
+                            if (timezone.now() - last_update) > timedelta(days=1):
+                                should_update = True
+                        
+                        if should_update:
+                            try:
+                                print(f"Autof-refrescando KPIs para lote {lote_id} (última: {last_update})")
+                                res_msg = actualizar_kpis_lote(int(lote_id))
+                                self.message_user(request, f"Kpis Refrescados: {res_msg}", level=messages.INFO)
+                            except Exception as e_upd:
+                                print(f"Error al auto-actualizar KPIs: {e_upd}")
+                                # No bloqueamos la vista si falla ICG
+
+                    kpis_inv = obtener_kpis_por_lote(int(lote_id))
+                    kpis.update(kpis_inv)
+                except Exception as e:
+                    print(f"Error calculando KPIs de inventario: {e}")
+
             response.context_data["kpis"] = kpis
 
             articulos_pivot = {}
@@ -1137,6 +1207,8 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
 
             lote_estado = None
             inputs_disabled = False
+            puede_editar_sugerido_interno = es_interno  # Los internos siempre pueden editar su sugerido
+            
             if lote_id:
                 try:
                     lote_obj = SugeridoLote.objects.only('estado').get(pk=lote_id)
@@ -1145,12 +1217,18 @@ class SugeridoLineaAdmin(admin.ModelAdmin):
                     es_vendedor_grupo = request.user.groups.filter(name='perfil_vendedor').exists()
                     if es_vendedor_grupo and str(lote_estado).upper() in {'CONFIRMADO', 'COMPLETADO'}:
                         inputs_disabled = True
+                    
+                    # Los internos pueden editar sugerido_interno incluso si está confirmado
+                    if es_interno and str(lote_estado).upper() in {'CONFIRMADO'}:
+                        puede_editar_sugerido_interno = True
+                        
                     response.context_data['ocultar_boton_confirmar_proveedor'] = str(lote_estado).upper() in {'CONFIRMADO', 'COMPLETADO'}
                 except SugeridoLote.DoesNotExist:
                     response.context_data['ocultar_boton_confirmar_proveedor'] = False
 
             response.context_data['lote_estado'] = lote_estado
             response.context_data['inputs_disabled'] = inputs_disabled
+            response.context_data['puede_editar_sugerido_interno'] = puede_editar_sugerido_interno
 
             return response
         finally:

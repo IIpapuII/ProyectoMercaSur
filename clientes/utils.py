@@ -6,11 +6,21 @@ from django.db.models import F
 
 
 def generar_nuevo_codcliente():
+    """
+    Genera un nuevo código de cliente de forma atómica y thread-safe.
+    
+    Returns:
+        int: El nuevo código de cliente generado.
+        
+    Raises:
+        ValueError: Si se ha alcanzado el límite de códigos disponibles.
+    """
     with transaction.atomic():
         # Crea el registro si no existe (y luego lo bloquea)
+        # IMPORTANTE: Los valores por defecto deben coincidir con el modelo
         obj, created = SecuenciaCodCliente.objects.get_or_create(
             pk=1,
-            defaults={"ultimo_codigo": 0, "rango_maximo": 999999}
+            defaults={"ultimo_codigo": 51500001, "rango_maximo": 545000000}
         )
 
         # Asegura el bloqueo de fila (si el engine lo soporta)

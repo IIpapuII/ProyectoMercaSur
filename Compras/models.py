@@ -264,7 +264,7 @@ class SugeridoLote(models.Model):
         ANULADO = "ANULADO", "Anulado"
 
     nombre = models.CharField(max_length=255, help_text="Identificador legible del lote (e.g. Sugerido 2025-08 corte semanal)")
-    marca = models.ForeignKey(Marca, on_delete=models.SET_NULL, null=True, blank=True, related_name="lotes", help_text="Marca asociada del sugerido")
+    marcas = models.ManyToManyField(Marca, related_name="lotes", blank=True, help_text="Marcas asociadas al sugerido")
     proveedor = models.ForeignKey(Proveedor, on_delete=models.PROTECT, related_name="lotes", null=True, blank=True , help_text="Proveedores disponibles para esa marca")
     fecha_extraccion = models.DateTimeField(default=timezone.now, db_index=True)
     estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PENDIENTE, db_index=True)
@@ -281,6 +281,8 @@ class SugeridoLote(models.Model):
     numserie = models.CharField(max_length=10, blank=True, null=True, help_text="Número de serie para pedidos en ICG")
     numpedido = models.CharField(max_length=20, blank=True, null=True, help_text="Número de pedido actual en ICG (se autoincrementa al importar)")
     subserie = models.CharField(max_length=5, blank=True, null=True, help_text="Subserie para pedidos en ICG")
+    
+    fecha_actualizacion_kpis = models.DateTimeField(null=True, blank=True, help_text="Fecha de la última actualización de KPIs desde ICG")
 
     class Meta:
         ordering = ["-fecha_extraccion"]
@@ -303,26 +305,10 @@ class SugeridoLote(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
+        if is_new:
+            # Marcar que necesita importación (se procesará en el signal m2m_changed)
+            self._pending_import = True
         super().save(*args, **kwargs)
-        if is_new and self.marca:
-            from Compras.services.icg_import import import_data_sugerido_inventario
-            import_data_sugerido_inventario(user_id=self.creado_por_id, marca=self.marca.nombre, lote_id=self.pk, provedor=self.proveedor.nombre)
-            # NUEVO: notificar vendedor asignado (si hay proveedor y marca)
-            if self.proveedor and self.marca:
-                try:
-                    from Compras.services.notifications import notificar_vendedor_lote_asignado
-                    notificar_vendedor_lote_asignado(proveedor=self.proveedor, marca=self.marca, lote=self)
-                except Exception:
-                    pass
-            # Recalcula totales luego del import y decide estado inicial
-            self.recalcular_totales()
-            
-            nuevo_estado = self.Estado.ENVIADO if self.total_lineas > 0 else self.Estado.PENDIENTE
-            if self.estado != nuevo_estado:
-                self.estado = nuevo_estado
-            
-            # Guardar una última vez solo con los campos calculados
-            super().save(update_fields=["total_lineas", "total_costo", "estado"])
 auditlog.register(SugeridoLote)
 
 class SugeridoLinea(models.Model):
@@ -403,6 +389,12 @@ class SugeridoLinea(models.Model):
     es_informativa = models.BooleanField(default=False, help_text="Si la línea es solo informativa (no se ordena)")
     Proveedor_principal = models.CharField(max_length=5, blank=True, null=True, help_text="Define si el proveedor principal para el artículo (S/N)")
     clasificacion_original = models.CharField(max_length=20, blank=True, null=True, help_text="Clasificación original al momento de la extracción")
+    
+    # KPIs de inventario y ventas
+    valor_inventario = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"), help_text="Valor total del inventario (stock * costo)")
+    unidades_vendidas_90d = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0.00"), help_text="Unidades vendidas en los últimos 90 días")
+    venta_diaria_promedio = models.DecimalField(max_digits=18, decimal_places=4, default=Decimal("0.0000"), help_text="Promedio de venta diaria (unidades vendidas / 90)")
+    dias_inventario = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, help_text="Días de inventario disponible (stock / venta diaria promedio)")
 
     class Meta:
         indexes = [
