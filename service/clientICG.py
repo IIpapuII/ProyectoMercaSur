@@ -258,22 +258,37 @@ def ConsultarClienteICG(numero_documento):
 
 
 def crearClienteICG(intanse_cliente):
-    nombreCompleto = f'{intanse_cliente.primer_nombre or ''} {intanse_cliente.segundo_nombre or  ''} {intanse_cliente.primer_apellido or  ''} {intanse_cliente.segundo_apellido or ''}'.strip()
+    """
+    Crea un cliente en la base de datos ICG (SQL Server).
+    
+    Args:
+        intanse_cliente: Instancia del modelo RegistroCliente
+        
+    Returns:
+        str: 'ok' si fue exitoso, mensaje de error en caso contrario
+    """
+    nombreCompleto = f'{intanse_cliente.primer_nombre or ""} {intanse_cliente.segundo_nombre or ""} {intanse_cliente.primer_apellido or ""} {intanse_cliente.segundo_apellido or ""}'.strip()
+    
+    # Mapeo de tipo de cliente
     if intanse_cliente.tipocliente == 'Clientes':
         tipocliente = 14
     elif intanse_cliente.tipocliente == 'Colaborador':
         tipocliente = 20
     elif intanse_cliente.tipocliente == 'Empresa':
         tipocliente = 5
-    else :
+    else:
         tipocliente = 14
+    
     try:
         with transaction.atomic():
             conexion = conectar_sql_server()
             cursor = conexion.cursor()
             consulta = SQLQuery.objects.filter(pk=6).first().consulta
+            
+            # Generar nuevo código de cliente
             secuencia = generar_nuevo_codcliente()
-            print(secuencia)
+            print(f"Código de cliente generado: {secuencia}")
+            
             valores = (
                 secuencia,                     # CODCLIENTE (Usamos el mismo que el número de documento)
                 '13050501',                                     # CODCONTABLE (Valor predeterminado del SQL)
@@ -328,36 +343,55 @@ def crearClienteICG(intanse_cliente):
                 0,                                              # NOCALCULARCARGO5ARTIC (Valor predeterminado del SQL)
                 0                                               # NOCALCULARCARGO6ARTIC (Valor predeterminado del SQL)
             )
+            
             try:
                 cursor.execute(consulta, valores)
                 conexion.commit()
+                print(f"Cliente insertado en ICG con código: {secuencia}")
             except Exception as e:
                 conexion.rollback()
-                print(f"Error al ejecutar la consulta: {e}")
+                print(f"Error al ejecutar la consulta SQL: {e}")
                 return f"Error al ejecutar la consulta: {e}"
+            
+            # Verificar que el cliente se creó correctamente
             cliente = getClienteICG(intanse_cliente.numero_documento)
             if cliente:
-                print("validaCliente")
+                print("Cliente validado en ICG")
                 intanse_cliente.codcliente = cliente[0][0]
                 intanse_cliente.creadoICG = True
                 intanse_cliente.save()
+                
+                # Actualizar campos libres
                 actualizar_campos_libres_cliente(intanse_cliente)
+                
+                # Crear fidelización
                 create_fidelizacion(intanse_cliente)
+                
                 intanse_cliente.Actualizado = False
                 intanse_cliente.save()
                 intanse_cliente.refresh_from_db()
+                
+                # Enviar correo si está habilitado
                 if intanse_cliente.correo_notificacion == True:
-                    print("proceso de enviar correo")
+                    print("Proceso de enviar correo")
                     enviar_correo(intanse_cliente)
+                
                 print("Proceso Exitoso")
-                return f"ok"
+                return "ok"
             else:
-                print("error codcliente")
+                print("Error: No se pudo validar el cliente en ICG")
                 return "error codcliente"
-            
 
-    except:
-        return f'error: {e}'
+    except ValueError as ve:
+        # Error de límite de códigos
+        print(f"Error de secuencia: {ve}")
+        return f"Error de secuencia: {ve}"
+    except Exception as e:
+        # Cualquier otro error
+        print(f"Error general al crear cliente en ICG: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"error: {e}"
 
 
 def actualizarClienteICG(intanse_cliente):
